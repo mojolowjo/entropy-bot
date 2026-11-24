@@ -52,10 +52,13 @@ public final class RefusedBreaks {
             return true;
         }
         r.count++;
+        map.remove(k);                                         // review: a hot cell is the newest too, so it is let go last
+        map.put(k, r);
         return false;
     }
 
     private final List<String> pending = new ArrayList<>();
+    private int foldedCells, foldedCount;
 
     /** The most cells held (Tuning guard.refusedCells; a test sets its own); 0 or less: the Tuning entry. */
     private int capOverride;
@@ -73,7 +76,11 @@ public final class RefusedBreaks {
         while (map.size() > Math.max(1, cap) && it.hasNext()) {   // structural: the newest record always stays
             Map.Entry<String, Rec> e = it.next();
             Rec r = e.getValue();
-            if (r.count > r.told) pending.add(text(e.getKey(), r, r.count - r.told) + " (the oldest cell, let go past " + cap + " cells)");
+            if (r.count > r.told) {
+                // review: pending is bounded by the same cap; past it only the totals are kept, said in one line (rule 7)
+                if (pending.size() < Math.max(1, cap)) pending.add(text(e.getKey(), r, r.count - r.told) + " (the oldest cell, let go past " + cap + " cells)");
+                else { foldedCells++; foldedCount += r.count - r.told; }
+            }
             it.remove();
         }
     }
@@ -88,6 +95,9 @@ public final class RefusedBreaks {
     public synchronized String take() {
         List<String> out = new ArrayList<>(pending);
         pending.clear();
+        if (foldedCells > 0) out.add("the guard refused " + foldedCount + " more breaks at " + foldedCells + " more cells let go (past the cap of lines)");
+        foldedCells = 0;
+        foldedCount = 0;
         for (Map.Entry<String, Rec> e : map.entrySet()) {
             Rec r = e.getValue();
             int n = r.count - r.told;

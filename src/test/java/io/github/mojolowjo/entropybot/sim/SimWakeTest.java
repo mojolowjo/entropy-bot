@@ -92,4 +92,22 @@ class SimWakeTest {
         assertEquals(own, Goals.keptForRun(g.bb, cob.id(), true, true).getOrDefault("cobblestone", 0), "a craft or a smelt may not use them up");
         assertTrue(Goals.keptForRun(g.bb, null, false, true).isEmpty(), "no order's run: as before");
     }
+
+    /**
+     * job-review-leftovers review: the runner's start bag (AaRuntime.typedStartBag = liveBag(), the simulator's runStartBag)
+     * is keyed by full id; the -d counts are by path. Read by full id, the start held nothing and the run's own 20 were free
+     * to its crafts and smelts again (w064).
+     */
+    @Test
+    void theOwnKeptAmountReadsAFullIdStartBag() {
+        SimGame g = SimGameTest.treeMap(6);
+        g.give("minecraft:cobblestone", 20);
+        Goals.Goal cob = g.order("cobblestone", 32, "b1", true);
+        g.tick();
+        int own = Goals.kept(g.bb, null, null).getOrDefault("cobblestone", 0);
+        assertTrue(own > 0, Goals.kept(g.bb, null, null).toString());
+        var start = java.util.Map.of("minecraft:cobblestone", 20);
+        assertEquals(own, Goals.keptForRun(g.bb, cob.id(), true, true, start).getOrDefault("cobblestone", 0), "held from a full-id start bag");
+        assertEquals(0, Goals.keptForRun(g.bb, cob.id(), true, true, java.util.Map.of()).getOrDefault("cobblestone", 0), "an empty start holds none");
+    }
 }

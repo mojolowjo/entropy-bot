@@ -444,13 +444,33 @@ public final class CraftPlanner implements Crafter {
      */
     public static Crafter.Plan withFuel(Crafter.Plan plan, String fuel, Map<String, Integer> bag, Map<String, Integer> fuels, int smeltTicks,
                                         java.util.function.Consumer<String> said, Map<String, Integer> left) {
+        return withFuel(plan, fuel, bag, fuels, smeltTicks, said, left, null);
+    }
+
+    /**
+     * job-review-leftovers review: as above, with {@code recipes} (nullable) the plan's recipes, so a Craft step's inputs
+     * (planks, logs: fuel candidates too) are taken off the running free bag before a later smelt's swap counts them
+     * (FurnacePlan.uses, the one reader of a step's inputs). Null: the craft steps are not taken off, said once (rule 7).
+     */
+    public static Crafter.Plan withFuel(Crafter.Plan plan, String fuel, Map<String, Integer> bag, Map<String, Integer> fuels, int smeltTicks,
+                                        java.util.function.Consumer<String> said, Map<String, Integer> left,
+                                        java.util.function.Function<String, io.github.mojolowjo.entropybot.craft.RecipeData> recipes) {
         if (plan == null || !plan.ok() || fuel == null || fuel.isBlank()) return plan;
+        boolean craftsUnread = false;
         String want = fuel.substring(fuel.indexOf(':') + 1);
         Map<String, Integer> free = new java.util.HashMap<>(bag == null ? Map.of() : bag);
         boolean loaded = fuels != null && !fuels.isEmpty();
         List<Crafter.Step> out = new ArrayList<>();
         for (Crafter.Step s : plan.steps()) {
-            if (!(s instanceof Crafter.Smelt m)) { out.add(s); continue; }
+            if (!(s instanceof Crafter.Smelt m)) {
+                out.add(s);
+                if (recipes == null) craftsUnread = true;
+                else for (String k : new ArrayList<>(free.keySet())) {
+                    int u = FurnacePlan.uses(s, k, recipes);
+                    if (u > 0) free.merge(k, -u, Integer::sum);
+                }
+                continue;
+            }
             if (m.input() != null) free.merge(m.input(), -m.n(), Integer::sum);
             if (m.fuel() == null || m.fuel().substring(m.fuel().indexOf(':') + 1).equals(want)) {
                 if (m.fuel() != null) free.merge(m.fuel(), -m.fuelCount(), Integer::sum);
@@ -471,7 +491,8 @@ public final class CraftPlanner implements Crafter {
                 free.merge(m.fuel(), -m.fuelCount(), Integer::sum);
                 if (said != null) said.accept("smelt " + shortId(m.item()) + ": the priced fuel " + want + " is not free in the bag (" + Math.max(0, have) + " of "
                         + (!loaded ? "? (no fuel table loaded)" : burn <= 0 ? "? (not in the fuel table)" : need)
-                        + ", the kept -d amounts and the earlier smelts left out); burning " + m.fuelCount() + " " + shortId(m.fuel()));
+                        + ", the kept -d amounts and the earlier " + (recipes != null ? "steps left out" : craftsUnread ? "smelts left out, the earlier crafts' inputs not read (no recipes)" : "smelts left out")
+                        + "); burning " + m.fuelCount() + " " + shortId(m.fuel()));
             }
         }
         return new Crafter.Plan(out, plan.error());

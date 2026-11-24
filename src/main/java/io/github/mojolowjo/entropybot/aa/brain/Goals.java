@@ -1574,8 +1574,11 @@ public final class Goals {
         Map<String, Integer> others = keptFromOthers(bb, g);
         Map<String, Integer> start = null;
         if (atStart != null && bb.fact(LineDeposits.FACT) instanceof LineDeposits ld) {
-            start = new java.util.HashMap<>(ld.kept(atStart, of(bb), null, null));
-            for (var e : ld.kept(atStart, of(bb), g, BatchWay.open(bb, g)).entrySet()) start.merge(e.getKey(), -e.getValue(), Integer::sum);
+            // review: the start bag is keyed by full id (liveBag, the sim's runStartBag), the -d counts by path (bb.in.bag)
+            Map<String, Integer> byPath = new java.util.HashMap<>();
+            for (var e : atStart.entrySet()) if (e.getValue() != null) byPath.merge(Thing.path(e.getKey()), e.getValue(), Integer::sum);
+            start = new java.util.HashMap<>(ld.kept(byPath, of(bb), null, null));
+            for (var e : ld.kept(byPath, of(bb), g, BatchWay.open(bb, g)).entrySet()) start.merge(e.getKey(), -e.getValue(), Integer::sum);
         }
         for (var e : kept(bb, null, null).entrySet()) {
             int own = e.getValue() - others.getOrDefault(e.getKey(), 0);
@@ -1740,12 +1743,19 @@ public final class Goals {
         // (one answer, ownAside), so the runner's keptFromUse never refuses what this chain priced
         var ownBag = new java.util.LinkedHashMap<>(world.bag());
         int aside = ownAside(ownBag, new java.util.HashMap<>(ownKeptHeld(bb, g, null)), g.r.ids(), g.r.key());
-        final var wf = aside > 0 && aside < g.n ? world.withBag(ownBag) : world;
-        final int askN = aside > 0 && aside < g.n ? g.n - aside : g.n;
+        boolean setAside = aside > 0 && aside < g.n;
+        final int askN = setAside ? g.n - aside : g.n;
+        // review (worker path): the aside rides in the ask, so the planner worker (BatchWay.own, port.own) prices the same
+        // world and count as the tick's own supplier: one answer whoever resolves
+        Map<String, Integer> taken = new java.util.HashMap<>();
+        if (setAside) for (var e : world.bag().entrySet()) {
+            int d = (e.getValue() == null ? 0 : e.getValue()) - ownBag.getOrDefault(e.getKey(), 0);
+            if (d > 0) taken.put(e.getKey(), d);
+        }
+        var ask = new BatchWay.OwnAsk(g.r.group() ? g.r.key() : g.r.ids().isEmpty() ? g.r.key() : g.r.ids().get(0), g.r.ids(), askN, g.r.group(), taken);
         java.util.function.Supplier<io.github.mojolowjo.entropybot.aa.NeedChain.Chain> own = () -> {
             long t0 = laps.now();
-            var c = g.r.group() ? io.github.mojolowjo.entropybot.aa.NeedChain.resolveAll(g.r.key(), g.r.ids(), askN, wf)
-                    : io.github.mojolowjo.entropybot.aa.NeedChain.resolve(g.r.ids().isEmpty() ? g.r.key() : g.r.ids().get(0), askN, wf);
+            var c = ask.resolve(world);
             if (t0 != 0) {
                 laps.resolved(laps.now() - t0);
                 var st = io.github.mojolowjo.entropybot.aa.PlanNodes.last();      // 0.39.z78 D6 (run DT): this thread's node counts
@@ -1756,7 +1766,6 @@ public final class Goals {
         // 0.39.z77 trip (run CU 21:02-21:06): the waiting test (batch false) reads the batch's kept trip while its running step
         // needs no walk (BatchWay.hold); the flag was unused since the SHAPE CHANGE, so every tick's test derived the trip
         // 0.39.z78 D6 (run DT): the one-leg trip's own chain is asked of the planner worker when one is installed (OwnAsk)
-        var ask = new BatchWay.OwnAsk(g.r.group() ? g.r.key() : g.r.ids().isEmpty() ? g.r.key() : g.r.ids().get(0), g.r.ids(), g.n, g.r.group());
         var ch = BatchWay.tripOrder(g) ? BatchWay.trip(bb, g, world, own, !batch, ask) : own.get();
         // 0.39.z41: a source Baritone's complete search found unreachable is the z33 source fact: dropped for the order's life
         for (var e : ch.unreachable().entrySet()) {
