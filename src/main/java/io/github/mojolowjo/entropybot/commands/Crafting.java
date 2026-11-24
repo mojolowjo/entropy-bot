@@ -641,7 +641,8 @@ final class Crafting {
      */
     private Map<String, Integer> planBag(LocalPlayer p) {
         Map<String, Integer> inv = new LinkedHashMap<>(Gui.inventory(p));
-        Map<String, Integer> kept = commands.aaRuntime == null ? Map.of() : commands.aaRuntime.keptFromOthers();
+        // reserves-once (b, run 3 w064): every -d amount, the running order's own included, is kept from a craft and a smelt
+        Map<String, Integer> kept = commands.aaRuntime == null ? Map.of() : commands.aaRuntime.keptFromUse();
         for (var e : kept.entrySet()) {
             String path = e.getKey().contains(":") ? e.getKey().substring(e.getKey().indexOf(':') + 1) : e.getKey();
             int left = e.getValue();
@@ -719,7 +720,10 @@ final class Crafting {
 
     // ---- smelt / get ----
 
-    String smelt(LocalPlayer p, String text) {
+    String smelt(LocalPlayer p, String text) { return smelt(p, text, null); }
+
+    /** {@code fuel}: the fuel the AA's plan priced (Step.Smelt), burned when the free bag covers it (CraftPlanner.withFuel). */
+    String smelt(LocalPlayer p, String text, String fuel) {
         String t = text == null ? "" : text.trim().toLowerCase(java.util.Locale.ROOT);
         // package D: the remembered furnace jobs
         if (t.equals("jobs") || t.equals("status") || t.equals("list")) return furnaces().list(nowMs());
@@ -748,6 +752,7 @@ final class Crafting {
             if (!plan.ok()) return CraftTexts.cantSmelt(label, plan.error());
             trips = takeTrips(src, CraftTexts.fromStorage(combined, counts, inv));
         }
+        plan = CraftPlanner.withFuel(plan, fuel, inv, io.github.mojolowjo.entropybot.aa.brain.ItemWorth.fuels(), CraftJob.smeltTicks(), commands::log);
         List<Step> steps = new ArrayList<>(trips.steps());
         // efficient (the default): the job ends once the furnace runs, the pickup collects it when it is due
         boolean efficient = nowait || (MODE_EFFICIENT.equals(smeltMode()) && !here);

@@ -165,6 +165,27 @@ class SimGameTest {
         assertTrue(dug >= 10, "at least the new order's 10 were dug: " + dug + "\n" + t);
     }
 
+    /**
+     * reserves-once (b), run 3 w064: the running order's OWN -d amount (cobblestone 32 -d, 20 in the bag, not met) and a
+     * torch -d in its trip. The runner's craft and smelt (SimSteps over the free bag, as Crafting.planBag over
+     * AaRuntime.keptFromUse) never use a kept amount, and the planner prices the furnace and the fuel the same way (the
+     * trip sets the bag's kept amounts aside from its start): the line ends done with the 32 whole, no re-plan loop.
+     */
+    @Test
+    void theRunningOrdersOwnKeptAmount_isNotTheFurnaces_w064() {
+        SimGame g = lineMapWith32();
+        g.take("minecraft:cobblestone", 12);                       // 20 of the 32 in the bag: the order is not met
+        g.order("cobblestone", 32, "b1", true);
+        g.order("torch", 4, "b1", true);
+        String end = g.play(900);
+        String t = g.timelineText();
+        assertEquals("done", end, t);
+        assertFalse(t.contains("FROM A KEPT"), "no smelt paid from a kept amount: " + t);
+        assertFalse(t.contains("the kept -d amounts left out"), "no craft refused for a kept amount (the planner priced the same bag): " + t);
+        assertEquals(32, g.chest.get("minecraft:cobblestone"), "the -d amount whole: " + g.chest);
+        assertEquals(4, g.chest.get("minecraft:torch"), g.chest.toString());
+    }
+
     /** Slice 3: the orders of a scenario's words - open ones with their deposit word, the finished ones first. */
     @Test
     void aScenariosWords_giveItsOrders() {

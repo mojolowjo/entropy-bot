@@ -73,4 +73,23 @@ class SimWakeTest {
         assertEquals(32, Goals.keptForRun(g.bb, "goal.cobblestone", true).getOrDefault("cobblestone", 0), "held from the met order's carried run too (was: nothing)");
         assertTrue(Goals.keptForRun(g.bb, null, false).isEmpty(), "no order's run (the deposit): the bag as it is");
     }
+
+    /**
+     * reserves-once (b), run 3 w064: the running order's OWN -d amount was free to its trip's furnace craft (8 of its 32
+     * cobblestone) and a smelt's fuel. Asked what the run may use up, the one reader holds every -d amount, its own too;
+     * asked what its steps may count as theirs, it still holds only the others'.
+     */
+    @Test
+    void theRunningOrdersOwnKeptAmountIsNotUsedUp() {
+        SimGame g = SimGameTest.treeMap(6);
+        g.give("minecraft:cobblestone", 20);
+        Goals.Goal cob = g.order("cobblestone", 32, "b1", true);
+        g.tick();                                        // the senses read the bag
+        assertNotNull(Goals.find(g.bb, "cobblestone"), g.timelineText());
+        int own = Goals.kept(g.bb, null, null).getOrDefault("cobblestone", 0);
+        assertTrue(own > 0, "the order's own 20 are kept for its deposit: " + Goals.kept(g.bb, null, null));
+        assertEquals(0, Goals.keptForRun(g.bb, cob.id(), true).getOrDefault("cobblestone", 0), "its steps count its own");
+        assertEquals(own, Goals.keptForRun(g.bb, cob.id(), true, true).getOrDefault("cobblestone", 0), "a craft or a smelt may not use them up");
+        assertTrue(Goals.keptForRun(g.bb, null, false, true).isEmpty(), "no order's run: as before");
+    }
 }

@@ -1376,6 +1376,13 @@ public final class Goals {
         return l;
     }
 
+    /** reserves-once review: copies of the finished entries, for a reader that must not lower the store's own (null: empty). */
+    public static List<Finished> copies(List<Finished> finished) {
+        List<Finished> out = new ArrayList<>();
+        if (finished != null) for (Finished f : finished) out.add(new Finished(f.key, f.ids, f.n, f.group, f.order));
+        return out;
+    }
+
     /** A met order joins the finished list (a strip order holds no items; the same key replaces the older entry). */
     static void finish(Blackboard bb, Goal g) {
         if (g.strip != null || g.r.ids().isEmpty()) return;
@@ -1507,11 +1514,67 @@ public final class Goals {
      * oak_log was met at 06:20:51, its carried run then made the torch's furnace from 8 of the 32 kept cobblestone and
      * the charcoal from a kept log - the chest got 24 and 15. (Was: no goal found = "no order's run" = nothing kept.)
      */
-    public static Map<String, Integer> keptForRun(Blackboard bb, String desireId, boolean orderRun) {
+    public static Map<String, Integer> keptForRun(Blackboard bb, String desireId, boolean orderRun) { return keptForRun(bb, desireId, orderRun, false); }
+
+    /**
+     * reserves-once (b), one "free to consume" bag (run 3 w064 and the "done with less" games: a furnace craft took 8 of
+     * the running order's own 32 cobblestone -d, a smelt burned a kept log as fuel): {@code consume} true asks what an
+     * order's run may not USE UP as a craft's input or a smelt's input or fuel - every kept -d amount, the running order's
+     * own and its trip's included (the owner's rule: a -d amount reaches the chest whole). False: what its steps may not
+     * COUNT as theirs (the skip check, the dry run, a repair): the others' amounts only, an order counts its own. Not an
+     * order's run: nothing, as before.
+     */
+    public static Map<String, Integer> keptForRun(Blackboard bb, String desireId, boolean orderRun, boolean consume) {
         if (!orderRun) return Map.of();
+        if (consume && desireId != null && bb.fact(FACT) instanceof List<?>)
+            for (Goal g : of(bb)) if (g.id().equals(desireId)) return keptFromUse(bb, g, desireId);
+        if (consume) return kept(bb, null, null);
         if (desireId != null && bb.fact(FACT) instanceof List<?>)
             for (Goal g : of(bb)) if (g.id().equals(desireId)) return keptFromOthers(bb, g);
         return kept(bb, null, null);
+    }
+
+    /** reserves-once (b): the run's own and its trip's kept amounts as the bag held them when the run started ({@link #runStarts}). */
+    record KeptAtStart(String desire, Map<String, Integer> own) {}
+
+    static final String KEPT_AT_START_FACT = "aa.keptAtRunStart";
+
+    /**
+     * reserves-once (b, review: the planner and the runner must hold the same amounts): an order's run starts - what the bag
+     * holds now for its own and its trip's -d amounts (kept less the others') is noted for the run. The planner set exactly
+     * those aside from the trip's start (NeedChain.playbookChain); what the run gathers after its start is the trip's to plan
+     * with, set aside by the planner after the target's own get. Null desire or no such open order: the note is cleared.
+     */
+    public static void runStarts(Blackboard bb, String desireId) {
+        Goal g = null;
+        if (desireId != null && bb.fact(FACT) instanceof List<?>) for (Goal x : of(bb)) if (x.id().equals(desireId)) g = x;
+        if (g == null) { bb.fact(KEPT_AT_START_FACT, null); return; }
+        Map<String, Integer> own = new java.util.HashMap<>(kept(bb, null, null));
+        for (var e : keptFromOthers(bb, g).entrySet()) own.merge(e.getKey(), -e.getValue(), Integer::sum);
+        own.values().removeIf(v -> v <= 0);
+        bb.fact(KEPT_AT_START_FACT, new KeptAtStart(desireId, Map.copyOf(own)));
+    }
+
+    /**
+     * reserves-once (b): what an order's run may not use up - the others' kept amounts whole, and of its own and its trip's
+     * what the bag held at the run's start (never more than it holds now). No note for this run (a run started
+     * outside {@link #runStarts}): its own amounts are held whole, said once (rule 7).
+     */
+    private static Map<String, Integer> keptFromUse(Blackboard bb, Goal g, String desireId) {
+        Map<String, Integer> out = new java.util.HashMap<>(keptFromOthers(bb, g));
+        Map<String, Integer> all = kept(bb, null, null);
+        KeptAtStart at = bb.fact(KEPT_AT_START_FACT) instanceof KeptAtStart k && desireId.equals(k.desire()) ? k : null;
+        if (at == null && bb.port != null && !desireId.equals(bb.fact(KEPT_AT_START_FACT + ".said"))) {
+            bb.fact(KEPT_AT_START_FACT + ".said", desireId);
+            bb.port.log(g.r.key() + ": no note of the kept amounts at the run's start; its own -d amounts are held whole from its crafts and smelts");
+        }
+        for (var e : all.entrySet()) {
+            int own = e.getValue() - out.getOrDefault(e.getKey(), 0);
+            if (own <= 0) continue;
+            int hold = at == null ? own : Math.min(own, at.own().getOrDefault(e.getKey(), 0));
+            if (hold > 0) out.merge(e.getKey(), hold, Integer::sum);
+        }
+        return out;
     }
 
     public static Map<String, Integer> keptFromOthers(Blackboard bb, Goal g) {
@@ -1532,13 +1595,54 @@ public final class Goals {
             if (bb.port != null) bb.port.log(said.isEmpty() ? "kept for a deposit: nothing now" : "kept for a deposit: " + said + " (the -d amounts) - no other order counts them or uses them as ingredients");
         }
         Map<String, Integer> kept = keptFromOthers(bb, g);
-        if (kept.isEmpty()) return w;
+        // reserves-once (run 3 w070): the planner's placing reserves come from this same store, with what is taken off the bag here left out
+        java.util.Set<Goal> notOff = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+        if (g != null) { notOff.add(g); notOff.addAll(BatchWay.open(bb, g)); }
+        var reserves = bb.in == null || bb.in.bag == null ? List.<baritone.api.process.Reserves.Reserve<String>>of()
+                : plannerReserves(g, finished(bb), bb.in.bag, keptPer(bb), notOff);
+        if (kept.isEmpty()) return w.withReserves(reserves);
         Map<String, Integer> bag = new java.util.LinkedHashMap<>(w.bag());
         for (var e : bag.entrySet()) {
             int k = kept.getOrDefault(Thing.path(e.getKey()), 0);
             if (k > 0) e.setValue(Math.max(0, e.getValue() - k));
         }
-        return w.withBag(bag);
+        return w.withBag(bag).withReserves(reserves);
+    }
+
+    /**
+     * reserves-once (run 3 w070, plan step 1 answer 2: bag mangrove_log 18 and cobblestone 35, other orders' -d amounts 16
+     * and 32, the planner said "0 spare" of 5): what the PLANNER may not place on a way back up, for {@code g}, read from
+     * the one store of kept amounts ({@link #orderReserves} over {@link #keptPer}) and never from the lease's pushed ledger.
+     * The kept amounts of the orders not in {@code notOff} are already off the planner's bag ({@link #keptOff}); so their
+     * kept entries are left out and each finished entry of such an order is lowered by its kept amount (the same items).
+     * What is left: {@code g}'s own target, its own and its trip's kept amounts, and the finished orders' items that no
+     * deposit keeps. Pure; {@code finished} is copied (never lowered here).
+     */
+    public static List<baritone.api.process.Reserves.Reserve<String>> plannerReserves(Goal g, List<Finished> finished, Map<String, Integer> bag,
+                                                                                    List<LineDeposits.Kept> kept, java.util.Collection<Goal> notOff) {
+        java.util.Set<Goal> stay = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+        if (notOff != null) stay.addAll(notOff);
+        Map<Goal, Map<String, Integer>> off = new java.util.IdentityHashMap<>();
+        List<LineDeposits.Kept> keep = new ArrayList<>();
+        if (kept != null) for (LineDeposits.Kept k : kept) {
+            if (stay.contains(k.order())) keep.add(k);
+            else for (var e : k.items().entrySet()) off.computeIfAbsent(k.order(), o -> new java.util.HashMap<>()).merge(e.getKey(), e.getValue(), Integer::sum);
+        }
+        List<Finished> copies = new ArrayList<>();
+        if (finished != null) for (Finished f : finished) {
+            int n = f.n;
+            Map<String, Integer> o = f.order == null ? null : off.get(f.order);
+            if (o != null) {
+                int held = f.group ? Integer.MAX_VALUE : 0, offN = f.group ? Integer.MAX_VALUE : 0;
+                for (String id : f.ids) {
+                    int h = bag.getOrDefault(Thing.path(id), 0), k = o.getOrDefault(Thing.path(id), 0);
+                    if (f.group) { held = Math.min(held, h); offN = Math.min(offN, k); } else { held += h; offN += k; }
+                }
+                n = Math.max(0, Math.min(n, held) - offN);
+            }
+            copies.add(new Finished(f.key, f.ids, n, f.group, f.order));
+        }
+        return orderReserves(g, copies, bag, keep);
     }
 
     /** The goal's chain on the world fact now (null: no world facts yet). */

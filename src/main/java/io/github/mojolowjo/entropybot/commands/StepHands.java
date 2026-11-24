@@ -1740,7 +1740,7 @@ public final class StepHands implements Steps.Hands {
         String me = c.owner();
         return switch (s) {
             case Step.Craft k -> c.stepJob(s.text(), () -> c.crafting.craft(p, k.item() + " " + k.n(), null));
-            case Step.Smelt k -> c.stepJob(s.text(), () -> c.crafting.smelt(p, k.item() + " " + k.n() + (k.here() ? " here" : "")));
+            case Step.Smelt k -> c.stepJob(s.text(), () -> c.crafting.smelt(p, k.item() + " " + k.n() + (k.here() ? " here" : ""), k.fuel()));
             case Step.Cook k -> {
                 String t = io.github.mojolowjo.entropybot.farm.Cooking.smeltText(k.item() + " " + k.n());
                 yield t == null ? now("error: " + s.text() + ": " + io.github.mojolowjo.entropybot.farm.Cooking.USAGE) : c.stepJob(s.text(), () -> c.crafting.smelt(p, t));

@@ -380,6 +380,7 @@ final class SimGame {
     private void run(JobPort.TaskSpec t, long id) {
         say("run " + id + " (" + t.source() + "): " + t.steps().size() + " steps");
         runDesire = t.replan() == null ? null : t.replan().desire();
+        Goals.runStarts(bb, runDesire);                  // as AaRuntime.runTyped: the run's own kept amounts at its start
         var steps = new io.github.mojolowjo.entropybot.aa.moves.Steps(new Hands());
         steps.start(t.chain(), t.steps(), t.uses(), clock.now() / TICK_MS, t.replan() == null ? null : t.replan().planner());
         for (int n = 0; steps.running() && end == null; n++) {
@@ -509,6 +510,20 @@ final class SimGame {
     Map<String, Integer> freeItems() {
         Map<String, Integer> free = new HashMap<>(bag);
         for (var e : Goals.kept(bb, null, null).entrySet()) {
+            String id = e.getKey().contains(":") ? e.getKey() : "minecraft:" + e.getKey();
+            free.computeIfPresent(id, (k, v) -> Math.max(0, v - e.getValue()));
+        }
+        return free;
+    }
+
+    /**
+     * reserves-once (b): as the game's craft and smelt bag (Crafting.planBag over AaRuntime.keptFromUse = Goals.keptForRun
+     * with consume): the bag less what the running order's run may not use up (no order's run: every kept amount).
+     */
+    Map<String, Integer> useItems() {
+        Map<String, Integer> free = new HashMap<>(bag);
+        var kept = runDesire == null ? Goals.kept(bb, null, null) : Goals.keptForRun(bb, runDesire, true, true);
+        for (var e : kept.entrySet()) {
             String id = e.getKey().contains(":") ? e.getKey() : "minecraft:" + e.getKey();
             free.computeIfPresent(id, (k, v) -> Math.max(0, v - e.getValue()));
         }

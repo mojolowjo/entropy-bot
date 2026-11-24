@@ -455,8 +455,9 @@ final class SimSteps {
         for (ItemWorth.Recipe r : ItemWorth.recipes(item)) {
             if (!ItemWorth.CRAFT.equals(r.kind())) continue;
             int batches = (c.n() + r.outCount() - 1) / r.outCount();
-            Map<String, Integer> pay = pay(g.bag, r, batches);
-            if (pay == null) { lacks = r.inputs().toString(); continue; }
+            // reserves-once (b): as the game's craft bag (Crafting.planBag over AaRuntime.keptFromUse): never a kept -d amount
+            Map<String, Integer> pay = pay(g.useItems(), r, batches);
+            if (pay == null) { lacks = r.inputs().toString() + " (the kept -d amounts left out)"; continue; }
             for (var e : pay.entrySet()) g.take(e.getKey(), e.getValue());
             g.give(item, batches * r.outCount());
             return Result.ok(batches * (c.table() ? TABLE_CRAFT_S : CRAFT_S), "made " + batches * r.outCount() + " " + c.item() + " from " + pay);
@@ -533,13 +534,21 @@ final class SimSteps {
             if (!ItemWorth.SMELT.equals(r.kind())) continue;
             // the input from what is free first (the planner planned on the free bag: a kept -d log is not the charcoal's),
             // the whole bag only when the free part cannot pay - as the game's furnace hand would, said in the result
-            Map<String, Integer> pay = pay(g.freeItems(), r, m.n());
+            Map<String, Integer> pay = pay(g.useItems(), r, m.n());
             boolean fromKept = pay == null;
             if (fromKept) pay = pay(g.bag, r, m.n());
             if (pay == null) continue;
-            Map<String, Integer> left = new HashMap<>(g.bag);
+            // reserves-once (b): the fuel from the free bag (never a kept -d amount), the plan's priced fuel first (Step.Smelt.fuel)
+            Map<String, Integer> left = new HashMap<>(fromKept ? g.bag : g.useItems());
             for (var e : pay.entrySet()) left.merge(e.getKey(), -e.getValue(), Integer::sum);
             var fuel = io.github.mojolowjo.entropybot.craft.CraftPlanner.pickFuel(left, m.n());       // the game's own fuel rule
+            if (m.fuel() != null && fuel != null) {
+                var plan = io.github.mojolowjo.entropybot.craft.CraftPlanner.withFuel(new io.github.mojolowjo.entropybot.craft.Crafter.Plan(List.of(
+                        new io.github.mojolowjo.entropybot.craft.Crafter.Smelt(null, item, m.n(), "-", m.n(), fuel.id(), fuel.count())), null),
+                        m.fuel(), left, ItemWorth.fuels(), SMELT_TICKS, g::say);
+                var sm = (io.github.mojolowjo.entropybot.craft.Crafter.Smelt) plan.steps().get(0);
+                fuel = new io.github.mojolowjo.entropybot.craft.CraftPlanner.Fuel(sm.fuel(), sm.fuelCount());
+            }
             if (fuel == null || left.getOrDefault(full(fuel.id()), 0) < fuel.count()) return Result.fail(0, "smelt " + m.item() + ": nothing in the bag burns for " + m.n() + " (CraftPlanner.pickFuel: " + fuel + "); bag " + g.bag);
             Map<String, Integer> burn = Map.of(full(fuel.id()), fuel.count());
             for (var e : pay.entrySet()) g.take(e.getKey(), e.getValue());
