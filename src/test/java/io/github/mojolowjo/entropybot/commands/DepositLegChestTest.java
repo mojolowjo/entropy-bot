@@ -21,6 +21,22 @@ class DepositLegChestTest {
         assertEquals(DepositLeg.Phase.WALK, leg.phase());
     }
 
+    /** Review 2 (fault 2): what a short put moved, per asked key, capped at the ask; untouched keys left out. */
+    @Test
+    void aShortPutCountsWhatWentInPerItem() {
+        var ask = Map.of("cobblestone", 32, "oak_log", 11);
+        var before = java.util.List.of(item("minecraft:cobblestone", 64), item("minecraft:oak_log", 11));
+        var after = java.util.List.of(item("minecraft:cobblestone", 40), item("minecraft:oak_log", 11));
+        var was = DepositLeg.perItem(before, ask);
+        assertEquals(Map.of("cobblestone", 24), DepositLeg.putPerItem(was, after, ask));
+        var gone = java.util.List.<io.github.mojolowjo.entropybot.aa.brain.DepositRule.Item>of();
+        assertEquals(Map.of("cobblestone", 32, "oak_log", 11), DepositLeg.putPerItem(was, gone, ask), "never more than asked");
+    }
+
+    private static io.github.mojolowjo.entropybot.aa.brain.DepositRule.Item item(String id, int n) {
+        return new io.github.mojolowjo.entropybot.aa.brain.DepositRule.Item(id, n, false, false, false, false);
+    }
+
     @Test
     void noChestStillChooses() {
         assertEquals(DepositLeg.Phase.CHOOSE, new DepositLeg(null, new Step.Deposit(OWED), null, null).phase());

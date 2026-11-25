@@ -756,9 +756,12 @@ public final class StepHands implements Steps.Hands {
         if (d.chest() != null) {
             if (c.aaRuntime == null) return "error: deposit: the put to the chest at " + d.chestText() + " has no owed store (aa not loaded)";
             // stage 4 review: the step's items were fixed at the plan; what is owed may have changed since (a line came due,
-            // a take-back) - then fail with the reason and let the goal plan again, never send on its way what is not put
+            // a take-back) - then the put does not start, said, and the goal plans again from what is owed; never send on
+            // its way what is not put. Review 2 (fault 3): not a failed step - a failed Deposit charges the chest's key
+            // (NeedChain.sourceKey), and a stale plan is not the chest's fault. The step ends with nothing put; the owed
+            // amount is untouched, so the deposit goal stays and the run's nothing-gained end is counted failed (FastEnd)
             String differs = c.aaRuntime.putDiffers(d.only());
-            if (differs != null) { deposit = null; return "error: deposit: " + differs; }
+            if (differs != null) { deposit = null; instant = "ok: no put - " + differs; return null; }
             c.aaRuntime.putStarted();
         }
         String[] inst = new String[1];
@@ -769,7 +772,11 @@ public final class StepHands implements Steps.Hands {
 
     private Car.Status depositStatus(LocalPlayer p) {
         Car.Status st = deposit.tick(p);
-        if (st.state() != Car.State.RUNNING) deposit = null;
+        if (st.state() != Car.State.RUNNING) {
+            // review 2 (fault 2): what the planned put moved, so a failed put owes only the rest (AaRuntime.putOver)
+            if (c.aaRuntime != null) c.aaRuntime.putMoved(deposit.putItems());
+            deposit = null;
+        }
         return st;
     }
 

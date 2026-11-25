@@ -396,6 +396,31 @@ final class DepositLeg {
 
     /** deposit-words: the asked items in the bag before the put (the count after reads the same ids). */
     private int onlyBefore;
+    /** Stage 4 review 2: the asked items in the bag before the put, per asked key. */
+    private Map<String, Integer> onlyPerItem = Map.of();
+    /** Stage 4 review 2 (fault 2): what this put moved into the chest, per asked key, capped at the ask (empty: none). */
+    private Map<String, Integer> putItems = Map.of();
+
+    /** Stage 4 review 2: {@link #putItems}, read by StepHands when the leg ends (a failed put that moved some stacks). */
+    Map<String, Integer> putItems() { return putItems; }
+
+    /** Per asked key, the asked items in {@code bag} (DepositRule.onlyInBag of that key alone). */
+    static Map<String, Integer> perItem(List<DepositRule.Item> bag, Map<String, Integer> only) {
+        Map<String, Integer> out = new java.util.TreeMap<>();
+        for (String k : only.keySet()) out.put(k, DepositRule.onlyInBag(bag, Map.of(k, 1)));
+        return out;
+    }
+
+    /** Per asked key, what left the bag since {@code before}, capped at the ask; keys with nothing moved left out. */
+    static Map<String, Integer> putPerItem(Map<String, Integer> before, List<DepositRule.Item> after, Map<String, Integer> only) {
+        Map<String, Integer> out = new java.util.TreeMap<>();
+        for (var e : only.entrySet()) {
+            int went = Math.min(e.getValue(), before.getOrDefault(e.getKey(), 0) - DepositRule.onlyInBag(after, Map.of(e.getKey(), 1)));
+            if (went > 0) out.put(e.getKey(), went);
+        }
+        return out;
+    }
+
     /** deposit-words: split stacks that found no free chest slot, said at the end ("" none). */
     private String splitNote = "";
 
@@ -409,6 +434,7 @@ final class DepositLeg {
         int[] take = DepositRule.takeOnly(stacks, step.only());
         before = DepositRule.onlyToPut(stacks, step.only());
         onlyBefore = DepositRule.onlyInBag(stacks, step.only());
+        onlyPerItem = perItem(stacks, step.only());
         var menu = p.containerMenu;
         var gm = Minecraft.getInstance().gameMode;
         // the bag's slots in bag(p)'s order (0..35), each with its take
@@ -436,6 +462,7 @@ final class DepositLeg {
     private Car.Status count(LocalPlayer p) {
         if (step.only() != null) {
             putN = Math.max(0, onlyBefore - DepositRule.onlyInBag(bag(p), step.only()));
+            putItems = putPerItem(onlyPerItem, bag(p), step.only());
             c.storage.rememberOpen(p);
             Gui.close(p);
             int meant = total(before);

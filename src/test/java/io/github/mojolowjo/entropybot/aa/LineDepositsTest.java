@@ -673,6 +673,70 @@ class LineDepositsTest {
         assertNull(s.deposits.putDiffers(Map.of()));
     }
 
+    /**
+     * Review 2 (fault 1): the put started in task 5 is cancelled mid-walk, then task 6 (a torch order) ends done - its end
+     * never counts the put reached; only task 5's end reads it. The cancel reads it not reached: the items stay owed.
+     */
+    @Test
+    void anotherTasksEndNeverCountsThePutReached() {
+        var dep = new io.github.mojolowjo.entropybot.aa.moves.Step.Deposit(null, Map.of("minecraft:cobblestone", 11), new int[]{0, 64, 0});
+        var craft = new io.github.mojolowjo.entropybot.aa.moves.Step.Craft("torch", 4, false);
+        assertFalse(LineDeposits.putReached(5, 6, true, null), "another task's done end");
+        assertFalse(LineDeposits.putReached(-1, -1, true, null), "no put");
+        assertTrue(LineDeposits.putReached(5, 5, true, null));
+        assertFalse(LineDeposits.putReached(5, 5, false, dep), "failed at the put itself");
+        assertTrue(LineDeposits.putReached(5, 5, false, craft), "failed at a step after the put");
+        assertFalse(LineDeposits.putReached(5, 5, false, null), "failed with no step known");
+
+        OrderLineSim s = new OrderLineSim();
+        Goals.Goal cob = s.order("cobblestone", 32, "b1", true), log = s.order("oak_log", 16, "b1", true);
+        due(s, cob, log, 11);
+        Map<String, Integer> owed = s.deposits.owed();
+        s.deposits.putStarted();
+        int reached = s.deposits.putsReached();
+        s.deposits.putEnded(LineDeposits.putReached(5, 6, true, null), Map.of());   // the cancel's read: not reached
+        assertEquals(owed, s.deposits.owed(), "the items stay owed and kept");
+        assertEquals(reached, s.deposits.putsReached());
+    }
+
+    /** Review 2 (fault 2): a put that failed after moving some stacks owes only the rest, never the whole amount twice. */
+    @Test
+    void aShortPutOwesOnlyTheRest() {
+        OrderLineSim s = new OrderLineSim();
+        Goals.Goal cob = s.order("cobblestone", 32, "b1", true), log = s.order("oak_log", 16, "b1", true);
+        due(s, cob, log, 11);
+        Map<String, Integer> owed = s.deposits.owed();
+        assertFalse(owed.isEmpty());
+        String k = owed.keySet().iterator().next();
+        int n = owed.get(k);
+        s.deposits.putStarted();
+        s.deposits.putEnded(false, Map.of(k, 1));
+        Map<String, Integer> want = new java.util.TreeMap<>(owed);
+        if (n == 1) want.remove(k); else want.put(k, n - 1);
+        assertEquals(want, s.deposits.owed(), "what went in is not owed again");
+        // everything went in though the leg failed late: counted reached
+        int reached = s.deposits.putsReached();
+        s.deposits.putStarted();
+        s.deposits.putEnded(false, s.deposits.owed());
+        assertTrue(s.deposits.owed().isEmpty());
+        assertEquals(reached + 1, s.deposits.putsReached());
+    }
+
+    /** Review 2 (fault 4): the planned put's keys carry "minecraft:" (NeedChain.id); owed's bare fallback key still matches. */
+    @Test
+    void putDiffersComparesByOneNormalisation() {
+        OrderLineSim s = new OrderLineSim();
+        Goals.Goal cob = s.order("cobblestone", 32, "b1", true), log = s.order("oak_log", 16, "b1", true);
+        due(s, cob, log, 11);
+        Map<String, Integer> bare = new java.util.TreeMap<>(), full = new java.util.TreeMap<>();
+        for (var e : s.deposits.owed().entrySet()) {
+            bare.put(e.getKey().replaceFirst("^minecraft:", ""), e.getValue());
+            full.put(io.github.mojolowjo.entropybot.aa.NeedChain.id(e.getKey()), e.getValue());
+        }
+        assertNull(s.deposits.putDiffers(bare));
+        assertNull(s.deposits.putDiffers(full));
+    }
+
     /** Stage 4 review: an escape resume starts the same put again - nothing changed, it still matches. */
     @Test
     void aResumedPutStillMatches() {

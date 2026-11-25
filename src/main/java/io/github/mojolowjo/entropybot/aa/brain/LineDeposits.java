@@ -267,10 +267,54 @@ public final class LineDeposits {
      * from {@link #owed}, so nothing goes on its way that the put does not carry.
      */
     public String putDiffers(Map<String, Integer> only) {
-        Map<String, Integer> now = owed();
-        Map<String, Integer> planned = only == null ? Map.of() : only;
+        // stage 4 review 2 (fault 4): both sides by the one normalisation the step's keys carry (NeedChain.id), so an
+        // owed item whose full id fell back to the bare counted key still matches the planned put
+        Map<String, Integer> now = normal(owed());
+        Map<String, Integer> planned = normal(only == null ? Map.of() : only);
         if (now.equals(planned)) return null;
         return "the deposit owed changed since the plan (planned " + planned + ", owed now " + now + "), planning again";
+    }
+
+    /**
+     * Stage 4 review 2 (faults 1 and 5, the rule apart and replayed): the end of task {@code endedTask} reads the put
+     * started in {@code putTask}; true: the put reached the chest - the run ended done, or failed at a step after the put
+     * (the put's own step is never the failed one then). Another task's end never counts it reached.
+     */
+    public static boolean putReached(long putTask, long endedTask, boolean done, io.github.mojolowjo.entropybot.aa.moves.Step failedAt) {
+        if (putTask < 0 || putTask != endedTask) return false;
+        return done || (failedAt != null && !(failedAt instanceof io.github.mojolowjo.entropybot.aa.moves.Step.Deposit));
+    }
+
+    /** {@code m} keyed by {@link io.github.mojolowjo.entropybot.aa.NeedChain#id} (the step's normalisation), summed. */
+    private static Map<String, Integer> normal(Map<String, Integer> m) {
+        Map<String, Integer> out = new TreeMap<>();
+        for (var e : m.entrySet()) out.merge(io.github.mojolowjo.entropybot.aa.NeedChain.id(e.getKey()), e.getValue(), Integer::sum);
+        return out;
+    }
+
+    /**
+     * Stage 4 review 2 (fault 2: a put that failed after moving some stacks sent the whole amount back to due, and the
+     * re-plan put it twice): the put did not reach the chest whole, and {@code put} (by the step's ids, NeedChain.id; null
+     * or empty: nothing went in) did go in. What went in is taken off the put's amounts first, order by order, so only
+     * the rest is owed again ({@link #failed}); the put counts as reached when nothing is left of it.
+     */
+    public void putEnded(boolean reached, Map<String, Integer> put) {
+        if (reached || !onWay || put == null || put.isEmpty()) { putEnded(reached); return; }
+        Map<String, Integer> left = new TreeMap<>(normal(put));
+        boolean rest = false;
+        for (var d : way.entrySet()) {
+            Map<String, Integer> now = new TreeMap<>();
+            for (var i : d.getValue().entrySet()) {
+                String k = io.github.mojolowjo.entropybot.aa.NeedChain.id(fullId(d.getKey(), i.getKey()));
+                int in = Math.min(i.getValue(), left.getOrDefault(k, 0));
+                if (in > 0) left.merge(k, -in, Integer::sum);
+                if (i.getValue() - in > 0) { now.put(i.getKey(), i.getValue() - in); rest = true; }
+            }
+            d.setValue(now);
+        }
+        way.values().removeIf(Map::isEmpty);
+        if (!rest) { putsReached++; gone(true); return; }
+        failed();
     }
 
     /** The items of {@code maps}' orders summed, by each item's full id ({@link #fullId}) or the bag's key. */

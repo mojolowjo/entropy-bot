@@ -900,7 +900,7 @@ public final class NeedChain {
 
     static String s(double seconds) { return String.format(Locale.ROOT, "%.1f s", seconds); }
 
-    static String id(String w) { return w == null ? null : w.indexOf(':') < 0 ? "minecraft:" + w : w; }
+    public static String id(String w) { return w == null ? null : w.indexOf(':') < 0 ? "minecraft:" + w : w; }
 
     /** The id as the lines and steps write it ("minecraft:torch" -> "torch"; a modded id stays whole). */
     static String sh(String id) { return id == null ? "?" : id.startsWith("minecraft:") ? id.substring(10) : id; }

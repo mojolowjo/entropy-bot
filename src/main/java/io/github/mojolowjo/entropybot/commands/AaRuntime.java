@@ -2840,7 +2840,8 @@ public final class AaRuntime implements JobPort {
         pendingReturnSteps = null;
         // deposit-goal stage 4: the put's end, on this same read - the run ended done, or failed at a step after the put
         // (the put's own step is never the failed one then)
-        putOver(done || (lastEndStep != null && !(lastEndStep instanceof io.github.mojolowjo.entropybot.aa.moves.Step.Deposit)), msg);
+        // review 2 (fault 1): only the end of the task the put started in reads it (putReached)
+        if (putOn && putTask == current) putOver(io.github.mojolowjo.entropybot.aa.brain.LineDeposits.putReached(putTask, current, done, lastEndStep), msg);
     }
 
     /** chop D: the typed step the ended run failed at (read with its end in {@link #poll}). */
@@ -2969,6 +2970,7 @@ public final class AaRuntime implements JobPort {
                 typedEndSeen = true;
                 String line = runner.endNotMine();
                 if (line != null) LOG.info("[entropybot] aa: {}", line);
+                if (putTask == current) putOver(false, "the deposit task lost the runner before its end was read");   // review 2 (fault 1)
                 current = -1;
                 typedStartMs = -1;
                 fastEndSeen = -1;
@@ -3070,6 +3072,7 @@ public final class AaRuntime implements JobPort {
 
     @Override public void cancel(long taskId, String why) {
         if (taskId != current) return;
+        if (putTask == current) putOver(false, "the deposit task was cancelled: " + why);   // review 2 (fault 1)
         current = -1;
         typedStartMs = -1;
         fastEndSeen = -1;                                // 0.39.z60 review 4
@@ -4206,35 +4209,51 @@ public final class AaRuntime implements JobPort {
      * {@link #putStarted} when its step starts (StepHands), cleared when the put's end is read ({@link #putOver}).
      */
     private boolean putOn;
-
     /**
-     * deposit-goal stage 4: the planned put started (StepHands' deposit leg, a chest given): what is owed goes on its way
-     * (LineDeposits.putStarted, the take-back cutoff, open question 4).
+     * Review 2 (fault 1: putOn outlived a cancelled or lost deposit task, and the next task's end counted the put as
+     * reached): the task id the put started in; only that task's end reads the put's end.
      */
+    private long putTask = -1;
+    /** Review 2 (fault 2): what the put's leg moved into the chest when it ended (StepHands), by the step's ids. */
+    private java.util.Map<String, Integer> putMoved = java.util.Map.of();
+
     /** Stage 4 review: LineDeposits.putDiffers - null when the planned put carries what is owed now, else the reason. */
     String putDiffers(java.util.Map<String, Integer> only) { return lineDeposits.putDiffers(only); }
 
+    /**
+     * deposit-goal stage 4: the planned put started (StepHands' deposit leg, a chest given): what is owed goes on its way
+     * (LineDeposits.putStarted, the take-back cutoff, open question 4), tied to the task running now.
+     */
     void putStarted() {
         putOn = true;
+        putTask = current;
+        putMoved = java.util.Map.of();
         lineDeposits.putStarted();
     }
 
+    /** Review 2: the put's leg ended having moved {@code items} (empty: nothing). */
+    void putMoved(java.util.Map<String, Integer> items) { putMoved = items == null ? java.util.Map.of() : items; }
+
     /**
-     * deposit-goal stage 4: the put's end, read once. {@code reached}: its items are in the chest; else they are owed again
-     * (LineDeposits.putEnded false) and the deposit goal plans again. Said (rule 7).
+     * deposit-goal stage 4: the put's end, read once. {@code reached}: its items are in the chest; else what did not go in
+     * is owed again (LineDeposits.putEnded with what the leg moved) and the deposit goal plans again. Said (rule 7).
      */
     private void putOver(boolean reached, String why) {
         if (!putOn) return;
         putOn = false;
-        LOG.info("[entropybot] aa: the line's put {}: {}", reached ? "reached the chest" : "did not reach the chest (its items are owed again)", why);
-        lineDeposits.putEnded(reached);
+        putTask = -1;
+        var moved = putMoved;
+        putMoved = java.util.Map.of();
+        LOG.info("[entropybot] aa: the line's put {}: {}", reached ? "reached the chest"
+                : "did not reach the chest whole (" + (moved.isEmpty() ? "nothing went in" : "went in: " + moved) + "; the rest is owed again)", why);
+        lineDeposits.putEnded(reached, moved);
     }
 
     private void goalsTick(LocalPlayer p, long tick) {
         buildsTick(p, tick);
         // deposit-goal stage 4: no task and the runner idle with a put still open: its end was never read (a stop, a clear,
         // another run took the runner) - the put did not reach the chest, said, and its items are owed again
-        if (putOn && current < 0 && !c.stepRun.running()) putOver(false, "the run ended with no end read (stopped, or another run took the runner)");
+        if (putOn && current != putTask && !c.stepRun.running()) putOver(false, "the run ended with no end read (stopped, or another run took the runner)");
         if (!carrying.isEmpty()) {
             var run = tree.brain.runningDesire();
             for (var it = carrying.iterator(); it.hasNext(); ) {
