@@ -1625,6 +1625,21 @@ public final class NeedChain {
         }
     }
 
+    /**
+     * job-own-aside-worker review (key order): {@code run} with {@code bag} as the bag every resolve in it starts from (as
+     * {@link #offThread} gives the worker its snapshot's), nothing else changed - the client tick's own ask, whose World
+     * with the held -d amount off is made again and so loses the live order (Map.copyOf) the worker keeps.
+     */
+    public static <T> T startingFrom(LinkedHashMap<String, Integer> bag, Supplier<T> run) {
+        LinkedHashMap<String, Integer> wasBag = BAG.get();
+        BAG.set(bag);
+        try {
+            return run.get();
+        } finally {
+            if (wasBag == null) BAG.remove(); else BAG.set(wasBag);
+        }
+    }
+
     /** 0.39.z78 D6: a fact's answer on {@code w} now (the snapshot's copy, the check of a result; {@code x} null: the live extras). */
     public static Object ask(World w, Extras x, PlanNodes.Fact f) { return Facts.ask(w, x == null ? Extras.LIVE : x, f); }
 
@@ -1646,15 +1661,28 @@ public final class NeedChain {
         public static final Read NONE = new Read(Map.of(), Map.of(), Map.of(), null, List.of(), PlanNodes.Stats.NONE, PlanNodes.FactNodes.NONE);
 
         /** The nodes of the resolve's tree a fact that now answers otherwise ({@code live}: the answers asked now) makes dirty; the bag: its root. */
-        public int dirty(Map<PlanNodes.Fact, Object> live, World w) {
+        public int dirty(Map<PlanNodes.Fact, Object> live, World w) { return dirty(live, liveBag(w)); }
+
+        /**
+         * job-own-aside-worker review: {@link #dirty(Map, World)} against {@code start}, the bag the resolve would start from
+         * now in the live order (an own chain's: the live bag less its held -d amount, BatchWay.OwnAsk#bagLess).
+         */
+        public int dirty(Map<PlanNodes.Fact, Object> live, Map<String, Integer> start) {
             Set<PlanNodes.Fact> changed = new java.util.HashSet<>();
             for (var e : facts.entrySet()) if (live.containsKey(e.getKey()) && !Deep.equal(PlanNodes.unboxed(e.getValue()), live.get(e.getKey()))) changed.add(e.getKey());
             int n = nodes.dirty(changed);
-            return n == 0 && bagChanged(w) != null ? 1 : n;
+            return n == 0 && bagChanged(start) != null ? 1 : n;
         }
 
         /** The first bag word that differs on {@code w}'s bag now ("bag minecraft:coal"), null: none. */
-        public String bagChanged(World w) { return NeedChain.bagChanged(liveBag(w), bag, scans, wholeBag); }
+        public String bagChanged(World w) { return bagChanged(liveBag(w)); }
+
+        /**
+         * job-own-aside-worker review (key order: a World made again re-orders its bag, and the scans and the whole bag are
+         * compared in order): the first bag word that differs on {@code start}, the bag the resolve would start from now in
+         * the live order; null: none.
+         */
+        public String bagChanged(Map<String, Integer> start) { return NeedChain.bagChanged(start, bag, scans, wholeBag); }
 
         /** Runs the kept effects (the strip yield facts, the ranked-out walks) on the client tick, {@code path} the live provider. */
         public void runEffects(PathPrice path) { for (PlanNodes.Effect e : effects) e.run(path); }

@@ -207,7 +207,7 @@ public final class PlannerPort implements BatchWay.Planner {
                 laps.split("apply", System.nanoTime() - a0);
                 s.applied = r;
                 s.appliedLive = take ? new HashMap<>(live) : null;     // job-planner-stick: a taken answer is kept on the facts it was taken on
-                s.appliedBag = take ? NeedChain.liveBag(bagWorld(r.job(), w)) : null;
+                s.appliedBag = take ? startBag(r.job(), w) : null;
                 s.appliedPb = pb;
                 s.appliedKept = Set.copyOf(kept);
                 s.appliedOwn = own;
@@ -230,7 +230,7 @@ public final class PlannerPort implements BatchWay.Planner {
             // 2026-10-27; runs DQ/DR: the fallback's full resolve on the client tick was the 870 ms tick, 16 of them in DR):
             // past it the trip is never resolved on the client tick - it stands with the reason (rule 22; its leaf is "not
             // priced yet", rule 15), said loud once a streak, and asks the worker again as on any drop
-            s.waitWords = "thinking: " + (data ? r.read().dirty(live, bagWorld(r.job(), w)) + " nodes dirty" : "the game data changed");
+            s.waitWords = "thinking: " + (data ? r.read().dirty(live, startBag(r.job(), w)) + " nodes dirty" : "the game data changed");
             if (++s.dropsInRow >= ROUNDS) {
                 // review (b): nothing else bounds this stand (its AwaitPaths re-prices every pathCost.firstAnswerWaitS, a price
                 // fact, never a park) - the reason is said again every RESAY_S while the streak lasts
@@ -318,18 +318,23 @@ public final class PlannerPort implements BatchWay.Planner {
             out.add((r.job().snap().copied(f) ? "" : MISS) + f.field() + (f.key() == null ? "" : " " + f.key()) + ": " + brief(kept) + " -> " + brief(now));
         }
         // job-own-aside-worker: an own chain read the bag less its held -d amount (PlannerWorker.resolve): compared like with like
-        NeedChain.World bw = bagWorld(r.job(), w);
-        String bag = r.read().bagChanged(bw);
-        if (bag != null && baseBag != null && NeedChain.liveBag(bw).equals(baseBag)) bag = null;      // the bag of the take, unchanged since
+        Map<String, Integer> start = startBag(r.job(), w);
+        String bag = r.read().bagChanged(start);
+        if (bag != null && baseBag != null && start.equals(baseBag)) bag = null;      // the bag of the take, unchanged since
         if (bag != null) out.add(bag);
         return out;
     }
 
     /**
-     * job-own-aside-worker: the World whose bag a result of {@code j} is checked against - {@code w} for the trip's legs,
-     * {@code w} with the order's own held -d amount off (OwnAsk.pricedOn) for an own chain, the bag its resolve started from.
+     * job-own-aside-worker: the bag a result of {@code j} is checked against, the one its resolve would start from now -
+     * {@code w}'s live bag for the trip's legs, that bag less the order's own held -d amount (OwnAsk.bagLess, as
+     * PlannerWorker.resolve gives it) for an own chain. Review (key order): lowered in the live order, never through a World
+     * made again (OwnAsk.pricedOn: Map.copyOf re-orders the keys, and the scans and the whole bag are compared in order).
      */
-    static NeedChain.World bagWorld(PlannerWorker.Job j, NeedChain.World w) { return j == null || j.own() == null ? w : j.own().pricedOn(w); }
+    static java.util.LinkedHashMap<String, Integer> startBag(PlannerWorker.Job j, NeedChain.World w) {
+        java.util.LinkedHashMap<String, Integer> live = NeedChain.liveBag(w);
+        return j == null || j.own() == null ? live : j.own().bagLess(live);
+    }
 
     /** structural: a fact's value in the drop line is cut past this many characters (a list of cells can run long) */
     static final int BRIEF = 160;

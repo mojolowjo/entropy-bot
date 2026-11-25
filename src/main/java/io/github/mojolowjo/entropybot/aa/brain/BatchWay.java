@@ -99,9 +99,19 @@ public final class BatchWay {
          * (bag key to count, Goals.ownAside: the order's own held -d amount) is taken off {@code w}'s bag first, so the worker
          * and the tick price the same world and {@code n} is already the rest.
          */
-        public NeedChain.Chain resolve(NeedChain.World w) {
+        public NeedChain.Chain resolve(NeedChain.World w) { return resolve(w, w == null ? null : NeedChain.liveBag(w)); }
+
+        /**
+         * job-own-aside-worker review (key order): {@link #resolve(NeedChain.World)} with {@code liveOrder} the bag of
+         * {@code w} in the live World's order (the tick: NeedChain.liveBag of the live World; the worker: its snapshot's
+         * bag). The resolve starts from {@link #bagLess} of it, never from the bag of {@link #pricedOn}'s World made again
+         * (Map.copyOf re-orders it): the first fuel or pickaxe a scan finds is the same whoever resolves.
+         */
+        public NeedChain.Chain resolve(NeedChain.World w, Map<String, Integer> liveOrder) {
             NeedChain.World on = pricedOn(w);
-            return group ? NeedChain.resolveAll(what, ids, n, on) : NeedChain.resolve(what, n, on);
+            java.util.function.Supplier<NeedChain.Chain> run = () -> group ? NeedChain.resolveAll(what, ids, n, on) : NeedChain.resolve(what, n, on);
+            if (aside.isEmpty() || liveOrder == null) return run.get();
+            return NeedChain.startingFrom(bagLess(liveOrder), run);
         }
 
         /** The world {@link #resolve} prices on: {@code w} with {@code aside} off its bag. */

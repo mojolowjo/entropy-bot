@@ -67,7 +67,7 @@ public final class PlannerWorker {
             // job-own-aside-worker (worlds run 4, w003 and six more): an own chain starts from the bag less the order's own held
             // -d amount (OwnAsk.bagLess, the lowering the tick's OwnAsk.pricedOn makes); the snapshot's bag itself stays whole
             NeedChain.Legs l = NeedChain.offThread(j.snap().extras(), j.own() != null ? j.own().bagLess(j.snap().bag()) : j.snap().bag(),
-                    () -> j.own() != null ? new NeedChain.Legs(j.own().resolve(j.snap().world()), Map.of(), -1)
+                    () -> j.own() != null ? new NeedChain.Legs(j.own().resolve(j.snap().world(), j.snap().bag()), Map.of(), -1)
                             : NeedChain.keepingFuel(j.keptFuel(), () -> NeedChain.resolvePlaybookLegs(j.pb(), j.snap().world())));
             return new Done(j, l, NeedChain.lastRead(), System.nanoTime() - t0, null, start, NeedChain.dataEpoch(j.snap().world()));
         } catch (RuntimeException | Error e) {        // rule 7: any failure is posted and said by the port, never a dead thread
