@@ -176,4 +176,61 @@ class NeedChainDepositTest {
         assertTrue(free.ok(), free.why());
         assertTrue(free.why().contains("with 30 spare blocks"), free.why());
     }
+
+    static int reservedFor(List<baritone.api.process.Reserves.Reserve<String>> rs, String path) {
+        int n = 0;
+        for (var r : rs) for (String m : r.members) if (io.github.mojolowjo.entropybot.aa.brain.Thing.path(m).equals(path)) { n += r.units; break; }
+        return n;
+    }
+
+    @Test
+    void anOtherReserveOfTheOwedItem_theOwedAmountIsToppedUpWhole() {
+        // review: a finished no-word cobblestone order at 10 is other demand - the owed 32 is reserved on top of it
+        var other = List.of(io.github.mojolowjo.entropybot.aa.moves.Reservations.order("cobblestone (finished)", List.of("minecraft:cobblestone"), 10));
+        var rs = NeedChain.owedReserves(other, Map.of("minecraft:cobblestone", 32));
+        assertEquals(42, reservedFor(rs, "cobblestone"), rs.toString());
+        // the deposit's own kept entry counts once: nothing added
+        var kept = List.of(io.github.mojolowjo.entropybot.aa.moves.Reservations.order("cobblestone" + NeedChain.KEPT_FOR_DEPOSIT, List.of("minecraft:cobblestone"), 32));
+        assertEquals(32, reservedFor(NeedChain.owedReserves(kept, Map.of("minecraft:cobblestone", 32)), "cobblestone"));
+        // a smaller kept entry is topped up to the owed amount
+        var small = List.of(io.github.mojolowjo.entropybot.aa.moves.Reservations.order("cobblestone" + NeedChain.KEPT_FOR_DEPOSIT, List.of("minecraft:cobblestone"), 20));
+        assertEquals(32, reservedFor(NeedChain.owedReserves(small, Map.of("minecraft:cobblestone", 32)), "cobblestone"));
+    }
+
+    @Test
+    void anOtherReserveOfTheOwedBlock_theClimbNeverUsesTheOwedBlocks() {
+        // 42 dirt, 10 reserved by another order, 32 owed: no spare dirt for the pillar
+        var w = world(Map.of("minecraft:dirt", 42), under(), PathPrice.Answer.unreachable("no path"), priced(10), UP_HELD)
+                .withReserves(List.of(io.github.mojolowjo.entropybot.aa.moves.Reservations.order("dirt (finished)", List.of("minecraft:dirt"), 10)));
+        Chain c = NeedChain.deposit(Map.of("minecraft:dirt", 32), CHEST, w);
+        assertTrue(c.why().contains("with 0 spare blocks") && c.why().contains("kept dirt lent"), "the owed dirt is never spare, only lent: " + c.why());
+    }
+
+    @Test
+    void onTheSurface_chunksNotLoadedIsRankedOnBaritonesEstimate() {
+        ScenariosTest.world("wooden", "stone");
+        PathPrice pp = new PathPrice() {
+            @Override public Answer price(int x, int y, int z, double d) { return x == 100 ? Answer.chunks("not loaded") : priced(5); }
+            @Override public double estimate(int x, int y, int z) { return x == 100 ? 33 : Double.NaN; }
+        };
+        var w = world(Map.of(), top(), priced(1), priced(5), List.of()).withPath(pp);
+        Chain c = NeedChain.deposit(OWED, CHEST, w);
+        assertTrue(c.ok(), c.why());
+        assertEquals(33, c.seconds(), 0.1, c.why());
+        assertTrue(c.why().contains("Baritone's estimate"), c.why());
+    }
+
+    @Test
+    void underGround_aChestWalkStillComputing_nextToAPricedWalkUp() {
+        // choose(): the priced walk up wins at once; the chest walk's pending answer is not the wait here (stage 3 settles it)
+        Chain c = NeedChain.deposit(OWED, CHEST, world(Map.of("minecraft:dirt", 64), under(), PathPrice.Answer.computing("queued"), priced(10), List.of()));
+        assertTrue(c.ok(), c.why());
+        assertEquals(List.of(new Step.ToSurface(0, 70, 0)), c.steps(), c.why());
+    }
+
+    @Test
+    void aNearbyCellsHeldKey_doesNotHoldTheChest() {
+        Chain c = NeedChain.deposit(OWED, new MainChest.Known(100, 70, 3, 0), world(Map.of(), top(), priced(20), priced(5), List.of(NeedChain.stationKey(100, 70, 30) + ": no chest block there")));
+        assertTrue(c.ok(), c.why());
+    }
 }

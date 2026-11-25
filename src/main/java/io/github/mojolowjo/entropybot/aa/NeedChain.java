@@ -2666,14 +2666,26 @@ public final class NeedChain {
         return root("deposit", java.util.Arrays.asList(owed, chest), w2, c -> depositIn(c, owed, chest), NeedChain::fresh);
     }
 
-    /** deposit-goal stage 2: the reserve table with an ORDER reserve for each owed item no reserve names yet (counted once). */
+    /** The owner suffix of a -d amount's own reserve (Goals.orderReserves): the deposit's kept entry. */
+    static final String KEPT_FOR_DEPOSIT = " (kept for a deposit)";
+
+    /**
+     * deposit-goal stage 2: the reserve table with each owed item reserved whole. Only the deposit's own kept entries
+     * ({@link #KEPT_FOR_DEPOSIT}) count toward the owed amount (counted once); any other reserve naming the item (another
+     * order, a step, a group) is other demand, so the owed amount is topped up on top of it (review: a -d amount reaches
+     * the chest whole, owner 2026-11-13).
+     */
     static List<baritone.api.process.Reserves.Reserve<String>> owedReserves(List<baritone.api.process.Reserves.Reserve<String>> rs, Map<String, Integer> owed) {
         List<baritone.api.process.Reserves.Reserve<String>> out = new ArrayList<>(rs == null ? List.of() : rs);
         for (var e : owed.entrySet()) {
             String p = io.github.mojolowjo.entropybot.aa.brain.Thing.path(e.getKey());
-            boolean named = false;
-            for (var r : out) for (String m : r.members) if (io.github.mojolowjo.entropybot.aa.brain.Thing.path(m).equals(p)) named = true;
-            if (!named) out.add(io.github.mojolowjo.entropybot.aa.moves.Reservations.order("deposit " + sh(e.getKey()), List.of(e.getKey()), e.getValue()));
+            int own = 0;
+            for (var r : out) {
+                if (r.kind != baritone.api.process.Reserves.Kind.ORDER || r.whole() || r.owner == null || !r.owner.endsWith(KEPT_FOR_DEPOSIT)) continue;
+                for (String m : r.members) if (io.github.mojolowjo.entropybot.aa.brain.Thing.path(m).equals(p)) { own += r.units; break; }
+            }
+            int top = e.getValue() - own;
+            if (top > 0) out.add(io.github.mojolowjo.entropybot.aa.moves.Reservations.order("deposit " + sh(e.getKey()), List.of(e.getKey()), top));
         }
         return out;
     }
@@ -2699,8 +2711,7 @@ public final class NeedChain {
         boolean under = over != null && (over.depth() >= AaLadder.surfaceDepth() || over.hole() && over.depth() > 0);   // the explore's test (rule 22)
         String overWhy = over == null ? "the surface over the bot is not known (its column is not loaded; rule 15: not known is never on the surface)" : null;
         String key = stationKey(x, y, z);
-        String held = null;
-        if (c.w.held() != null) for (String h : c.w.held()) if (h.equals(key) || h.startsWith(key + ":")) { held = h; break; }
+        String held = heldExact(c, key);
         List<Alt> ways = new ArrayList<>();
         List<String> notOffered = new ArrayList<>();
         if (held != null) notOffered.add("the walk to the main chest at " + x + " " + y + " " + z + " is held (" + held + ")");
@@ -2760,8 +2771,14 @@ public final class NeedChain {
         }
         if (!strict && wk.kind() == PathPrice.Kind.CHUNKS && feet != null) {
             c.fail = null;
-            double es = io.github.mojolowjo.entropybot.aa.brain.Unit.seconds(dist);
-            wk = new Walked(es, "walk ~" + s(es) + " (" + RANKED + ", not priced: chunks not loaded, the straight " + Math.round(dist) + " m)", null, PathPrice.Kind.ESTIMATED);
+            PathPrice pp = c.w.path();
+            double be = pp == null ? Double.NaN : pp.estimate(x, y, z);        // rule 18 amended (run JAC): Baritone's heuristic first
+            if (!Double.isNaN(be) && be >= 0)
+                wk = new Walked(be, "walk ~" + s(be) + " (" + RANKED + ", not priced: chunks not loaded, Baritone's estimate)", null, PathPrice.Kind.ESTIMATED);
+            else {
+                double es = io.github.mojolowjo.entropybot.aa.brain.Unit.seconds(dist);   // rule 15: no estimate here - the straight metres, said
+                wk = new Walked(es, "walk ~" + s(es) + " (" + RANKED + ", not priced: chunks not loaded, no Baritone estimate, the straight " + Math.round(dist) + " m)", null, PathPrice.Kind.ESTIMATED);
+            }
         }
         if (c.fail != null) return null;
         if (wk.seconds() > 0) c.steps.add(new Step.ToStation(kind, label, x, y, z));
@@ -6784,11 +6801,7 @@ public final class NeedChain {
     }
 
     /** A source key held for the order (World.held's "key: why" lines). */
-    private static boolean heldKey(Ctx c, String key) {
-        if (c.w.held() == null) return false;
-        for (String h : c.w.held()) if (h.startsWith(key + ": ")) return true;
-        return false;
-    }
+    private static boolean heldKey(Ctx c, String key) { return heldExact(c, key) != null; }
 
     /**
      * The strip way's price (rule 14, rough; STRIP_MINING "third version"): the pickaxe the ores ask for first (StepNeeds'
@@ -7627,6 +7640,13 @@ public final class NeedChain {
     private static String heldLine(Ctx c, String prefix) {
         if (c.w.held() == null) return null;
         for (String h : c.w.held()) if (h.startsWith(prefix)) return h;
+        return null;
+    }
+
+    /** The held line of exactly {@code key} ("key" or "key: why"; "station at 1 2 3" never matches "station at 1 2 30"), null: none. */
+    private static String heldExact(Ctx c, String key) {
+        if (c.w.held() == null) return null;
+        for (String h : c.w.held()) if (h.equals(key) || h.startsWith(key + ":")) return h;
         return null;
     }
 
