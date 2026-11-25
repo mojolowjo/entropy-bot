@@ -37,19 +37,29 @@ public final class PutWatch {
     /**
      * The planned put's step started: what is owed goes on its way (LineDeposits.putStarted, the take-back cutoff).
      * {@code starting}: it runs inside a NEW task's start, whose id is not given yet - pending until {@link #taskStarted};
-     * else it belongs to {@code current}, the task running now (a re-plan or a resume inside it).
+     * else it belongs to {@code current}, the task running now (a re-plan or a resume inside it). Returns the line of an
+     * earlier put of another task that ended lost here (review 7), null: none.
      */
-    public void started(long current, boolean starting) {
+    public String started(long current, boolean starting) {
         // review 4 (point 3): the same task starting the put again (an escape resume, an in-run re-plan that splices a new
         // Deposit) keeps what its earlier legs moved; the leg's own count starts afresh
         boolean again = on && !pending && !starting && task == current;
+        String line = null;
         if (again) legEnded();                       // review 5: a leg whose end was not read comes off the owed amount now
-        else earlier = Map.of();
+        else if (on) {
+            // review 7 (point 3, rule 7): a put still on for another task (or still pending) whose end was never read: it
+            // ends here as lost, with what it moved (that part counts for its orders), the rest owed again and carried by
+            // this put; said, never cleared silently
+            line = over(false, "a new put started (" + (starting ? "a new task's start" : "task " + current) + ") before the end of "
+                    + (pending ? "the pending put" : "task " + task + "'s put") + " was read");
+        }
+        earlier = again ? earlier : Map.of();
         on = true;
         pending = starting;
         task = starting ? -1 : current;
         moved = Map.of();
         deposits.putStarted();
+        return line;
     }
 
     /** Review 4 (point 3): what the earlier legs of this same put moved. */

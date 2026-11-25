@@ -14,7 +14,6 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.component.DataComponents;
-import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.tags.ItemTags;
 import net.minecraft.world.inventory.ClickType;
 import net.minecraft.world.inventory.Slot;
@@ -351,27 +350,43 @@ final class DepositLeg {
     private Car.Status use(LocalPlayer p) {
         JobHands.Result r = c.storage.use(chest);
         if (r.running()) return Car.Status.running("deposit: to the chest at " + DepositRule.at(chest) + " - " + r.why());
-        if (!isContainer(chest)) {
+        String blockId = Crafting.blockIdLoaded(chest);
+        if (goneAt(blockId)) {
             String why = DepositRule.gone(chest);
             io.github.mojolowjo.entropybot.clear.OwnStations.forget(chest[0], chest[1], chest[2], why);
             c.nearby.forget();
             return Car.Status.failed("deposit: " + why);
         }
+        String unknown = notKnownWords(blockId);
+        if (unknown != null && !unknown.equals(saidUnknown)) {
+            saidUnknown = unknown;
+            LOG.info("[entropybot] deposit: the chest at {}: {}", DepositRule.at(chest), unknown);
+        }
+        if (r.failed() && unknown != null) return Car.Status.failed("deposit: chest at " + DepositRule.at(chest) + ": " + r.why() + " (" + unknown + ")");
         if (r.failed()) return Car.Status.failed("deposit: chest at " + DepositRule.at(chest) + ": " + r.why());
         if (!Gui.open(p)) return Car.Status.running("deposit: waiting for the chest at " + DepositRule.at(chest) + " to open");
         phase = Phase.PUT;
         return Car.Status.running("deposit: chest at " + DepositRule.at(chest) + " open");
     }
 
-    private Boolean isContainerOrNull(int[] at) {
-        var lv = Minecraft.getInstance().level;
-        BlockPos q = new BlockPos(at[0], at[1], at[2]);
-        if (lv == null || !lv.isLoaded(q)) return null;
-        return io.github.mojolowjo.entropybot.clear.OwnStations.container(BuiltInRegistries.BLOCK.getKey(lv.getBlockState(q).getBlock()).toString());
+    /** Review 7: the not-known words said once per change (rule 7). */
+    private String saidUnknown;
+
+    /**
+     * Review 7 (point 1, rules 15 and 23): the chest's block {@code blockId} (null: its chunk is not loaded) is known to be
+     * no container, by the one reader (ItemWorth.containerOf). Not loaded (the chunk, or the item data at join or during a
+     * recipe reload) is never gone: its station record is not forgotten for it.
+     */
+    static boolean goneAt(String blockId) {
+        return blockId != null && io.github.mojolowjo.entropybot.aa.brain.ItemWorth.containerOf(blockId) == io.github.mojolowjo.entropybot.aa.brain.ItemWorth.Container.NO;
     }
 
-    private boolean isContainer(int[] at) {
-        return !Boolean.FALSE.equals(isContainerOrNull(at));
+    /** Review 7: why the chest's block is not known as a container now ({@code blockId} null: the chunk), or null when it is known. */
+    static String notKnownWords(String blockId) {
+        if (blockId == null) return "its chunk is not loaded: whether it is still a container is not known";
+        if (io.github.mojolowjo.entropybot.aa.brain.ItemWorth.containerOf(blockId) == io.github.mojolowjo.entropybot.aa.brain.ItemWorth.Container.NOT_LOADED)
+            return "the item data is not loaded yet: whether " + blockId + " is a container is not known (the menu opening is the game's answer)";
+        return null;
     }
 
     /** Every bag stack outside the kept set goes in by QUICK_MOVE (the game moves it into the chest's free room). */
@@ -423,8 +438,23 @@ final class DepositLeg {
         return out;
     }
 
+    /**
+     * Review 7 (point 4): per asked key, what of the ask the bag held and did not go in ({@code before}: the bag's count per
+     * key before the put; {@code put}: what went in); keys with nothing refused left out.
+     */
+    static Map<String, Integer> refused(Map<String, Integer> before, Map<String, Integer> put, Map<String, Integer> only) {
+        Map<String, Integer> out = new java.util.TreeMap<>();
+        for (var e : only.entrySet()) {
+            int n = Math.min(e.getValue(), before.getOrDefault(e.getKey(), 0)) - put.getOrDefault(e.getKey(), 0);
+            if (n > 0) out.put(e.getKey(), n);
+        }
+        return out;
+    }
+
     /** deposit-words: split stacks that found no free chest slot, said at the end ("" none). */
     private String splitNote = "";
+    /** Review 7 (point 6): the menu's state id right after the put's clicks (a server correction changes it). */
+    private int clickState;
 
     /**
      * deposit-words (owner 2026-11-08): exactly the asked counts. A whole stack within the count goes by QUICK_MOVE; the one
@@ -457,8 +487,14 @@ final class DepositLeg {
         }
         splitNote = stayed > 0 ? " (" + stayed + " of a split stack stayed: no empty chest slot for it)" : "";
         // review 4 (point 2): what the clicks moved, read from the bag at once (the client applies the clicks as it sends
-        // them), so a cancel, a preempt or a lost runner before the count a tick later still knows what is in the chest;
-        // the count reads it again from the bag the server confirmed
+        // them), so a cancel, a preempt or a lost runner before the count a tick later still knows what is in the chest.
+        // Review 7 (point 6), known limit: this read is the client's PREDICTION; a click the server rejects is undone only
+        // when its correction arrives, so until then this may count more than went in. The game gives no positive answer to
+        // a container click (vanilla ServerGamePacketListenerImpl.handleContainerClick takes the client's predicted slots as
+        // the remote state and sends only slots that differ, with a new state id; a click it accepts sends nothing). So the
+        // mod cannot know "accepted", only "corrected": the state id is kept here and the count says when it changed (the
+        // server corrected the slots; the count then reads the corrected bag). A correction later than the count is not seen.
+        clickState = menu.getStateId();
         putItems = putPerItem(onlyPerItem, bag(p), step.only());
         // handed over now: the runtime's cancel reads the put before the hands are cancelled (AaRuntime.cancel)
         if (c.aaRuntime != null) c.aaRuntime.putMoved(putItems);
@@ -469,6 +505,9 @@ final class DepositLeg {
     /** One tick later: what is left, the chest noted, closed; the order's deposits saved. */
     private Car.Status count(LocalPlayer p) {
         if (step.only() != null) {
+            int stateNow = p.containerMenu.getStateId();
+            if (stateNow != clickState)
+                LOG.info("[entropybot] deposit: the server corrected the chest's slots after the clicks (state id {} -> {}): the count reads the corrected bag", clickState, stateNow);
             putN = Math.max(0, onlyBefore - DepositRule.onlyInBag(bag(p), step.only()));
             putItems = putPerItem(onlyPerItem, bag(p), step.only());
             int freeSlots = 0;                       // review 6: the chest's empty slots as the count saw them
@@ -478,7 +517,7 @@ final class DepositLeg {
             int meant = total(before);
             // review 5: a split that stayed for lack of an empty slot is a full chest too, so the full words always go
             // (MainChestHold.refusal reads them; without them the goal parked as a PLACE park and walked back without end)
-            if (putN < meant) return Car.Status.failed(DepositRule.shortWords(putN, meant, chest, Step.Deposit.onlyText(step.only()), splitNote, freeSlots));
+            if (putN < meant) return Car.Status.failed(DepositRule.shortWords(putN, meant, chest, Step.Deposit.onlyText(step.only()), splitNote, freeSlots, refused(onlyPerItem, putItems, step.only())));
             // asked-not-put (run JBO-T1 22:54:30: "deposited 4 items ... (cobblestone 17, spruce_log 3, torch 4)" - the bag held
             // 4 of the 24 asked; rule 7): the list is what was ASKED; when the bag held fewer, the line says so
             int asked = step.only().values().stream().mapToInt(Integer::intValue).sum();

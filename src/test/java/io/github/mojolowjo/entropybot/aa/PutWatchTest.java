@@ -200,7 +200,7 @@ class PutWatchTest {
     void aShortPutWithASplitThatStayed_isAFullChestHold() {
         int[] c = {3, 64, -5};
         String words = io.github.mojolowjo.entropybot.aa.brain.DepositRule.shortWords(0, 32, c, "cobblestone 32",
-                " (32 of a split stack stayed: no empty chest slot for it)", 0);
+                " (32 of a split stack stayed: no empty chest slot for it)", 0, Map.of("cobblestone", 32));
         var h = io.github.mojolowjo.entropybot.aa.brain.MainChestHold.refusal(words);
         assertNotNull(h, words);
         assertEquals(io.github.mojolowjo.entropybot.aa.brain.MainChestHold.Kind.FULL, h.kind());
@@ -209,15 +209,37 @@ class PutWatchTest {
         assertTrue(h.why().contains("is full"), h.why());
     }
 
-    /** Review 6: a short put whose chest still showed empty slots is held, and its words do not call it full. */
+    /**
+     * Review 6, review 7 (point 4): a short put whose chest still showed empty slots says what is true - refused N items
+     * while it showed M empty slots, never "full" - and its hold is not lifted by room shown, only by the owner's word, a
+     * new main chest, or the refused kind no longer owed.
+     */
     @Test
-    void aShortPutWithRoomShown_isHeldAsRefusing_notFull() {
+    void aShortPutWithRoomShown_isHeldAsRefusing_notFull_andLiftsOnlyByWhatCanHappen() {
         int[] c = {3, 64, -5};
-        String words = io.github.mojolowjo.entropybot.aa.brain.DepositRule.shortWords(10, 32, c, "cobblestone 32", "", 4);
-        var h = io.github.mojolowjo.entropybot.aa.brain.MainChestHold.refusal(words);
-        assertNotNull(h, words);
+        String words = io.github.mojolowjo.entropybot.aa.brain.DepositRule.shortWords(10, 32, c, "cobblestone 32", "", 4, Map.of("cobblestone", 22));
+        assertFalse(words.contains("full"), words);
+        assertTrue(words.contains("chest at 3 64 -5 refused 22 items (cobblestone 22) while it showed 4 empty slots"), words);
+        var store = new io.github.mojolowjo.entropybot.aa.brain.MainChestHold();
+        String rec = store.refused("deposit: " + words);
+        assertNotNull(rec);
+        var h = store.hold();
+        assertEquals(io.github.mojolowjo.entropybot.aa.brain.MainChestHold.Kind.REFUSED, h.kind());
         assertFalse(h.why().contains("is full"), h.why());
-        assertTrue(h.why().contains("refused the last put while it showed 4 empty slots"), h.why());
+        assertTrue(h.why().contains("refused 22 of the last put (cobblestone 22) while it showed 4 empty slots"), h.why());
+        assertEquals(java.util.Set.of("minecraft:cobblestone"), h.items());
+        assertNull(store.roomSeen(3, 64, -5, 4), "room shown cannot lift it: it showed room when it refused");
+        var known = new io.github.mojolowjo.entropybot.aa.brain.MainChest.Known(3, 64, -5);
+        assertInstanceOf(io.github.mojolowjo.entropybot.aa.brain.MainChest.Held.class, store.apply(known, java.util.Set.of("minecraft:cobblestone")).answer(), "still owed: held");
+        assertInstanceOf(io.github.mojolowjo.entropybot.aa.brain.MainChest.Held.class, store.apply(known, null).answer(), "owed not known: held");
+        var lifted = store.apply(known, java.util.Set.of("minecraft:oak_log"));
+        assertEquals(known, lifted.answer(), "the refused kind is no longer owed: lifted");
+        assertTrue(lifted.line().contains("none of the refused items is owed any more"), lifted.line());
+        // the owner's word and a new main chest lift it too
+        store.refused("deposit: " + words);
+        assertNotNull(store.lift("the owner set the main chest"));
+        store.refused("deposit: " + words);
+        assertEquals(new io.github.mojolowjo.entropybot.aa.brain.MainChest.Known(9, 64, 9), store.apply(new io.github.mojolowjo.entropybot.aa.brain.MainChest.Known(9, 64, 9), java.util.Set.of("minecraft:cobblestone")).answer());
     }
 
     /** Review 6 (rule 7): a gone chest recorded by the reader, then by the put's words, is one hold, said once. */
@@ -228,15 +250,77 @@ class PutWatchTest {
         assertNull(hold.refused("deposit: chest at 3 64 -5 gone"));
     }
 
+    /** Review 7 (point 3, rule 7): another task's start ends the earlier put as lost, said, with what it moved counted. */
     @Test
-    void anotherTaskStartingAPut_startsItsCountAfresh() {
+    void anotherTaskStartingAPut_endsTheEarlierAsLost_saidWithWhatItMoved() {
+        Line l = due();
+        LineDeposits d = l.s().deposits;
+        Map<String, Integer> owed = d.owed();
+        PutWatch w = new PutWatch(d);
+        String k = owed.keySet().iterator().next();
+        assertNull(w.started(TASK, false), "nothing on before: nothing to say");
+        w.moved(Map.of(k, 1));
+        String line = w.started(OTHER, false);
+        assertNotNull(line, "the overwritten put is said");
+        assertTrue(line.contains("did not reach the chest whole") && line.contains("went in: {" + k + "=1}") && line.contains("task 7"), line);
+        assertTrue(w.movedSoFar().isEmpty(), "the new put's count starts afresh");
+        assertEquals(OTHER, w.task());
+        Map<String, Integer> want = new java.util.TreeMap<>(owed);
+        if (owed.get(k) == 1) want.remove(k); else want.put(k, owed.get(k) - 1);
+        assertEquals(want, d.owed(), "the one that went in is not owed again; the rest rides with the new put");
+        assertNotNull(w.ended(OTHER, true, null, "ok"));
+        assertTrue(d.owed().isEmpty());
+    }
+
+    /** Review 7 (point 3): a pending put overwritten by another new task's start is ended lost too, said. */
+    @Test
+    void aPendingPutOverwrittenByANewStart_isSaid() {
         Line l = due();
         PutWatch w = new PutWatch(l.s().deposits);
-        String k = l.s().deposits.owed().keySet().iterator().next();
+        w.started(PREVIOUS, true);
+        String line = w.started(PREVIOUS, true);
+        assertNotNull(line);
+        assertTrue(line.contains("the pending put"), line);
+        assertTrue(w.on());
+    }
+
+    /**
+     * Review 7 (point 2): a second start in one task while a remainder is on its way, after the order came due again,
+     * adds the new due amount to the remainder; nothing is replaced, so the chest gets the whole amount.
+     */
+    @Test
+    void aSecondStartInOneTask_addsWhatCameDue_toTheRemainderOnItsWay() {
+        OrderLineSim s = new OrderLineSim();
+        LineDeposits d = s.deposits;
+        Goals.Goal cob = s.order("cobblestone", 32, "b2", true);
+        s.bag.put("cobblestone", 20);
+        cob.parked = "the explore from here froze";
+        assertEquals(Kind.DUE, d.sweep(cob, s.bag, AT).kind());     // stopped with 20: the line's deposit of 20
+        assertEquals(Map.of("minecraft:cobblestone", 20), d.owed());
+        PutWatch w = new PutWatch(d);
+        int chest = 0;
         w.started(TASK, false);
-        w.moved(Map.of(k, 1));
-        w.started(OTHER, false);
-        assertTrue(w.movedSoFar().isEmpty());
+        w.moved(Map.of("cobblestone", 10));                 // the first leg: 10 went in, 10 still on its way
+        w.legEnded();
+        chest += 10;
+        s.bag.put("cobblestone", 10);
+        // the order wakes while its remainder is on its way, gathers the rest and is met: its line comes due again
+        cob.parked = null;
+        assertEquals(Kind.WOKE_OPEN, d.reopen(cob).kind());
+        s.bag.put("cobblestone", 22);
+        LineDeposits.Out again = d.weigh(cob, "done", s.bag, AT);
+        assertEquals(Kind.DUE, again.kind(), again.text());
+        assertEquals(Map.of("cobblestone", 12), again.items(), "due again: the 12 the line had not taken");
+        w.started(TASK, false);                             // the second leg in the same task
+        assertEquals(Map.of("minecraft:cobblestone", 22), d.owed(), "the remainder 10 and the 12 due again, added, nothing replaced");
+        w.moved(Map.of("cobblestone", 22));
+        w.legEnded();
+        chest += 22;
+        assertNotNull(w.ended(TASK, true, null, "ok"));
+        assertTrue(d.owed().isEmpty());
+        assertEquals(32, chest, "the -d amount reached the chest whole, once");
+        int noted = cob.depositPut.values().stream().mapToInt(Integer::intValue).sum();
+        assertEquals(0, Math.max(0, cob.deposit - noted), "nothing of the order is asked again (amount " + cob.deposit + ", in the chest for it " + noted + ")");
     }
 
     @Test

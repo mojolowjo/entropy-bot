@@ -65,15 +65,13 @@ final class SimSteps {
      * the chest; moves exactly min(owed, bag) of each owed item (LineDeposits.owed, the one store) and says SHORT for less.
      * No chest block there: fails with the deposit's words, and the owed items stay owed (putEnded false).
      */
-    private static long putTask;                 // sim: the task ids of the puts (any distinct ids)
-
     private static Result deposit(SimGame g, int[] c, Step.Deposit step) {
         if (SimWorld.dist(c, g.feet) > PUT_REACH + 0.5)        // structural: a cell's half
             return Result.fail(0, "deposit: the chest at " + c[0] + " " + c[1] + " " + c[2] + " is " + Math.round(SimWorld.dist(c, g.feet)) + " blocks from the feet");
         var owed = g.deposits.owed();
         // review 6: the game's path - PutWatch.started (putStarted), the count at the clicks (moved), the step's end
         // (StepHands: putMoved + putLegEnded) and the task's end (AaRuntime: PutWatch.ended); one sim task per put
-        long task = ++putTask;
+        long task = ++g.putTask;                 // review 7: per game, no static that outlives a test
         g.put.started(task, false);
         if (!"minecraft:chest".equals(g.world.at(c[0], c[1], c[2]))) {
             g.put.legEnded();

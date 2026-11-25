@@ -175,11 +175,23 @@ public final class LineDeposits {
      * of one of its orders leaves it alone (take-back).
      */
     public void putStarted() {
-        for (var e : dueLine.entrySet()) { wayLine.put(e.getKey(), dueOf(e.getValue())); wayOrders.addAll(e.getValue().values()); }
+        // review 7 (point 2): a second start while a put is on (its leg ended short, the task re-planned) adds what came due
+        // since to what is still on its way, as failed() merges back: a remainder on its way is never replaced
+        for (var e : dueLine.entrySet()) {
+            wayLine.merge(e.getKey(), dueOf(e.getValue()), LineDeposits::plus);
+            wayOrders.addAll(e.getValue().values());
+        }
         dueLine.clear();
-        way.putAll(due);
+        for (var d : due.entrySet()) way.merge(d.getKey(), d.getValue(), LineDeposits::plus);
         due.clear();
         onWay = true;
+    }
+
+    /** Two item counts summed into a new map (id -> n). */
+    private static Map<String, Integer> plus(Map<String, Integer> a, Map<String, Integer> b) {
+        Map<String, Integer> sum = new TreeMap<>(a);
+        for (var i : b.entrySet()) sum.merge(i.getKey(), i.getValue(), Integer::sum);
+        return sum;
     }
 
     /**
@@ -189,6 +201,11 @@ public final class LineDeposits {
     public Map<String, Integer> dueNow() { return sum(java.util.List.of(due), false); }
     /** The orders of the lines whose deposit run is on its way ({@link #putStarted}), the ones that noted nothing included. */
     private final Set<Goals.Goal> wayOrders = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+    /**
+     * Review 7 (point 2): per order of the put on its way whose wake cut what the line took off its amount ({@link #reopen}),
+     * the part of it that was still on its way then (by the way's keys): when it goes in, it is not noted in depositPut again.
+     */
+    private final Map<Goals.Goal, Map<String, Integer>> wayCut = new java.util.IdentityHashMap<>();
 
     /**
      * deposit-kept: the deposit run ended, or the due deposit could not start (said by the caller): its items are no longer
@@ -205,10 +222,12 @@ public final class LineDeposits {
             if (!reached) for (Map<String, Goals.Goal> ended : dueLine.values()) for (Goals.Goal o : ended.values()) o.depositMissed = true;
             due.clear();
             dueLine.clear();
+            wayCut.clear();
             return;
         }
         onWay = false;
         if (!reached) for (Goals.Goal o : wayOrders) o.depositMissed = true;
+        wayCut.clear();          // review 7: kept through failed() (the remainder owed again is still the put's), gone here
         way.clear();
         wayLine.clear();
         wayOrders.clear();
@@ -331,7 +350,12 @@ public final class LineDeposits {
                     left.merge(k, -in, Integer::sum);
                     // review 4 (sim: a chest for 10 of 52 - the 10 left the bag, the met order read itself lost, opened
                     // again and owed its whole amount a second time): what is in the chest counts for its order
-                    d.getKey().depositPut.merge(i.getKey(), in, Integer::sum);
+                    // review 7: the part a wake already cut off the order's amount (its remainder on its way then) is not
+                    // noted again; the rest is
+                    Map<String, Integer> cut = wayCut.get(d.getKey());
+                    int was = cut == null ? 0 : Math.min(in, cut.getOrDefault(i.getKey(), 0));
+                    if (was > 0) cut.merge(i.getKey(), -was, Integer::sum);
+                    if (in - was > 0) d.getKey().depositPut.merge(i.getKey(), in - was, Integer::sum);
                 }
                 if (i.getValue() - in > 0) { now.put(i.getKey(), i.getValue() - in); rest = true; }
             }
@@ -610,6 +634,14 @@ public final class LineDeposits {
         if (wasOpen || missed) {
             // the line has not ended, or its deposit never reached the chest: the order is simply open again (its note
             // was of the bag then, nothing was taken)
+        } else if (onWay && wayOrders.contains(g)) {
+            // review 7 (point 2): its put is on its way: what the line took of it (in the chest by the legs so far, or still on
+            // its way) is done with for the order; what of it reaches the chest later is the put's, never cut from the order
+            // again (wayCut), so a second start that adds the order's new due amount to its remainder puts each item once
+            g.deposit = Math.max(0, g.deposit - noted);
+            g.depositPut.clear();
+            Map<String, Integer> rest = this.way.get(g);
+            if (rest != null && !rest.isEmpty()) wayCut.merge(g, new TreeMap<>(rest), LineDeposits::plus);
         } else if (noted > 0 || !g.depositPut.isEmpty()) {
             g.deposit = Math.max(0, g.deposit - inChest(g, noted));       // the line's deposit took them already
         }

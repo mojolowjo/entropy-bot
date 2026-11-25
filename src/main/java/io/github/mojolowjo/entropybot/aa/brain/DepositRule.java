@@ -214,18 +214,26 @@ public final class DepositRule {
     }
 
     /**
-     * A short exact put's failure words (review 5): what went in, the split note if any, and always the full words, since a
-     * split that stayed for lack of an empty chest slot is a full chest too (MainChestHold.refusal reads the full words).
+     * A short exact put's failure words (review 5): what went in, the split note if any, and the full words when the chest
+     * showed no empty slot at the count, since a split that stayed for lack of an empty chest slot is a full chest too
+     * (MainChestHold.refusal reads the full words); review 7: with empty slots shown, the refused words instead
+     * ({@code refused}: what of the ask stayed out, by the step's keys).
      */
-    public static String shortWords(int putN, int meant, int[] chest, String onlyText, String splitNote, int freeSlots) {
-        // review 6: a chest that still showed empty slots at the count refused the items for another reason (a desync, a
-        // container that takes only some items); the words say what was seen, and the hold says it too (MainChestHold)
-        return "deposit: " + putN + " of " + meant + " items went in at " + at(chest) + " (" + onlyText + ")" + splitNote + ": " + full(chest, meant - putN)
-                + (freeSlots > 0 ? ROOM_SEEN + freeSlots + " empty slot" + (freeSlots == 1 ? "" : "s") + " at the count)" : "");
+    public static String shortWords(int putN, int meant, int[] chest, String onlyText, String splitNote, int freeSlots, Map<String, Integer> refused) {
+        String head = "deposit: " + putN + " of " + meant + " items went in at " + at(chest) + " (" + onlyText + ")" + splitNote + ": ";
+        if (freeSlots <= 0) return head + full(chest, meant - putN);
+        // review 7 (point 4): a chest that still showed empty slots at the count refused the items for another reason (a
+        // desync, a container that takes only some items): never "full"; the words say what was refused and what was seen,
+        // and the hold reads them (MainChestHold, kind REFUSED)
+        return head + refusedWords(chest, meant - putN, refused, freeSlots);
     }
 
-    /** Review 6: the words of a short put whose chest still showed empty slots (MainChestHold.refusal reads them). */
-    public static final String ROOM_SEEN = " (it refused them while it showed ";
+    /** Review 7: "chest at x y z refused N item(s) (what) while it showed M empty slot(s)" (MainChestHold.refusal reads it). */
+    public static String refusedWords(int[] chest, int n, Map<String, Integer> refused, int freeSlots) {
+        String what = refused == null || refused.isEmpty() ? "?" : io.github.mojolowjo.entropybot.aa.moves.Step.Deposit.onlyText(refused);
+        return "chest at " + at(chest) + " refused " + n + " item" + (n == 1 ? "" : "s") + " (" + what + ") while it showed "
+                + freeSlots + " empty slot" + (freeSlots == 1 ? "" : "s");
+    }
 
     /** "chest at x y z gone" (review 4: the words MainChestHold.refusal reads, one producer for the game and the sim). */
     public static String gone(int[] at) {

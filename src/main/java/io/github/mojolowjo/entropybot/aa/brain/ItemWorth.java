@@ -418,7 +418,22 @@ public final class ItemWorth {
     public static boolean junkFood(String id) { Source s = source; return s != null && s.junkFood(full(id)); }
     public static boolean plank(String id) { Source s = source; return s != null && s.plank(full(id)); }
     public static boolean station(String id) { Source s = source; return s != null && s.station(full(id)); }
-    public static boolean container(String id) { Source s = source; return s != null && s.container(full(id)); }
+    /** A block whose block entity holds items: YES; NO; NOT_LOADED while the item data is not in (rule 15: never "no"). */
+    public enum Container { YES, NO, NOT_LOADED }
+
+    /**
+     * deposit-goal review 7 (point 1, rules 15 and 23): the one three-state reader of "is this block a container". Every
+     * reader of the fact goes through here (MainChest.ofBlock, DepositLeg's gone check, OwnStations.pickUp, the boolean
+     * {@link #container} below), so a chest read at join or during a recipe reload is not known, never "no container".
+     */
+    public static Container containerOf(String id) {
+        Source s = source;
+        if (s == null) return Container.NOT_LOADED;
+        return id != null && s.container(full(id)) ? Container.YES : Container.NO;
+    }
+
+    /** {@link #containerOf} is YES (callers that only ask "known to be a container"; not loaded is false here). */
+    public static boolean container(String id) { return containerOf(id) == Container.YES; }
     public static boolean stoneLike(String id) { Source s = source; return s != null && s.stoneLike(full(id)); }
 
     /** The item's block is a full cube (the game's collision shape; repeat run 2026-11-22: a banner handed to Baritone as filler). */

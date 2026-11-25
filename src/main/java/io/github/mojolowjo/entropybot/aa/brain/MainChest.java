@@ -31,8 +31,16 @@ public final class MainChest {
         public String at() { return null; }
     }
 
-    /** A main chest is set at this cell, and its chunk is not loaded now: its block cannot be read. */
-    public record NotLoaded(int x, int y, int z) implements Answer {
+    /**
+     * A main chest is set at this cell, and what it is cannot be read now ({@code why}): its chunk is not loaded, or (review
+     * 7, rule 15) the item data that says whether its block is a container is not loaded yet.
+     */
+    public record NotLoaded(int x, int y, int z, String why) implements Answer {
+        /** The chunk's words: the block cannot be read. */
+        public static final String CHUNK = "its chunk is not loaded";
+
+        public NotLoaded(int x, int y, int z) { this(x, y, z, CHUNK); }
+
         public String at() { return x + " " + y + " " + z; }
     }
 
@@ -61,7 +69,13 @@ public final class MainChest {
         Object a = ((Supplier<Object>) s).get();
         Answer ans = a instanceof Answer x ? x : new None("the main chest reader answered nothing");
         if (!(bb.fact(MainChestHold.FACT) instanceof MainChestHold h)) return ans;
-        MainChestHold.Applied out = h.apply(ans);
+        // review 7 (point 4): what is owed now (the one owed store), so a hold on refused kinds lifts when none is owed
+        java.util.Set<String> owedIds = null;
+        if (bb.fact(LineDeposits.FACT) instanceof LineDeposits ld) {
+            owedIds = new java.util.HashSet<>();
+            for (String k : ld.owed().keySet()) owedIds.add(io.github.mojolowjo.entropybot.aa.NeedChain.id(k));
+        }
+        MainChestHold.Applied out = h.apply(ans, owedIds);
         if (out.line() != null && bb.port != null) {
             bb.port.log(out.line());
             bb.port.tellOwner(out.line());
@@ -87,6 +101,20 @@ public final class MainChest {
         if (loaded != null && !loaded.test(c)) return new NotLoaded(c[0], c[1], c[2]);
         if (container != null && !container.test(c)) return gone(c[0], c[1], c[2], "its block is no container");
         return new Known(c[0], c[1], c[2]);
+    }
+
+    /**
+     * Review 7 (point 1, rules 15 and 23): the answer for the main chest set at x y z whose block reads {@code blockId}
+     * (null: its chunk is not loaded), by the one container reader ({@link ItemWorth#containerOf}): item data not loaded is
+     * {@link NotLoaded} with that reason, never "gone". The runtime's reader (AaRuntime.mainChest) answers through here.
+     */
+    public static Answer ofBlock(int x, int y, int z, String blockId) {
+        if (blockId == null) return new NotLoaded(x, y, z);
+        return switch (ItemWorth.containerOf(blockId)) {
+            case NOT_LOADED -> new NotLoaded(x, y, z, "the item data is not loaded yet, so whether its block " + blockId + " is a container is not known");
+            case NO -> gone(x, y, z, "its block is " + blockId + ", no container");
+            case YES -> new Known(x, y, z);
+        };
     }
 
     /** {@link #ofText(String, Predicate, Predicate)} with the block a container. */

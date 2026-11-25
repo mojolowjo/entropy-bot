@@ -4195,12 +4195,9 @@ public final class AaRuntime implements JobPort {
     private static io.github.mojolowjo.entropybot.aa.brain.MainChest.Answer mainChest() {
         var main = io.github.mojolowjo.entropybot.aa.MainStations.now().of(io.github.mojolowjo.entropybot.aa.MainStations.CONTAINER);
         if (main == null) return new io.github.mojolowjo.entropybot.aa.brain.MainChest.None("no main chest set (aa deposit x y z)");
-        String id = Crafting.blockIdLoaded(new int[] {main.x(), main.y(), main.z()});
-        if (id == null) return new io.github.mojolowjo.entropybot.aa.brain.MainChest.NotLoaded(main.x(), main.y(), main.z());
-        // review 4 (point 1): a loaded cell whose block is no container is no Known chest (DepositLeg's own test)
-        if (!io.github.mojolowjo.entropybot.clear.OwnStations.container(id))
-            return io.github.mojolowjo.entropybot.aa.brain.MainChest.gone(main.x(), main.y(), main.z(), "its block is " + id + ", no container");
-        return new io.github.mojolowjo.entropybot.aa.brain.MainChest.Known(main.x(), main.y(), main.z());
+        // review 4 (point 1): a loaded cell whose block is no container is no Known chest; review 7 (rule 15): the item data
+        // not loaded is NotLoaded, never gone (MainChest.ofBlock, the one container reader ItemWorth.containerOf)
+        return io.github.mojolowjo.entropybot.aa.brain.MainChest.ofBlock(main.x(), main.y(), main.z(), Crafting.blockIdLoaded(new int[] {main.x(), main.y(), main.z()}));
     }
 
     /** Review 4 (point 1): the one store of the main chest's hold (full, gone), on the board as MainChestHold.FACT. */
@@ -4245,7 +4242,7 @@ public final class AaRuntime implements JobPort {
      * (LineDeposits.putStarted, the take-back cutoff, open question 4), tied to the task running now - or, inside a new
      * task's start, to that task once its id is given (review 3, PutWatch.taskStarted).
      */
-    void putStarted() { put.started(current, newTaskStarting); }
+    void putStarted() { putSaid(put.started(current, newTaskStarting)); }   // review 7: an earlier put ended lost here is said
 
     /** Review 2: the put's leg ended having moved {@code items} (empty: nothing). */
     void putMoved(java.util.Map<String, Integer> items) { put.moved(items); }
@@ -4760,7 +4757,7 @@ public final class AaRuntime implements JobPort {
         List<String> out = new ArrayList<>();
         String chest = switch (io.github.mojolowjo.entropybot.aa.brain.MainChest.of(bb)) {
             case io.github.mojolowjo.entropybot.aa.brain.MainChest.None n -> "none (" + n.why() + ")";
-            case io.github.mojolowjo.entropybot.aa.brain.MainChest.NotLoaded n -> n.at() + " (its chunk is not loaded)";
+            case io.github.mojolowjo.entropybot.aa.brain.MainChest.NotLoaded n -> n.at() + " (" + n.why() + ")";
             case io.github.mojolowjo.entropybot.aa.brain.MainChest.Known k -> k.at();
             case io.github.mojolowjo.entropybot.aa.brain.MainChest.Held h -> h.at() + " (held: " + h.why() + ")";
         };

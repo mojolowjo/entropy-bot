@@ -33,6 +33,14 @@ class DepositLegChestTest {
         assertEquals(Map.of("cobblestone", 32, "oak_log", 11), DepositLeg.putPerItem(was, gone, ask), "never more than asked");
     }
 
+    /** Review 7 (point 4): what was refused, per asked key: what the bag held of the ask and did not go in. */
+    @Test
+    void aShortPutNamesWhatWasRefused() {
+        var ask = Map.of("cobblestone", 32, "oak_log", 11);
+        assertEquals(Map.of("cobblestone", 8), DepositLeg.refused(Map.of("cobblestone", 64, "oak_log", 11), Map.of("cobblestone", 24, "oak_log", 11), ask));
+        assertEquals(Map.of("oak_log", 3), DepositLeg.refused(Map.of("cobblestone", 32, "oak_log", 3), Map.of("cobblestone", 32), ask), "never more than the bag held");
+    }
+
     private static io.github.mojolowjo.entropybot.aa.brain.DepositRule.Item item(String id, int n) {
         return new io.github.mojolowjo.entropybot.aa.brain.DepositRule.Item(id, n, false, false, false, false);
     }
