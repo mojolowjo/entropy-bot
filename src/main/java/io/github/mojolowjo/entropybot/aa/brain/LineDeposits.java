@@ -244,9 +244,15 @@ public final class LineDeposits {
      * deposit back ({@link #reopen}). Nothing on its way: nothing to put back.
      */
     public void putEnded(boolean reached) {
-        if (reached) { gone(true); return; }
+        if (reached) { if (onWay) putsReached++; gone(true); return; }
         failed();
     }
+
+    /** deposit-goal stage 3: the puts that reached the chest so far (OrderEnds.depositSync tells "in the chest" from "taken back" by it). */
+    private int putsReached;
+
+    /** deposit-goal stage 3: {@link #putsReached}. */
+    public int putsReached() { return putsReached; }
 
     /** {@link #putEnded putEnded(false)}: the put did not reach the chest; what it was sent with is owed again. */
     public void failed() {

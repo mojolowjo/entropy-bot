@@ -60,6 +60,7 @@ final class OrderLineSim {
         io.github.mojolowjo.entropybot.aa.brain.BatchWay.clear();      // the trips and own chains kept by an earlier test
         ScenariosTest.toolWorld();
         bb.fact(NeedChain.WORLD_FACT, (Supplier<World>) this::world);
+        bb.fact(LineDeposits.FACT, deposits);          // deposit-kept: the one store, as the runtime's (the deposit goal reads owed from it)
         bb.fact(io.github.mojolowjo.entropybot.aa.brain.MainChest.FACT, (Supplier<io.github.mojolowjo.entropybot.aa.brain.MainChest.Answer>) () -> io.github.mojolowjo.entropybot.aa.brain.MainChest.ofText(mainAt, null));   // deposit-goal piece 3: the one reader
         sense();
     }
@@ -67,7 +68,20 @@ final class OrderLineSim {
     private World world() {
         Map<String, Integer> ns = new HashMap<>();
         for (var e : bag.entrySet()) ns.put("minecraft:" + e.getKey(), e.getValue());
-        return ScenariosTest.w(ns, table, furnace, seen);
+        World w = ScenariosTest.w(ns, table, furnace, seen).withWhere(new NeedChain.WhereFacts(Z77ExploreTest::where, () -> surface, () -> feet.clone()));
+        return path == null ? w : w.withPath(path);
+    }
+
+    /** deposit-goal stage 3: the feet (x y z) and the surface over them (null: not known); on the surface by default. */
+    final int[] feet = {0, 64, 0};
+    NeedChain.Surface surface = new NeedChain.Surface(0, 0, 64, 0, 0);
+    /** deposit-goal stage 3: the walks' prices when a test sets them (null: the fake straight-line price). */
+    PathPrice path;
+
+    /** Under ground {@code depth} blocks, the walk up's cell straight over the feet. */
+    void under(int depth) {
+        underGround = true;
+        surface = new NeedChain.Surface(depth, feet[0], feet[1] + depth, feet[2], depth);
     }
 
     /**
@@ -96,7 +110,7 @@ final class OrderLineSim {
     void plannerOnTheTick() { bb.fact(io.github.mojolowjo.entropybot.aa.brain.BatchWay.PLANNER_FACT, null); }
 
     /** The bag as the senses give it to the brain. */
-    private void sense() { bb.in.bag = Map.copyOf(bag); }
+    private void sense() { bb.in.bag = Map.copyOf(bag); bb.in.pos = feet.clone(); }
 
     /** aa want: {@code batch} null = an order alone; {@code deposit}: the -d word. */
     Goals.Goal order(String word, int n, String batch, boolean deposit) {
@@ -126,7 +140,7 @@ final class OrderLineSim {
     void tick() {
         sense();
         brain.tick(bb);
-        OrderEnds.tick(bb, brain, deposits, mainAt, underGround, "goal reached", new OrderEnds.Hooks() {
+        OrderEnds.Hooks hooks = new OrderEnds.Hooks() {
             @Override public boolean carriesOn(Goals.Goal g) { return false; }
 
             @Override public void got(String msg) { said.add(msg); }
@@ -134,19 +148,41 @@ final class OrderLineSim {
             @Override public void deposit(LineDeposits.Out out) {
                 if (out == null || out.text() == null) return;
                 said.add(out.text());
-                if (out.kind() == LineDeposits.Kind.DUE) due.add(out.items());
+                if (out.kind() == LineDeposits.Kind.DUE) due.add(out.items());       // what the weighing answered (the goal's owed items)
                 if (out.kind() == LineDeposits.Kind.WOKE_TAKEN_BACK) takenBack.add(out.text());
             }
-        });
+        };
+        OrderEnds.tick(bb, brain, deposits, mainAt, underGround, "goal reached", hooks);
+        // deposit-goal stage 3: the line's deposit is a goal (OrderEnds.depositSync), as the sim's game
+        OrderEnds.depositSync(bb, brain, deposits, hooks);
+    }
+
+    /** deposit-goal stage 3: the deposit goal among the goals, null: none. */
+    Goals.Goal depositGoal() { return Goals.depositGoal(bb); }
+
+    /** The owner's orders still among the goals (the deposit goal left out). */
+    List<Goals.Goal> ordersLeft() {
+        List<Goals.Goal> out = new ArrayList<>();
+        for (Goals.Goal g : Goals.of(bb)) if (!g.depositGoal) out.add(g);
+        return out;
     }
 
     /** The due deposits taken back by a wake before their run started (the line said for each). */
     final List<String> takenBack = new ArrayList<>();
 
-    /** The game's deposit run for what is due: it starts (a wake leaves it alone from here), then it ends. */
+    /**
+     * The deposit goal's put (SimSteps' Deposit actor in short): it starts (a wake leaves it alone from here), then it
+     * ends reached. The bag is the test's to set.
+     */
     void depositRuns() {
-        deposits.started();
-        deposits.gone(true);
+        deposits.putStarted();
+        deposits.putEnded(true);
+    }
+
+    /** deposit-goal stage 3: the put started and failed (the chest not opened): what it took is owed again. */
+    void depositFails() {
+        deposits.putStarted();
+        deposits.putEnded(false);
     }
 
     /** {@code n} passes, {@code ms} apart. */

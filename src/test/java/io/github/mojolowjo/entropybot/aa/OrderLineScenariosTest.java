@@ -67,7 +67,7 @@ class OrderLineScenariosTest {
             else if (r.equals(log.id())) { s.bag.put("oak_log", 16); s.endRun("done: chopped"); }
         }
         s.run(3, 5000);
-        assertTrue(Goals.of(s.bb).isEmpty(), "both orders done: " + s.said + " / " + s.brain.whyLines(6));
+        assertTrue(s.ordersLeft().isEmpty(), "both orders done: " + s.said + " / " + s.brain.whyLines(6));
         assertEquals(List.of(Map.of("cobblestone", 32, "oak_log", 16)), s.due, "one deposit of exactly the ordered amounts: " + s.said);
     }
 
@@ -178,7 +178,7 @@ class OrderLineScenariosTest {
         }
         s.run(3, 5000);
         assertTrue(cobFailed, "the cobblestone order ran and was stopped: " + s.brain.whyLines(6));
-        assertTrue(Goals.of(s.bb).isEmpty(), "both orders met: " + s.said);
+        assertTrue(s.ordersLeft().isEmpty(), "both orders met: " + s.said);
         assertEquals(List.of(Map.of("cobblestone", 32, "oak_log", 16)), s.due, "the line's one deposit has all of it: " + s.said);
     }
 
@@ -337,7 +337,7 @@ class OrderLineScenariosTest {
         s.bag.remove("cobblestone");
         s.bag.put("cobblestone", 33);                        // met later
         s.run(3, 5000);
-        assertTrue(Goals.of(s.bb).isEmpty(), "met: " + s.said);
+        assertTrue(s.ordersLeft().isEmpty(), "met: " + s.said);
         assertEquals(List.of(Map.of("cobblestone", 5, "oak_log", 16), Map.of("cobblestone", 27)), s.due, "a second deposit of the rest of its amount, whole: " + s.said);
     }
 
@@ -389,7 +389,7 @@ class OrderLineScenariosTest {
         s.bag.remove("oak_log");                             // deposited
         s.bag.put("cobblestone", 33);                       // met later (the owner's own digging, another order)
         s.run(3, 5000);
-        assertTrue(Goals.of(s.bb).isEmpty(), "met: " + s.said);
+        assertTrue(s.ordersLeft().isEmpty(), "met: " + s.said);
         assertEquals(List.of(Map.of("oak_log", 16), Map.of("cobblestone", 32)), s.due, "a second deposit of what the first left out: " + s.said);
     }
 }

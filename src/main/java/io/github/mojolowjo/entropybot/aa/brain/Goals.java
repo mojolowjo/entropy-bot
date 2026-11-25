@@ -65,6 +65,18 @@ public final class Goals {
         /** The owner's strip order (aa want strip ...): its one step; null for an item goal. */
         public Step.Strip strip;
 
+        /**
+         * deposit-goal plan, stage 3 (piece 4): the line's deposit as a goal ({@link Goals#addDeposit}) - its chain is
+         * NeedChain.deposit, met when nothing is owed (LineDeposits.owed, read through {@link #owedNone}).
+         */
+        public boolean depositGoal;
+
+        /** deposit-goal: true when the one owed store (LineDeposits.owed on the goal's board) owes nothing; null on every other goal. */
+        java.util.function.BooleanSupplier owedNone;
+
+        /** deposit-goal: LineDeposits.putsReached when this deposit goal was added (more at its end: the put reached the chest). */
+        public int depositPutsAtStart;
+
         /** 0.39.z30: re-plans on a changed fact so far (aa want again sets it back to 0). */
         public int replans;
 
@@ -194,7 +206,8 @@ public final class Goals {
         if (g == null || g.parked == null || !canWake(g)) return null;
         if (busy) return "a run or another job moves the bot now";
         if (goals != null)
-            for (Goal o : goals) if (o != g && o.parked == null) return "order " + o.r.key() + " is open and not stopped";
+            // deposit-goal: the deposit goal is no order; its run moves the bot and is counted by {@code busy}
+            for (Goal o : goals) if (o != g && o.parked == null && !o.depositGoal) return "order " + o.r.key() + " is open and not stopped";
         if (underGround && climbTryDue(g, worldClimb))
             return "its one more try on the climb way, taken with every order stopped under ground";
         if (!underGround && lookAroundDue(g))
@@ -209,7 +222,8 @@ public final class Goals {
 
     /** The one look-around leg is still to come for {@code g} (read by {@link #parkedTick} and {@link #stillChanges}). */
     static boolean lookAroundDue(Goal g) {
-        return !g.looked && g.strip == null && g.park != null && g.park.kind() == ParkKind.PLACE;
+        // deposit-goal: an explore is no way for a deposit (rule 22)
+        return !g.looked && g.strip == null && !g.depositGoal && g.park != null && g.park.kind() == ParkKind.PLACE;
     }
 
     /** {@link #wake(Goal)}; {@code worldClimb}: another order's failed climb holds here for it (a world fact, run EJ). */
@@ -219,6 +233,7 @@ public final class Goals {
         String climb = !g.climbRetried && (climbHeld(g) || worldClimb) ? "tries once more on the climb way when every order is parked under ground" : null;
         if (g.park != null) return (climb == null ? "" : climb + "; ") + g.park.wakeWords();
         if (climb != null) return climb;
+        if (g.depositGoal) return "no wake by itself (room in the main chest, or a new aa deposit x y z)";
         return "no wake by itself (aa want " + g.r.word().trim() + " again)";
     }
 
@@ -235,7 +250,8 @@ public final class Goals {
         for (Goal g : goals) {
             if (g.parked == null) return null;
             String why = g.parked.length() > PARK_REASON_CHARS ? g.parked.substring(0, PARK_REASON_CHARS) + "..." : g.parked;
-            parts.add(g.r.key() + ": " + why + " - " + wake(g, worldClimb.test(g)));
+            // deposit-goal (open question 5): the deposit's own part, not an order's
+            parts.add((g.depositGoal ? "the line's deposit" : g.r.key()) + ": " + why + " - " + wake(g, worldClimb.test(g)));
         }
         return "every order is parked, nothing runs: " + String.join("; ", parts);
     }
@@ -474,6 +490,7 @@ public final class Goals {
     static java.util.Set<String> sourceCells(Blackboard bb, Goal g, io.github.mojolowjo.entropybot.aa.moves.Steps.Attempt a) {
         var w = world(bb);
         if (w == null) return null;
+        if (g.depositGoal) return new java.util.TreeSet<>();        // deposit-goal: no item of its own to see a source of
         java.util.Set<String> items = new java.util.TreeSet<>(g.r.ids().isEmpty() ? List.of(g.r.key()) : g.r.ids());
         if (a != null && a.needs() != null)
             for (String k : a.needs().keySet()) if (!k.endsWith(" tier") && io.github.mojolowjo.entropybot.aa.NeedChain.plain(k)) items.add(k);
@@ -1059,6 +1076,44 @@ public final class Goals {
         return g;
     }
 
+    /** deposit-goal: the deposit goal's key (its goal id is "goal.deposit"). */
+    public static final String DEPOSIT_KEY = "deposit";
+
+    /** deposit-goal: the words of a put refused by a full main chest; the park on them keeps no wake (only the owner's word changes it). */
+    public static final String CHEST_FULL = "the main chest is full";
+
+    /**
+     * deposit-goal plan, stage 3 (piece 4; owner 2026-11-23: the line's deposit is a planned, priced goal): the line's
+     * deposit as a goal, built like {@link #addStrip} - key "deposit", n 1, no ids, deposit 0, line null, so no
+     * LineDeposits weighing or keeping counts it. Met when LineDeposits.owed is empty ({@link #have}).
+     */
+    public static Goal addDeposit(Blackboard bb, long now) {
+        Thing.Result r = new Thing.Result(DEPOSIT_KEY, DEPOSIT_KEY, false, List.of(), List.of(), 0, null, "the line's deposit to the main chest", null);
+        Goal g = new Goal(r, 1, 0, now);
+        g.depositGoal = true;
+        g.owedNone = () -> owed(bb).isEmpty();
+        of(bb).removeIf(x -> x.depositGoal);
+        of(bb).add(g);
+        return g;
+    }
+
+    /** deposit-goal: the deposit goal among the goals, null: none. */
+    public static Goal depositGoal(Blackboard bb) {
+        if (!(bb.fact(FACT) instanceof List<?>)) return null;
+        for (Goal g : of(bb)) if (g.depositGoal) return g;
+        return null;
+    }
+
+    /** deposit-goal: what the deposit owes now (LineDeposits.owed, the one store; full id -> n); empty: nothing, or no store. */
+    static Map<String, Integer> owed(Blackboard bb) {
+        return bb.fact(LineDeposits.FACT) instanceof LineDeposits ld ? ld.owed() : Map.of();
+    }
+
+    /** deposit-goal: the orders behind {@link #owed} (LineDeposits.owedOrders); empty: none, or no store. */
+    static java.util.Set<Goal> owedOrders(Blackboard bb) {
+        return bb.fact(LineDeposits.FACT) instanceof LineDeposits ld ? ld.owedOrders() : java.util.Set.of();
+    }
+
     /**
      * orders-tier (0.39.z9): the order cannot progress: parked with its reason, said ONCE in the log and the whisper; the
      * brain never starts it again (it is infeasible while parked). {@code aa want} again makes a fresh goal; {@code aa cancel}
@@ -1083,15 +1138,17 @@ public final class Goals {
         if (a != null) {
             g.loopPark = new LoopPark(a, needCounts(a.needs() == null ? List.of() : a.needs().keySet(), bb.in == null ? null : bb.in.bag, bb.in == null ? 0 : bb.in.pickTier), sourceCells(bb, g, a), bb.in == null ? null : bb.in.pos);
             again = "; it tries once more by itself when a need in the bag rises, it moves " + Math.round(Failures.movedV()) + " blocks or a new source is seen";
-        } else if (g.parked.endsWith(OTHER_DIM)) {
-            g.loopPark = null;               // stop-wake: only the owner's word changes it - no wake, said as before
+        } else if (g.parked.endsWith(OTHER_DIM) || g.depositGoal && g.parked.contains(CHEST_FULL)) {
+            g.loopPark = null;               // stop-wake: only the owner's word changes it - no wake, said as before (deposit-goal: a full chest too)
         } else {
             // stop-wake: every other park keeps what it waits on (its kind by the reason's cause; not told: the place)
             g.loopPark = null;
             g.park = Park.of(Failures.Cause.of(g.parked) == Failures.Cause.NO_ITEM ? ParkKind.BAG : ParkKind.PLACE, bb, sourceCells(bb, g, null), heldKeys(bb, g));
             again = "; " + g.park.wakeWords();
         }
-        String line = "order " + g.r.key() + " stopped: " + g.parked + " (aa want " + g.r.word().trim() + " to try again, aa cancel " + g.r.key() + " to clear it" + again + ")";
+        String line = g.depositGoal
+                ? "the line's deposit stopped: " + g.parked + " (the items stay kept and owed: " + Step.Deposit.onlyText(owed(bb)) + again + ")"
+                : "order " + g.r.key() + " stopped: " + g.parked + " (aa want " + g.r.word().trim() + " to try again, aa cancel " + g.r.key() + " to clear it" + again + ")";
         bb.port.log(line);
         bb.port.tellOwner(line);
         return true;
@@ -1266,7 +1323,7 @@ public final class Goals {
     /** How many the bag holds now (bag: path -> count). */
     public static int have(Map<String, Integer> bag, Goal g) {
         if (g.strip != null) return STRIPS_DONE.contains(g.strip) ? g.n : 0;
-        if (g.strip != null) return STRIPS_DONE.contains(g.strip) ? g.n : 0;
+        if (g.depositGoal) return g.owedNone != null && g.owedNone.getAsBoolean() ? 1 : 0;     // deposit-goal: met when nothing is owed
         if (g.r.group()) {          // a group is done when every member is had: the fewest of them
             int low = Integer.MAX_VALUE;
             for (String c : g.r.counts()) low = Math.min(low, bag.getOrDefault(c, 0));
@@ -1570,6 +1627,10 @@ public final class Goals {
      */
     public static Map<String, Integer> keptForRun(Blackboard bb, String desireId, boolean orderRun, boolean consume, Map<String, Integer> startBag) {
         if (!orderRun) return Map.of();
+        // deposit-goal (stage 3): the deposit goal's run uses up no kept amount (a pickaxe craft never eats owed items); its
+        // steps count the owed amounts as theirs (the put's free bag holds them)
+        if (desireId != null && bb.fact(FACT) instanceof List<?>)
+            for (Goal g : of(bb)) if (g.depositGoal && g.id().equals(desireId)) return consume ? kept(bb, null, null) : kept(bb, null, owedOrders(bb));
         if (consume && desireId != null && bb.fact(FACT) instanceof List<?>)
             for (Goal g : of(bb)) if (g.id().equals(desireId)) return keptFromUse(bb, g, startBag);
         if (consume) return kept(bb, null, null);
@@ -1695,10 +1756,13 @@ public final class Goals {
             bb.fact(KEPT_SAID_FACT, said);
             if (bb.port != null) bb.port.log(said.isEmpty() ? "kept for a deposit: nothing now" : "kept for a deposit: " + said + " (the -d amounts) - no other order counts them or uses them as ingredients");
         }
-        Map<String, Integer> kept = keptFromOthers(bb, g);
         // reserves-once (run 3 w070): the planner's placing reserves come from this same store, with what is taken off the bag here left out
         java.util.Set<Goal> notOff = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
         if (g != null) { notOff.add(g); notOff.addAll(BatchWay.open(bb, g)); }
+        // deposit-goal (stage 3): the owed amounts stay on the deposit chain's bag and in its reserves (a climb lends them
+        // only by a priced lend); every other kept amount is off its bag as for any order
+        if (g != null && g.depositGoal) notOff.addAll(owedOrders(bb));
+        Map<String, Integer> kept = g != null && g.depositGoal ? kept(bb, null, notOff) : keptFromOthers(bb, g);
         var reserves = bb.in == null || bb.in.bag == null ? List.<baritone.api.process.Reserves.Reserve<String>>of()
                 : plannerReserves(g, finished(bb), bb.in.bag, keptPer(bb), notOff);
         if (kept.isEmpty()) return w.withReserves(reserves);
@@ -1802,6 +1866,8 @@ public final class Goals {
         if (g.strip != null) return null;
         var world = chainWorld(bb, g);
         if (world == null) return null;
+        // deposit-goal plan, stage 3 (piece 4): the deposit goal's chain - its ways priced by NeedChain.deposit from the feet
+        if (g.depositGoal) return io.github.mojolowjo.entropybot.aa.NeedChain.deposit(owed(bb), MainChest.of(bb), world);
         var laps = io.github.mojolowjo.entropybot.aa.core.TickLaps.AA;    // 0.39.z62 item 4: resolves counted while the probe is on
         // 0.39.z77 SHAPE CHANGE (owner 2026-10-26 10:30: playbook first): a plain-item order runs its trip (alone or with its
         // batch), kept per batch, bag and place (R3); the order's own chain only where no trip is derived (said) or for a group
@@ -1890,7 +1956,8 @@ public final class Goals {
         List<Goal> out = new ArrayList<>();
         // jobs (owner 2026-10-22): "the goal check waits until the current job is done, then checks/cancels"
         if (JobBoundary.mid()) return out;
-        for (Goal g : of(bb)) if (have(free(bb, g), g) >= g.n) out.add(g);
+        // deposit-goal: never listed (no "got 1 deposit"); OrderEnds.depositSync takes it off when nothing is owed
+        for (Goal g : of(bb)) if (!g.depositGoal && have(free(bb, g), g) >= g.n) out.add(g);
         of(bb).removeAll(out);
         for (Goal g : out) g.met = true;         // 0.39.z77 met: a carried run's later end is logged under the batch, never a stop
         for (Goal g : out) finish(bb, g);        // 0.39.z61 (ruling 1 option c): its items stay safe from pillaring
@@ -1937,6 +2004,11 @@ public final class Goals {
         }
         String b = blocked(bb, g);
         var ch = b == null ? chain(bb, g) : null;
+        if (g.depositGoal) {
+            var mc = MainChest.of(bb);
+            return "deposit: " + Step.Deposit.onlyText(owed(bb)) + " to the main chest" + (mc.at() == null ? "" : " at " + mc.at()) + ": " + scoreText
+                    + (b != null ? (g.parked == null ? " - held: " : " - parked: ") + b : ch != null ? " - chain: " + ch.why() : " - no facts for the chain yet");
+        }
         return g.r.key() + " " + have(free(bb, g), g) + "/" + g.n + (g.prio > 0 ? " high" : g.prio < 0 ? " low" : "") + (g.deposit > 0 ? " (deposit)" : "") + ": " + scoreText
                 + (b != null ? (g.parked == null ? " - held: " : " - parked: ") + b + (g.depositHeld && g.parked != null ? " (the line's deposit waits for it: it can still wake)" : "") :ch != null ? " - chain: " + ch.why() : " - no facts for the chain yet")
                 + " [" + g.r.text() + "]";

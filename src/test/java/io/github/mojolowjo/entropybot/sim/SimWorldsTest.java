@@ -65,7 +65,7 @@ class SimWorldsTest {
         for (Path f : files) {
             clear();
             String name = f.getFileName().toString().substring(0, 4);
-            String end, wood = null;
+            String end, wood = null, dep = "-";
             double secs = 0;
             Map<String, Integer> chest = Map.of();
             try {
@@ -83,6 +83,7 @@ class SimWorldsTest {
                 end = g.play(LIMIT_S);
                 secs = g.seconds();
                 chest = g.chest;
+                dep = g.depositColumn();            // deposit-goal stage 3: the way the deposit took, its runs (re-plans)
                 if (chest.getOrDefault("minecraft:cobblestone", 0) == 32 && chest.getOrDefault("minecraft:torch", 0) == 4 && chest.getOrDefault("minecraft:" + log, 0) == 16) whole++;
             } catch (IllegalArgumentException e) {
                 // the tests' item data does not know this wood (mangrove): the simulator's gap, said, not a fault
@@ -94,8 +95,8 @@ class SimWorldsTest {
             String kind = end.replaceAll("[-\\d]+", "N");
             if (kind.length() > 90) kind = kind.substring(0, 90);
             ends.merge(kind, 1, Integer::sum);
-            table.append(String.format(java.util.Locale.ROOT, "%s wood %-12s %6.0f s  %s | chest %s%n", name, wood == null ? "none seen" : wood.replace("minecraft:", ""), secs,
-                    end.length() > 130 ? end.substring(0, 130) : end, chest));
+            table.append(String.format(java.util.Locale.ROOT, "%s wood %-12s %6.0f s  %s | chest %s | deposit %s%n", name, wood == null ? "none seen" : wood.replace("minecraft:", ""), secs,
+                    end.length() > 130 ? end.substring(0, 130) : end, chest, dep));
         }
         StringBuilder sum = new StringBuilder();
         ends.entrySet().stream().sorted((a, b) -> b.getValue() - a.getValue()).forEach(e -> sum.append(String.format("%3d  %s%n", e.getValue(), e.getKey())));

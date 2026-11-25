@@ -53,7 +53,37 @@ final class SimSteps {
         if (s instanceof Step.Climb) return climb(g, null);
         if (s instanceof Step.ToSurface t) return climb(g, new int[]{t.x(), t.y(), t.z()});       // the game: done there, or as soon as the feet stand under open sky
         if (s instanceof Step.Explore e) return explore(g, e);
+        if (s instanceof Step.Deposit d && d.chest() != null) return deposit(g, d.chest());
         return Result.NOT_SIMULATED;
+    }
+
+    static final double PUT_S = 2;               // sim: the chest opened and the items moved (not measured)
+    static final int PUT_REACH = 2;              // sim: the feet within this of the chest (ToStation stands within 2)
+
+    /**
+     * deposit-goal stage 3: the put (the planned Step.Deposit with its chest cell). The feet within {@link #PUT_REACH} of
+     * the chest; moves exactly min(owed, bag) of each owed item (LineDeposits.owed, the one store) and says SHORT for less.
+     * No chest block there: fails with the deposit's words, and the owed items stay owed (putEnded false).
+     */
+    private static Result deposit(SimGame g, int[] c) {
+        if (SimWorld.dist(c, g.feet) > PUT_REACH + 0.5)        // structural: a cell's half
+            return Result.fail(0, "deposit: the chest at " + c[0] + " " + c[1] + " " + c[2] + " is " + Math.round(SimWorld.dist(c, g.feet)) + " blocks from the feet");
+        var owed = g.deposits.owed();
+        g.deposits.putStarted();
+        if (!"minecraft:chest".equals(g.world.at(c[0], c[1], c[2]))) {
+            g.deposits.putEnded(false);
+            return Result.fail(PUT_S, "deposit: no chest known (" + g.world.at(c[0], c[1], c[2]) + " at " + c[0] + " " + c[1] + " " + c[2] + ")");
+        }
+        java.util.List<String> put = new java.util.ArrayList<>(), short_ = new java.util.ArrayList<>();
+        for (var e : owed.entrySet()) {
+            String id = full(e.getKey());
+            int n = Math.min(e.getValue(), g.bag.getOrDefault(id, 0));
+            if (n > 0) { g.take(id, n); g.chest.merge(id, n, Integer::sum); }
+            put.add(n + " " + e.getKey());
+            if (n < e.getValue()) short_.add(n + " of " + e.getValue() + " " + e.getKey());
+        }
+        g.deposits.putEnded(true);
+        return Result.ok(PUT_S, "deposit at " + c[0] + " " + c[1] + " " + c[2] + ": " + put + (short_.isEmpty() ? "" : "; SHORT: " + short_));
     }
 
     /**

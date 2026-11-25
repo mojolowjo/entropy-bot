@@ -2657,10 +2657,10 @@ public final class NeedChain {
      * unmet and is priced again from the new feet. Under ground (or the surface not known, rule 15) only a PRICED walk to the
      * chest is offered (rule 22); on the surface an estimate is ranked (rule 18 amended, run JAC). A walk still computing is
      * the chain's wait (PathPrice.NOT_KNOWN: the bot stands). No way: the failure names every way's reason (rule 7).
-     * The world is the planner's world ({@code Goals.keptOff} with every order's kept amounts off the bag, its reserves from
-     * {@code Goals.plannerReserves}): the owed items are not in the bag, so no inner get (the climb's pickaxe-first way, a
-     * lend's collect again) crafts, places or lends them, and nothing here reserves them a second time (review: counted once,
-     * the -d amount reaches the chest whole). The world is used as given.
+     * The world is the planner's world ({@code Goals.keptOff}, its reserves from {@code Goals.plannerReserves}); for the
+     * deposit goal (stage 3) the owed amounts stay on its bag and in its reserves, so no climb places them and a lend of
+     * them is priced; nothing here reserves them a second time (review: counted once, the -d amount reaches the chest
+     * whole). The world is used as given.
      */
     public static Chain deposit(Map<String, Integer> owedIds, io.github.mojolowjo.entropybot.aa.brain.MainChest.Answer chest, World w) {
         Map<String, Integer> owed = new TreeMap<>();
