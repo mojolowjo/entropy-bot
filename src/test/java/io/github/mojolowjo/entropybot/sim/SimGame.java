@@ -113,6 +113,7 @@ final class SimGame {
         data.install();
         catalog = catalog(data);
         bb.fact(NeedChain.WORLD_FACT, (Supplier<World>) this::facts);
+        bb.fact(io.github.mojolowjo.entropybot.aa.brain.MainChest.FACT, (Supplier<io.github.mojolowjo.entropybot.aa.brain.MainChest.Answer>) () -> io.github.mojolowjo.entropybot.aa.brain.MainChest.ofText(mainAt, null));   // deposit-goal piece 3: the one reader
         sense();
     }
 

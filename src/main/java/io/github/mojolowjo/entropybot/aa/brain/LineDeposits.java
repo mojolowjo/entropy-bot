@@ -174,7 +174,13 @@ public final class LineDeposits {
      * take-back: the due deposit's run started: from here a wake of one of its orders leaves it alone. The run takes
      * exactly what is due now ({@link #due} and {@link #dueLine} are empty after this); what comes due later is a later run's.
      */
-    public void started() {
+    public void started() { putStarted(); }
+
+    /**
+     * deposit-goal piece 2: the deposit's put started (today's {@link #started} under a clearer name; started stays as its
+     * delegate until stage 4). What is due now goes on its way.
+     */
+    public void putStarted() {
         for (var e : dueLine.entrySet()) { wayLine.put(e.getKey(), dueOf(e.getValue())); wayOrders.addAll(e.getValue().values()); }
         dueLine.clear();
         way.putAll(due);
@@ -229,6 +235,63 @@ public final class LineDeposits {
         way.clear();
         wayLine.clear();
         wayOrders.clear();
+    }
+
+    /**
+     * deposit-goal piece 2: the put ended. {@code reached}: as {@link #gone gone(true)}, its items are in the chest. Not
+     * reached ({@link #failed}): the put's items are owed again - {@link #way} back into {@link #due}, its lines back into
+     * {@link #dueLine} - and no order is marked missed: the items stay owed and kept, and a later wake still takes the
+     * deposit back ({@link #reopen}). Nothing on its way: nothing to put back.
+     */
+    public void putEnded(boolean reached) {
+        if (reached) { gone(true); return; }
+        failed();
+    }
+
+    /** {@link #putEnded putEnded(false)}: the put did not reach the chest; what it was sent with is owed again. */
+    public void failed() {
+        if (!onWay) return;
+        onWay = false;
+        // a line that came due while the put ran keeps its own orders; the put's orders join them per line
+        for (var e : wayLine.entrySet()) {
+            Map<String, Goals.Goal> back = dueLine.computeIfAbsent(e.getKey(), k -> new java.util.LinkedHashMap<>());
+            for (Goals.Goal o : wayOrders) if (e.getKey().equals(o.line)) back.putIfAbsent(o.r.key(), o);
+        }
+        for (var d : way.entrySet()) {
+            Map<String, Integer> now = due.get(d.getKey());
+            if (now == null) due.put(d.getKey(), d.getValue());
+            else {
+                Map<String, Integer> sum = new TreeMap<>(now);
+                for (var i : d.getValue().entrySet()) sum.merge(i.getKey(), i.getValue(), Integer::sum);
+                due.put(d.getKey(), sum);
+            }
+        }
+        way.clear();
+        wayLine.clear();
+        wayOrders.clear();
+    }
+
+    /**
+     * deposit-goal piece 2: the one reader of what the deposit still owes - the items of {@link #due} and {@link #way}, by
+     * each item's full id ({@link #fullId}), summed. Empty: nothing owed. ({@link #dueNow} and {@link #dueIds} stay until
+     * stage 4.)
+     */
+    public Map<String, Integer> owed() {
+        Map<String, Integer> out = new TreeMap<>();
+        for (var m : java.util.List.of(due, way))
+            for (var d : m.entrySet()) for (var i : d.getValue().entrySet()) out.merge(fullId(d.getKey(), i.getKey()), i.getValue(), Integer::sum);
+        return out;
+    }
+
+    /**
+     * deposit-goal piece 2: the orders behind {@link #owed}: every order of the due lines and of the put on its way, the
+     * ones that noted nothing included; each once, by identity.
+     */
+    public Set<Goals.Goal> owedOrders() {
+        Set<Goals.Goal> out = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+        for (Map<String, Goals.Goal> ended : dueLine.values()) out.addAll(ended.values());
+        out.addAll(wayOrders);
+        return out;
     }
 
     /** What the bag holds of the order's deposit amount now (counted id -> n; a group: up to the amount of each member). */

@@ -60,6 +60,7 @@ final class OrderLineSim {
         io.github.mojolowjo.entropybot.aa.brain.BatchWay.clear();      // the trips and own chains kept by an earlier test
         ScenariosTest.toolWorld();
         bb.fact(NeedChain.WORLD_FACT, (Supplier<World>) this::world);
+        bb.fact(io.github.mojolowjo.entropybot.aa.brain.MainChest.FACT, (Supplier<io.github.mojolowjo.entropybot.aa.brain.MainChest.Answer>) () -> io.github.mojolowjo.entropybot.aa.brain.MainChest.ofText(mainAt, null));   // deposit-goal piece 3: the one reader
         sense();
     }
 

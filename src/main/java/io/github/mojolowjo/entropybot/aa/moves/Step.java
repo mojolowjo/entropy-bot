@@ -397,18 +397,38 @@ public sealed interface Step {
      * DepositRule): every bag item outside the kept set into the nearest known chest (or one from the bag / crafted, placed
      * near the tunnel start), its own hands (StepHands' DepositLeg).
      */
-    record Deposit(Strip order, java.util.Map<String, Integer> only) implements Step {
-        public Deposit() { this(null, null); }
+    record Deposit(Strip order, java.util.Map<String, Integer> only, int[] chest) implements Step {
+        public Deposit() { this(null, null, null); }
 
-        public Deposit(Strip order) { this(order, null); }
+        public Deposit(Strip order) { this(order, null, null); }
+
+        /** {@code chest} null: today's deposit (the runner finds the main chest); a cell: the planned deposit's chest (deposit-goal piece 3). */
+        public Deposit(Strip order, java.util.Map<String, Integer> only) { this(order, only, null); }
+
+        /** An exact deposit into the chest at {@code chest} (MainChest's cell). */
+        public Deposit(java.util.Map<String, Integer> only, int[] chest) {
+            this(null, only == null ? null : java.util.Collections.unmodifiableMap(new java.util.TreeMap<>(only)), chest == null ? null : chest.clone());
+        }
+
+        @Override public boolean equals(Object o) {
+            return o instanceof Deposit d && java.util.Objects.equals(order, d.order) && java.util.Objects.equals(only, d.only) && java.util.Arrays.equals(chest, d.chest);
+        }
+
+        @Override public int hashCode() { return java.util.Objects.hash(order, only, java.util.Arrays.hashCode(chest)); }
+
+        /** The chest cell as "x y z"; empty: none given. */
+        public String chestText() { return chest == null ? "" : chest[0] + " " + chest[1] + " " + chest[2]; }
 
         /**
          * deposit-words (owner 2026-11-08): put EXACTLY these items and counts into the main chest ({@code only}: item id ->
          * count); nothing else moves, no kept set applies. The order line's -d items at its end, and aa deposit <item> <n>, ...
          */
-        public Deposit(java.util.Map<String, Integer> only) { this(null, only == null ? null : java.util.Collections.unmodifiableMap(new java.util.TreeMap<>(only))); }
+        public Deposit(java.util.Map<String, Integer> only) { this(only, null); }
 
-        public String text() { return order != null ? "deposit the strip's finds" : only == null ? "deposit" : "deposit " + onlyText(only); }
+        public String text() {
+            String base = order != null ? "deposit the strip's finds" : only == null ? "deposit" : "deposit " + onlyText(only);
+            return chest == null ? base : base + " to the chest at " + chestText();
+        }
 
         /** "cobblestone 32, torch 4" (ids without the minecraft: namespace). */
         public static String onlyText(java.util.Map<String, Integer> only) {

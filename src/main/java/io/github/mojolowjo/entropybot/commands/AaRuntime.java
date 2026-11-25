@@ -100,6 +100,7 @@ public final class AaRuntime implements JobPort {
         worldLoaded();
         bb.fact(io.github.mojolowjo.entropybot.aa.RungOptions.SURFACE_FACTS, perTick(new io.github.mojolowjo.entropybot.aa.FactsMemo<>(0), timed("surface", this::surfaceFacts)));
         bb.fact(io.github.mojolowjo.entropybot.aa.NeedChain.WORLD_FACT, (java.util.function.Supplier<io.github.mojolowjo.entropybot.aa.NeedChain.World>) this::needWorld);
+        bb.fact(io.github.mojolowjo.entropybot.aa.brain.MainChest.FACT, (java.util.function.Supplier<io.github.mojolowjo.entropybot.aa.brain.MainChest.Answer>) AaRuntime::mainChest);   // deposit-goal piece 3
         bb.fact(io.github.mojolowjo.entropybot.aa.brain.Goals.NOT_READY_FACT, (java.util.function.Supplier<String>) this::sensesNotReady);   // 0.39.z36
         bb.fact(io.github.mojolowjo.entropybot.aa.brain.WorldFacts.FLUID_FACT, (java.util.function.Function<int[], Boolean>) AaRuntime::fluidAt);   // 0.39.z77 world 3
         bb.fact(io.github.mojolowjo.entropybot.aa.brain.Goals.BLOCK_AT_FACT, (java.util.function.Function<int[], String>) Crafting::blockIdLoaded);   // 0.39.z78 J5: StationHolds' refusals
@@ -4176,10 +4177,18 @@ public final class AaRuntime implements JobPort {
     /** deposit-words: the lines' weighing (sim 2026-11-09: the rules moved to LineDeposits, no game types; one store). */
     private final io.github.mojolowjo.entropybot.aa.brain.LineDeposits lineDeposits = new io.github.mojolowjo.entropybot.aa.brain.LineDeposits();
 
-    /** The main chest's cell as text for the deposit lines; null: none set. */
-    private static String mainChestAt() {
+    /** The main chest's cell as text for the deposit lines; null: none set. Reads the one reader (MainChest.FACT, rule 23). */
+    private String mainChestAt() {
+        return io.github.mojolowjo.entropybot.aa.brain.MainChest.of(bb).at();
+    }
+
+    /** deposit-goal piece 3: the one main chest reader, from MainStations' container main (installed as MainChest.FACT). */
+    private static io.github.mojolowjo.entropybot.aa.brain.MainChest.Answer mainChest() {
         var main = io.github.mojolowjo.entropybot.aa.MainStations.now().of(io.github.mojolowjo.entropybot.aa.MainStations.CONTAINER);
-        return main == null ? null : String.valueOf(main.at());
+        if (main == null) return new io.github.mojolowjo.entropybot.aa.brain.MainChest.None("no main chest set (aa deposit x y z)");
+        if (Crafting.blockIdLoaded(new int[] {main.x(), main.y(), main.z()}) == null)
+            return new io.github.mojolowjo.entropybot.aa.brain.MainChest.NotLoaded(main.x(), main.y(), main.z());
+        return new io.github.mojolowjo.entropybot.aa.brain.MainChest.Known(main.x(), main.y(), main.z(), 0);   // structural: no bonus priced yet
     }
 
     /** A LineDeposits answer: logged (rule 7), whispered when no chest is set, the deposit queued when the line is due. */
