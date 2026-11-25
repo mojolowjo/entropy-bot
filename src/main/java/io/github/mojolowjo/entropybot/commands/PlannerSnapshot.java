@@ -100,7 +100,9 @@ public final class PlannerSnapshot {
                         () -> (GenWhere.Base) get(a, new PlanNodes.Fact("base", null), null)),
                 // merge review 2026-11-23 (forecast): the reserve table is a plain fact of the World like the bag, the holds and
                 // the rooms (an immutable copy by its constructor): the worker reads the list the live check compares with
-                live.reserves());
+                live.reserves(),
+                // job-kept-crafts review 3: the other orders' holds that fill from what comes in, a plain fact like the reserves
+                live.fills());
         return new PlannerSnapshot(w, NeedChain.liveBag(live), new FrozenExtras(a), Map.copyOf(withNulls(a)), version, takenAt, NeedChain.dataEpoch(live));
     }
 

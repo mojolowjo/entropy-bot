@@ -7,13 +7,12 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * job-kept-crafts review 2: the line the review named ("oak_log 16 -d" with a torch 4, no logs at the start; spruce here, the
- * map's trees) played by the simulator's runner (SimGame: the trips' legs through the planner worker's path, the runner's
- * holds with its own start bag, Goals.RUN_START_FACT for the planner's keptOff and the placing reserves). The log order
- * is met by the trip's cut (18), the run ends on "goal reached" and the torch's run starts with the met 16 in its start
- * bag; its charcoal takes one of the 2 spare logs, and the chest gets the 16 whole. The window the review named (a
- * sibling met while the run goes on) is covered by aa/KeptCraftsTest.aSiblingMetDuringTheRun_isHeldWhole_runnerAndPlannerAlike.
- */class SimKeptCraftsTest {
+ * job-kept-crafts: the line "spruce_log 16 -d" with a torch 4, no logs at the start (spruce, the map's trees), played by the
+ * simulator's runner (SimGame: the trips' legs through the planner worker's path, the runner's holds as the game's). The
+ * log order is met by the trip's cut, the torch's charcoal takes a spare log, never a held one, and the chest gets the 16
+ * whole. Review 3: one hold for the planner and the runner (no run-start cap); aa/KeptCraftsTest has the other orders' fills.
+ */
+class SimKeptCraftsTest {
     @AfterEach
     void clear() {
         io.github.mojolowjo.entropybot.aa.brain.Only.set("off");

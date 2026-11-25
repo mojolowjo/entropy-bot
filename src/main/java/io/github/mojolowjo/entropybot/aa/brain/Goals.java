@@ -1607,34 +1607,6 @@ public final class Goals {
         return ld.keptPer(bb.in.bag, of(bb), null, null);
     }
 
-    /**
-     * job-kept-crafts review 2: {@link #keptPer(Blackboard)} with the entries of the orders not in {@code whole} capped at
-     * {@code startBag} as {@link #keptFromOthers(Blackboard, Goal, Map)} caps them (null: as it is).
-     */
-    /**
-     * job-kept-crafts review 2: the runner's placing reserves (AaRuntime.orderReserves, the simulator's) for {@code running}'s
-     * run: {@link #keptPer(Blackboard)} with the other orders' entries capped at the run's start as the crafts' hold and the
-     * planner's {@link #keptOff} cap them ({@link #runStartOf}). Null {@code running}: as it is.
-     */
-    public static List<LineDeposits.Kept> keptPerForRun(Blackboard bb, Goal running) {
-        if (running == null) return keptPer(bb);
-        java.util.Set<Goal> notOff = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
-        notOff.add(running);
-        notOff.addAll(BatchWay.open(bb, running));
-        return keptPer(bb, runStartOf(bb, running), notOff);
-    }
-
-    static List<LineDeposits.Kept> keptPer(Blackboard bb, Map<String, Integer> startBag, java.util.Collection<Goal> whole) {
-        if (startBag == null) return keptPer(bb);
-        if (bb.in == null || bb.in.bag == null || !(bb.fact(LineDeposits.FACT) instanceof LineDeposits ld)) return List.of();
-        java.util.Set<Goal> keep = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
-        if (whole != null) keep.addAll(whole);
-        List<LineDeposits.Kept> out = new ArrayList<>();
-        for (var k : ld.keptPer(bb.in.bag, of(bb), null, null)) if (keep.contains(k.order())) out.add(k);
-        for (var k : ld.keptPer(bb.in.bag, of(bb), null, null, byPath(startBag))) if (!keep.contains(k.order())) out.add(k);
-        return out;
-    }
-
     /** deposit-kept: what the bag holds for the -d orders' deposits, less {@code self}'s and {@code skip}'s ({@link LineDeposits#kept}); empty: nothing. */
     public static Map<String, Integer> kept(Blackboard bb, Goal self, java.util.Collection<Goal> skip) {
         if (bb.in == null || bb.in.bag == null || !(bb.fact(LineDeposits.FACT) instanceof LineDeposits ld)) return Map.of();
@@ -1688,15 +1660,6 @@ public final class Goals {
      * job-review-leftovers (item 4): as above, {@code startBag} the bag at the task's first start - the runner's one store of
      * it (AaRuntime.typedStartBag, the live bag; the simulator's own), read here instead of a second note on the board.
      * Null: not known (a run started without one), the order's own -d amounts are held whole, said once (rule 7).
-     *
-     * <p>job-kept-crafts (worlds run 4, w044 line 1221: torch parked on "needs 1 of logs_that_burn; the bag will hold 0" -
-     * its chain cut a tree for one log, and the parked oak_log -d order, 7 of 16 in the bag, took all 6 cut logs into its
-     * hold): with the run's start bag known, an OTHER order's hold that is not whole is never more than it was at the run's
-     * start ({@link #keptFromOthers(Blackboard, Goal, Map)}, LineDeposits.held), so a log the run's own cut brings in is the
-     * run's; the other order gathers its own rest later. Review 2: a whole hold (a sibling met during the run) and the fixed
-     * amounts (due, on the way) are never cut; the planner's {@link #keptOff} and the placing reserves
-     * ({@link #keptPerForRun}) read the same cap through the runner's start bag ({@link #RUN_START_FACT}), so a re-plan
-     * inside the run prices with the hold the runner keeps.
      */
     public static Map<String, Integer> keptForRun(Blackboard bb, String desireId, boolean orderRun, boolean consume, Map<String, Integer> startBag) {
         if (!orderRun) return Map.of();
@@ -1708,33 +1671,8 @@ public final class Goals {
             for (Goal g : of(bb)) if (g.id().equals(desireId)) return keptFromUse(bb, g, startBag);
         if (consume) return kept(bb, null, null);
         if (desireId != null && bb.fact(FACT) instanceof List<?>)
-            for (Goal g : of(bb)) if (g.id().equals(desireId)) return keptFromOthers(bb, g, startBag);
+            for (Goal g : of(bb)) if (g.id().equals(desireId)) return keptFromOthers(bb, g);
         return kept(bb, null, null);
-    }
-
-    /**
-     * job-kept-crafts review 2 (the planner and the runner gave two answers for the others' hold on a re-plan inside the
-     * run): the runner's reader of its running run's start bag, put on the board by the runner (AaRuntime: its one store,
-     * typedStartBag; the simulator's runStartBag) - a reader, not a copy. The planner's {@link #keptOff} asks it so a
-     * re-plan inside {@code g}'s run takes off the others' amounts as the runner holds them ({@link #keptFromOthers} with
-     * the start bag). Answers null when {@code desireId} is not the running run's or its start is not known.
-     */
-    public interface RunStart { Map<String, Integer> startBagOf(String desireId); }
-
-    /** The board fact holding the runner's {@link RunStart}; absent: no run known (the hold whole, as before). */
-    public static final String RUN_START_FACT = "aa.runStartBag";
-
-    /** The start bag of {@code g}'s run while it runs ({@link #RUN_START_FACT}); null: not running, or not known. */
-    static Map<String, Integer> runStartOf(Blackboard bb, Goal g) {
-        return g != null && bb.fact(RUN_START_FACT) instanceof RunStart rs ? rs.startBagOf(g.id()) : null;
-    }
-
-    /** {@code startBag} (full ids or paths) by item path, as the -d counts read it; null: null. */
-    private static Map<String, Integer> byPath(Map<String, Integer> startBag) {
-        if (startBag == null) return null;
-        Map<String, Integer> out = new java.util.HashMap<>();
-        for (var e : startBag.entrySet()) if (e.getValue() != null) out.merge(Thing.path(e.getKey()), e.getValue(), Integer::sum);
-        return out;
     }
 
     static final String OWN_WHOLE_SAID_FACT = "aa.keptOwnWholeSaid";
@@ -1746,7 +1684,7 @@ public final class Goals {
      * order's by {@link #ownAside}), so the runner never refuses what the planner priced.
      */
     private static Map<String, Integer> keptFromUse(Blackboard bb, Goal g, Map<String, Integer> startBag) {
-        Map<String, Integer> out = new java.util.HashMap<>(keptFromOthers(bb, g, startBag));
+        Map<String, Integer> out = new java.util.HashMap<>(keptFromOthers(bb, g));
         if (startBag == null && bb.port != null && !g.id().equals(bb.fact(OWN_WHOLE_SAID_FACT))) {
             bb.fact(OWN_WHOLE_SAID_FACT, g.id());
             bb.port.log(g.r.key() + ": the bag at the run's start is not known; its own -d amounts are held whole from its crafts and smelts");
@@ -1854,17 +1792,6 @@ public final class Goals {
     }
 
     /**
-     * job-kept-crafts: {@link #keptFromOthers} for {@code g}'s run that started on {@code startBag} (null: not known, the
-     * holds as now): an other order's hold that is not whole is capped at what the bag held for it then
-     * (LineDeposits.held). The one answer the runner (keptForRun) and the planner ({@link #keptOff}, by {@link #runStartOf}) read.
-     */
-    static Map<String, Integer> keptFromOthers(Blackboard bb, Goal g, Map<String, Integer> startBag) {
-        if (startBag == null || g == null) return keptFromOthers(bb, g);
-        if (bb.in == null || bb.in.bag == null || !(bb.fact(LineDeposits.FACT) instanceof LineDeposits ld)) return Map.of();
-        return ld.kept(bb.in.bag, of(bb), g, BatchWay.open(bb, g), byPath(startBag));
-    }
-
-    /**
      * deposit-kept (owner 2026-11-13): the planner's world for {@code g} with the other -d orders' amounts taken off its bag
      * - an order gathers its own, the -d amounts go to the chest whole. Not taken off: {@code g}'s own and its trip's open
      * orders' (BatchWay.open: the trip obtains them and sets them aside itself). An order with no deposit word keeps
@@ -1885,19 +1812,29 @@ public final class Goals {
         // goal has no amount of its own, so every kept amount, the owed ones included, is off its bag and out of its
         // reserves as for any order (keptFromOthers). Its chain never crafts, places or lends what is owed; the put alone
         // uses it (Step.Deposit carries the owed counts, its free bag counts them: keptForRun without consume)
-        // job-kept-crafts review 2: a re-plan inside g's run takes the others' amounts off as the runner holds them (its
-        // start bag, runStartOf); the reserves read the same capped entries for the orders whose amounts come off here
-        Map<String, Integer> start = runStartOf(bb, g);
-        Map<String, Integer> kept = keptFromOthers(bb, g, start);
+        Map<String, Integer> kept = keptFromOthers(bb, g);
         var reserves = bb.in == null || bb.in.bag == null ? List.<baritone.api.process.Reserves.Reserve<String>>of()
-                : plannerReserves(g, finished(bb), bb.in.bag, keptPer(bb, start, notOff), notOff);
-        if (kept.isEmpty()) return w.withReserves(reserves);
+                : plannerReserves(g, finished(bb), bb.in.bag, keptPer(bb), notOff);
+        // job-kept-crafts review 3 (w044): the same orders' holds that are not whole fill from what comes in first, so a
+        // source way of their item asks those on top of its need (World.fills); the runner holds them the same (keptForRun)
+        Map<String, Integer> fills = fillsFromOthers(bb, g);
+        if (kept.isEmpty()) return w.withReserves(reserves).withFills(fills);
         Map<String, Integer> bag = new java.util.LinkedHashMap<>(w.bag());
         for (var e : bag.entrySet()) {
             int k = kept.getOrDefault(Thing.path(e.getKey()), 0);
             if (k > 0) e.setValue(Math.max(0, e.getValue() - k));
         }
-        return w.withBag(bag).withReserves(reserves);
+        return w.withBag(bag).withReserves(reserves).withFills(fills);
+    }
+
+    /**
+     * job-kept-crafts review 3 (worlds run 4 w044): of the holds {@link #keptFromOthers} reads (the same orders: not {@code g},
+     * not its trip's open ones), how many more of each item (by path) they take as the bag of it grows
+     * ({@link LineDeposits#fills}); empty: none, or the bag is not read.
+     */
+    public static Map<String, Integer> fillsFromOthers(Blackboard bb, Goal g) {
+        if (bb.in == null || bb.in.bag == null || !(bb.fact(LineDeposits.FACT) instanceof LineDeposits ld)) return Map.of();
+        return ld.fills(bb.in.bag, of(bb), g, g == null ? null : BatchWay.open(bb, g));
     }
 
     /**

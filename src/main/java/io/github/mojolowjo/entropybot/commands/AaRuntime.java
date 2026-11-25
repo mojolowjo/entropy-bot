@@ -90,7 +90,6 @@ public final class AaRuntime implements JobPort {
         this.c = c;
         this.tree = AaTree.build(new AaScorer());
         this.bb = new Blackboard(io.github.mojolowjo.entropybot.aa.brain.GameClock::ms, this, tracer);
-        bb.fact(io.github.mojolowjo.entropybot.aa.brain.Goals.RUN_START_FACT, (io.github.mojolowjo.entropybot.aa.brain.Goals.RunStart) this::runStartBagOf);
         tracer.sink(this::appendDecision);
         JsonObject d = data();
         var oldKeys = io.github.mojolowjo.entropybot.aa.AaSwitch.dropOldGlobal(d);      // live-facts: the switch moved into the world's part
@@ -1285,7 +1284,7 @@ public final class AaRuntime implements JobPort {
         var finished = io.github.mojolowjo.entropybot.aa.brain.Goals.finished(bb);
         if (!prune) finished = io.github.mojolowjo.entropybot.aa.brain.Goals.copies(finished);
         return io.github.mojolowjo.entropybot.aa.brain.Goals.orderReserves(running, finished, bb.in.bag,
-                io.github.mojolowjo.entropybot.aa.brain.Goals.keptPerForRun(bb, running));      // job-kept-crafts review 2: capped as the crafts' hold
+                io.github.mojolowjo.entropybot.aa.brain.Goals.keptPer(bb));
     }
 
     /**
@@ -1305,18 +1304,6 @@ public final class AaRuntime implements JobPort {
      * every kept -d amount, the running order's own included (Goals.keptForRun with consume). The crafts' plan bag reads this.
      */
     java.util.Map<String, Integer> keptFromUse() { return kept(true); }
-
-    /**
-     * job-kept-crafts review 2 (Goals.RUN_START_FACT): the bag at the start of the running task's run when it is
-     * {@code desireId}'s, as {@link #kept} passes it to Goals.keptForRun - the one store (typedStartBag), read; null: not
-     * that run, or its start not known. The planner's keptOff asks this on the tick.
-     */
-    private java.util.Map<String, Integer> runStartBagOf(String desireId) {
-        var rp = taskReplan;
-        boolean task = taskStarting || (typedRun && runner.taskHolds());
-        if (!task || rp == null || desireId == null || !desireId.equals(rp.desire()) || typedStartMs < 0) return null;
-        return typedStartBag;
-    }
 
     private java.util.Map<String, Integer> kept(boolean consume) {
         var rp = taskReplan;
