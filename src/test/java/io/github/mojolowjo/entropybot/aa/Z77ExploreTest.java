@@ -134,6 +134,23 @@ class Z77ExploreTest {
         assertTrue(craft >= 0 && climb > craft, "the pickaxe crafted before the climb: " + c.steps());
     }
 
+    /**
+     * Pickaxe price review 2 (rule 7): a wooden pickaxe with 10 uses and 20 spare cobblestone for 48 up - the staircase's 84
+     * uses pass them, no replacement to be had and too few blocks to lend: the failure itself names the pickaxe's reason.
+     * Unknown uses (rule 15): not a price, worn on - the climb stands.
+     */
+    @Test
+    void e2c_pickaxeShortClimb_theReasonInTheFailure_unknownUsesWornOn() {
+        var w = deep(word -> null).withPath((x, y, z, d) -> PathPrice.Answer.unreachable("no path"))
+                .withBag(Map.of("minecraft:wooden_pickaxe", 1, "minecraft:cobblestone", 20));
+        Chain c = NeedChain.resolve("raw_iron", 3, w.withUses(k -> k.endsWith("wooden_pickaxe") ? 10 : io.github.mojolowjo.entropybot.aa.brain.ToolUses.UNLIMITED));
+        assertFalse(c.ok(), c.why());
+        assertTrue(c.missing().contains("the staircase up 48 levels: 84" + NeedChain.PICK_SHORT + "10 left, no replacement to be had"), c.missing());
+        Chain unknown = NeedChain.resolve("raw_iron", 3, w.withUses(k -> io.github.mojolowjo.entropybot.aa.brain.ToolUses.UNKNOWN));
+        assertTrue(unknown.ok(), unknown.why());
+        assertTrue(unknown.steps().contains(new Step.Climb()), unknown.steps().toString());
+    }
+
     /** Review 6 (E0's bound): two stands in a row at one cell, the re-plan a stand again: no third stand, the run ends with the reason. */
     @Test
     void e0_noThirdStandAtOneCell() {

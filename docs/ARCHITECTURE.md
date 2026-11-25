@@ -44,9 +44,14 @@ blocks the same way. Tuning `forecast.*`.
 Pickaxe price (plan step 6, run 3 w070): both are ways for `choose` (`Alt`s), never a fixed order. A way that digs with
 the pickaxe (staircase: `stairWear`, `forecast.stairBreaksPerLevel` a level not pillared by spare blocks; extra blocks) counts its
 breaks against `pickUsesLeft` (`heldUses` + `bagPickUses`, the same two readers `spareTools` uses, less `pickWorn`) in
-`pickWear`: past them `spareTools` prices the replacement, none to be had drops the way with the reason. Kept blocks are
-never lent to a climb: the Climb keeps the reserves on Baritone's lease (`StepHands`). `climbUp` adds "make a pickaxe first"
-(`cheapestPickaxe`) when there is no pickaxe and too few spare blocks.
+`pickWear`. Under ground (`wayBackUp`, the covered collect's take) no replacement is made in the middle of the dig: past the
+uses the way drops with the reason; the replacement is priced BEFORE the walk down by `wornPickaxe`, which counts the cover
+(`coverWear`), the take and the least wear of the climb (`climbWear`). `climbUp` (the bot is under ground already) prices
+it there through `spareTools`. Kept blocks may be lent to a pillar (`lendItem`, never the chain's own asked item): the
+`Step.Climb(lendItem, lend)` lowers the reserves on that item for its own step only (`Reservations.build` / `lend`, the
+orders' first) and the same amount is collected again right after it (`obtain`), so a -d amount is whole again before any
+later step. `climbUp` adds "make a pickaxe first" (`cheapestPickaxe`) when there is no pickaxe and too few spare blocks.
+Each way's reason reaches the failure itself (read from the dropped lines `choose` wrote, so a reused D6 node says it too).
 
 ### Path memory (D11)
 The fork keeps priced paths (`PathMemory`) and re-joins a kept path the feet left by one short search (build 1); the mod

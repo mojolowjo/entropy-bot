@@ -111,24 +111,82 @@ class ForecastBagTest {
     /**
      * Pickaxe price (plan step 6, run 3 w070: "15 levels, 7 of 43 blocks spare: a staircase", then the collect, then "wooden_pickaxe
      * gone (broke)" under ground): a wooden pickaxe with 30 uses digs 16 cobblestone (14 left); the staircase's 45 breaks pass
-     * them and no replacement can be had, the spot has no extra blocks, and the 40 dirt another order keeps are never lent
-     * (the Climb keeps the reserves on Baritone's lease): no way up stands, said, and no staircase is planned.
+     * them, no replacement can be had (before going down: no materials; under ground: never), the spot has no extra blocks,
+     * and the 40 dirt another order keeps have no source to be collected again: no way up stands, said, no staircase planned.
      */
     @Test
-    void theStaircasePastThePickaxesUsesIsNoWay_keptBlocksNotLent_w070() {
+    void theStaircasePastThePickaxesUsesIsNoWay_keptBlocksNotLostW070() {
         Spot sp = new Spot(5, 62, 0, 5, STONE, 16).covered(2, "minecraft:dirt");
         World w = world(sp, Map.of("minecraft:wooden_pickaxe", 1, "minecraft:dirt", 40))
                 .withReserves(List.of(Reservations.order("dirt (finished)", List.of("minecraft:dirt"), 40)))
                 .withUses(k -> k.endsWith("wooden_pickaxe") ? 30 : io.github.mojolowjo.entropybot.aa.brain.ToolUses.UNLIMITED);
         Chain c = NeedChain.resolve("cobblestone", 16, w);
-        assertTrue(c.why().contains("a staircase: the staircase up 15 levels: 45" + NeedChain.PICK_SHORT + "14 left, no replacement to be had"), "the staircase is dropped with its reason: " + c.why());
+        assertTrue(c.why().contains("a staircase: the staircase up 15 levels: 45" + NeedChain.PICK_SHORT + "14 left, no replacement under ground"), "the staircase is dropped with its reason: " + c.why());
         assertTrue(c.why().contains(NeedChain.WAY_BACK_UP + "15 levels: no way up stands"), c.why());
+        assertTrue(c.steps().stream().noneMatch(s -> s instanceof Step.Climb), "no lend without its collect again: " + c.steps());
         assertFalse(c.why().contains(NeedChain.WAY_BACK_UP + "15 levels, 0 of 56 blocks spare:"), "no way back up taken: " + c.why());
         assertTrue(c.steps().stream().noneMatch(s -> s instanceof Step.Collect k && k.item().equals("dirt")), "the kept dirt is never re-collected: " + c.steps());
         // unlimited uses: the staircase stands again (no spare block, no extra at the spot: the only way)
         Chain free = NeedChain.resolve("cobblestone", 16, w.withUses(k -> io.github.mojolowjo.entropybot.aa.brain.ToolUses.UNLIMITED));
         assertTrue(free.ok(), free.why());
         assertTrue(free.why().contains(NeedChain.WAY_BACK_UP + "15 levels, 0 of 56 blocks spare: a staircase "), free.why());
+    }
+
+    /**
+     * Pickaxe price (c): the same w070 shape with an exposed dirt source - the 15 kept dirt are lent to the pillar (the Climb
+     * carries the lend) and collected again right after the Climb, so the kept 40 are whole before any later step.
+     */
+    @Test
+    void keptBlocksLentToThePillarAndCollectedAgain() {
+        Spot sp = new Spot(5, 62, 0, 5, STONE, 16).covered(2, "minecraft:dirt");
+        Spot dirt = new Spot(20, 64, 0, 15, "minecraft:dirt");
+        World w = Z77StoneHereTest.world(word -> word.contains("dirt") ? List.of(dirt) : List.of(sp))
+                .withBag(Map.of("minecraft:wooden_pickaxe", 1, "minecraft:dirt", 40))
+                .withReserves(List.of(Reservations.order("dirt (finished)", List.of("minecraft:dirt"), 40)))
+                .withUses(k -> k.endsWith("wooden_pickaxe") ? 30 : io.github.mojolowjo.entropybot.aa.brain.ToolUses.UNLIMITED);
+        Chain c = NeedChain.resolve("cobblestone", 16, w);
+        assertTrue(c.ok(), c.why());
+        int climb = -1, again = -1;
+        for (int i = 0; i < c.steps().size(); i++) {
+            if (c.steps().get(i) instanceof Step.Climb k && k.lend() == 15 && k.lendItem().endsWith("dirt")) climb = i;
+            if (climb >= 0 && i > climb && c.steps().get(i) instanceof Step.Collect k && k.item().contains("dirt") && k.n() >= 15) { again = i; break; }
+        }
+        assertTrue(climb >= 0 && again > climb, "the lent dirt collected again after the climb: " + c.steps());
+        assertTrue(c.why().contains("15 kept dirt lent"), c.why());
+    }
+
+    /** Pickaxe price (c): the Climb's lend lowers the order's reserve for that step only (the next step's table is whole). */
+    @Test
+    void theClimbsLendLowersTheReserveForItsStepOnly() {
+        var orders = List.of(Reservations.order("dirt (finished)", List.of("minecraft:dirt"), 40));
+        var steps = List.<Step>of(new Step.Climb("minecraft:dirt", 15), new Step.Collect("dirt", 15, null));
+        Reservations at = Reservations.build(steps, 0, List.of(), orders);
+        assertEquals(25, at.list().get(0).units, at.text());
+        assertTrue(at.note().contains("climb lends 15 dirt"), at.note());
+        Reservations after = Reservations.build(steps, 1, List.of(), orders);
+        assertEquals(40, after.list().get(0).units, "the next step's table is whole: " + after.text());
+    }
+
+    /**
+     * Pickaxe price (a), review 2: a wooden pickaxe with 20 uses, 8 cobblestone under 2 blocks of stone (2 + 8 + the staircase
+     * 21 = 31 uses): the replacement is priced BEFORE going down - its craft before the cover dig - and the climb then stands
+     * on the new one's uses.
+     */
+    @Test
+    void theReplacementIsMadeBeforeGoingDown() {
+        Spot sp = new Spot(5, 62, 0, 5, STONE, 8).covered(2, STONE);
+        World w = world(sp, Map.of("minecraft:wooden_pickaxe", 1, "minecraft:oak_planks", 3, "minecraft:stick", 2, "minecraft:crafting_table", 1))
+                .withUses(k -> k.endsWith("wooden_pickaxe") ? 20 : io.github.mojolowjo.entropybot.aa.brain.ToolUses.UNLIMITED);
+        Chain c = NeedChain.resolve("cobblestone", 8, w);
+        assertTrue(c.ok(), c.why());
+        int craft = -1, dig = -1, climb = -1;
+        for (int i = 0; i < c.steps().size(); i++) {
+            Step s = c.steps().get(i);
+            if (craft < 0 && s instanceof Step.Craft k && k.item().endsWith("_pickaxe")) craft = i;
+            if (dig < 0 && s instanceof Step.Dig) dig = i;
+            if (s instanceof Step.Climb) climb = i;
+        }
+        assertTrue(craft >= 0 && dig > craft && climb > dig, "the pickaxe made before the dig down: " + c.steps() + " | " + c.why());
     }
 
     /** Review: the staircase's wear counts only the levels the spare blocks do not pillar, the same in every climb way. */
