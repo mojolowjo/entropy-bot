@@ -1313,6 +1313,7 @@ public final class NeedChain {
         double partWalk, partDig;   // job-est: running sums of the source walks and digs (debug.wayProbe reads a way's share as a difference; never restored)
         boolean bandPick;     // 0.39.z69 item 1: a band walk's pickaxe-first is being priced (no second one inside it)
         boolean lending;      // pickaxe price review 3 item 6: a lend's collect again is being priced (no second lend inside it)
+        boolean climbPick;    // deposit-goal stage 4 review 3: a climb's "make a pickaxe first" is being priced (no second one inside it)
         /**
          * 0.39.z61 (D1 J2): a craft / smelt step (this very object) -> what the simulated bag took for it, by the recipe slot's
          * need word. Keyed by identity: a dropped way's steps simply never reach the chain (no restore needed).
@@ -1964,7 +1965,7 @@ public final class NeedChain {
                          boolean tableReady, boolean furnaceReady, boolean stuck, String unknown, String pickItem, int pickTier, boolean tableWalked,
                          boolean furnaceWalked, int pickWorn, boolean pickMade, boolean pickOut, boolean atRoom, String down, int downAt,
                          boolean tableDown, boolean furnaceDown, Map<String, Integer> upBag, List<String> path, int pathsWaiting, Map<String, Integer> aside,
-                         boolean hoisting, boolean bandPick, Burn burned, String fail, String loopOn, Set<String> keptFuel) {}
+                         boolean hoisting, boolean bandPick, boolean climbPick, Burn burned, String fail, String loopOn, Set<String> keptFuel) {}
 
     /** A cheap hash of an entry state (its sizes and scalars; equal entries hash equal, a clash is settled by Deep.equal). */
     private static int hashOf(Entry e) {
@@ -1973,7 +1974,7 @@ public final class NeedChain {
                 e.down(), e.downAt(), e.path(), e.pathsWaiting(), e.fail(), e.loopOn(), e.unknown(), e.leafAt().size(), e.taken().size());
         int flags = (e.tableReady() ? 1 : 0) | (e.furnaceReady() ? 2 : 0) | (e.stuck() ? 4 : 0) | (e.tableWalked() ? 8 : 0) | (e.furnaceWalked() ? 16 : 0)    // structural: bits
                 | (e.pickMade() ? 32 : 0) | (e.pickOut() ? 64 : 0) | (e.atRoom() ? 128 : 0) | (e.tableDown() ? 256 : 0) | (e.furnaceDown() ? 512 : 0)       // structural: bits
-                | (e.hoisting() ? 1024 : 0) | (e.bandPick() ? 2048 : 0);                                                                                    // structural: bits
+                | (e.hoisting() ? 1024 : 0) | (e.bandPick() ? 2048 : 0) | (e.climbPick() ? 4096 : 0);                                                         // structural: bits
         return 31 * h + flags;                                                                                                                              // structural: a hash's multiplier
     }
 
@@ -1987,7 +1988,7 @@ public final class NeedChain {
         private final List<String> path;
         private final int pathsWaiting;
         private final Map<String, Integer> aside;
-        private final boolean hoisting, bandPick;
+        private final boolean hoisting, bandPick, climbPick;
         private final Burn burned;
         private final String fail, loopOn;
         private final Set<String> kept;
@@ -2000,6 +2001,7 @@ public final class NeedChain {
             aside = new LinkedHashMap<>(c.aside);
             hoisting = c.hoisting;
             bandPick = c.bandPick;
+            climbPick = c.climbPick;          // stage 4 review 3: a node priced inside a climb's pickaxe-first is not reused outside it
             burned = c.burned;
             fail = c.fail;
             loopOn = c.loopOn;
@@ -2012,7 +2014,7 @@ public final class NeedChain {
             if (e[i] == null) e[i] = new Entry(fullSteps ? s.steps() : (Object) s.steps().size(), s.leafAt(), s.taken(), awayRead ? s.away() : null,
                     s.tableReady(), s.furnaceReady(), s.stuck(), s.unknown(), s.pickItem(), s.pickTier(), s.tableWalked(), s.furnaceWalked(), s.pickWorn(),
                     s.pickMade(), s.pickOut(), s.atRoom(), s.down(), s.downAt(), s.tableDown(), s.furnaceDown(), s.upBag(), path, pathsWaiting, aside,
-                    hoisting, bandPick, burned, fail, loopOn, kept);
+                    hoisting, bandPick, climbPick, burned, fail, loopOn, kept);
             return e[i];
         }
 
@@ -2686,9 +2688,10 @@ public final class NeedChain {
      * chest is offered (rule 22); on the surface an estimate is ranked (rule 18 amended, run JAC). A walk still computing is
      * the chain's wait (PathPrice.NOT_KNOWN: the bot stands). No way: the failure names every way's reason (rule 7).
      * The world is the planner's world ({@code Goals.keptOff}, its reserves from {@code Goals.plannerReserves}); for the
-     * deposit goal (stage 3) the owed amounts stay on its bag and in its reserves, so no climb places them and a lend of
-     * them is priced; nothing here reserves them a second time (review: counted once, the -d amount reaches the chest
-     * whole). The world is used as given.
+     * deposit goal every kept amount, the owed ones included, is off its bag (stage 4 review 3: the runner holds them all
+     * from the run's crafts, Goals.keptForRun with consume), so no way crafts, places or lends what is owed - only the put
+     * uses it; nothing here reserves them a second time (counted once, the -d amount reaches the chest whole). The world
+     * is used as given.
      */
     public static Chain deposit(Map<String, Integer> owedIds, io.github.mojolowjo.entropybot.aa.brain.MainChest.Answer chest, World w) {
         Map<String, Integer> owed = new TreeMap<>();
@@ -7707,9 +7710,21 @@ public final class NeedChain {
         int lendN = Math.max(0, depth - blocks);
         if (lendN > 0 && placeable >= depth) addLendWays(c, ways, fbag, lendN, sec, "climb with ",
                 (lend, back) -> "climb up " + depth + " with " + blocks + " spare blocks and " + lendN + " kept " + shw(lend) + " lent: " + s(sec) + ", collected again after: " + back + " (the walk up out: " + w + ")");
-        if (!pick && blocks < depth) ways.add(new Alt("make a pickaxe first", () -> {
+        // deposit-goal stage 4 review 3 (the deposit goal under ground with nothing but owed items in the bag, no source known:
+        // the pickaxe's planks had no source, their explore leaf asked this climb again from under ground, whose pickaxe-first
+        // asked them again - an unbounded recursion, the test JVM out of heap): no pickaxe-first inside another one's pricing
+        // (c.climbPick, the recursion bounded by structure as c.lending and c.bandPick); the inner climb keeps its other ways
+        String nested = !pick && blocks < depth && c.climbPick ? "make a pickaxe first: not inside another climb's pickaxe-first (its materials need this way up first)" : null;
+        if (!pick && blocks < depth && !c.climbPick) ways.add(new Alt("make a pickaxe first", () -> {
             // (b) a bot under ground without a pickaxe: the cheapest pickaxe the free bag and the recipes pay, then the climb
-            String p = cheapestPickaxe(c, 1);           // structural: tier 1 = the least pickaxe
+            String p;
+            boolean was = c.climbPick;
+            c.climbPick = true;
+            try {
+                p = cheapestPickaxe(c, 1);           // structural: tier 1 = the least pickaxe
+            } finally {
+                c.climbPick = was;
+            }
             if (p == null || c.fail != null || c.stuck) { if (c.fail == null) c.fail = "no pickaxe to be made here (its materials are not known yet)"; return null; }
             // review: the spare blocks counted again after the pickaxe took its share of the bag
             int left = spareBlocks(forecastBag(c), c.w.reserves(), c.asked, c.askedN);
@@ -7727,6 +7742,7 @@ public final class NeedChain {
             List<String> why = new ArrayList<>();
             if (c.fail != null) why.add(c.fail);
             for (int i = d0; i < c.dropped.size(); i++) why.add(c.dropped.get(i));
+            if (nested != null) why.add(nested);
             if (ways.isEmpty()) why.add("no way offered");
             c.fail = noWalkUp(over) + " - the walk up: " + walk + "; no climb either: " + (pick ? "the " + sh(c.pickItem) : "no pickaxe") + " and " + blocks + " spare blocks of " + placeable
                     + " in the bag (the rest reserved) for " + depth + " up (" + String.join("; ", why) + ")";

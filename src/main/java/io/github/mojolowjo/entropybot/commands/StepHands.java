@@ -762,10 +762,13 @@ public final class StepHands implements Steps.Hands {
             // amount is untouched, so the deposit goal stays and the run's nothing-gained end is counted failed (FastEnd)
             String differs = c.aaRuntime.putDiffers(d.only());
             if (differs != null) { deposit = null; instant = "ok: no put - " + differs; return null; }
-            c.aaRuntime.putStarted();
         }
         String[] inst = new String[1];
         String r = deposit.start(p, inst);
+        // review 3 (fault 1): the put goes on its way only when the leg really starts - an instant end ("none of X in the
+        // bag": nothing is put) sends nothing on its way, the owed amount stays owed and the goal's run is a nothing-gained
+        // end (FastEnd, said); never a put counted as in the chest that moved nothing
+        if (d.chest() != null && r == null && inst[0] == null) c.aaRuntime.putStarted();
         if (inst[0] != null) { instant = inst[0]; deposit = null; }
         return r;
     }

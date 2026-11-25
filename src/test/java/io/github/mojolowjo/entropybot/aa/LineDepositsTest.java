@@ -289,7 +289,7 @@ class LineDepositsTest {
     /**
      * Review 3: an order stopped earlier and met since is weighed again by its "done"; a due deposit of its line that had
      * not started is taken back by that weighing. Whatever the weighing answers, the line says so and nothing is due in
-     * the store any more (the runtime starts a queued deposit only from dueNow()).
+     * the store any more (the deposit goal puts only what owed() holds; dueNow() is its not-started part).
      */
     @Test
     void aTakeBackThroughAWeighingIsSaidAndNothingStaysDue() {

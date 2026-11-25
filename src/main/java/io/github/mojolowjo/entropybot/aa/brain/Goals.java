@@ -1777,10 +1777,12 @@ public final class Goals {
         // reserves-once (run 3 w070): the planner's placing reserves come from this same store, with what is taken off the bag here left out
         java.util.Set<Goal> notOff = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
         if (g != null) { notOff.add(g); notOff.addAll(BatchWay.open(bb, g)); }
-        // deposit-goal (stage 3): the owed amounts stay on the deposit chain's bag and in its reserves (a climb lends them
-        // only by a priced lend); every other kept amount is off its bag as for any order
-        if (g != null && g.depositGoal) notOff.addAll(owedOrders(bb));
-        Map<String, Integer> kept = g != null && g.depositGoal ? kept(bb, null, notOff) : keptFromOthers(bb, g);
+        // deposit-goal stage 4, review 3 (point 2: the chain priced a pickaxe or a lend from the owed amounts, which the
+        // runner's craft bag refuses - keptForRun with consume holds every kept amount from the deposit's run): the deposit
+        // goal has no amount of its own, so every kept amount, the owed ones included, is off its bag and out of its
+        // reserves as for any order (keptFromOthers). Its chain never crafts, places or lends what is owed; the put alone
+        // uses it (Step.Deposit carries the owed counts, its free bag counts them: keptForRun without consume)
+        Map<String, Integer> kept = keptFromOthers(bb, g);
         var reserves = bb.in == null || bb.in.bag == null ? List.<baritone.api.process.Reserves.Reserve<String>>of()
                 : plannerReserves(g, finished(bb), bb.in.bag, keptPer(bb), notOff);
         if (kept.isEmpty()) return w.withReserves(reserves);

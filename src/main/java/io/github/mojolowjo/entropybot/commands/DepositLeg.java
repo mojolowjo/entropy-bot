@@ -67,8 +67,10 @@ final class DepositLeg {
         this.hands = hands;
         this.request = request;
         // deposit-goal stage 4: the planned put names its chest (the main chest, MainChest's one reader): no CHOOSE, the
-        // walk and the use go to that chest. Known loss until piece 10: byTrail lives in CHOOSE, so this put has no trail
-        // way home; the plan's walk up and climb stand in for it
+        // walk and the use go to that chest. Known loss until piece 10: byTrail lives in CHOOSE, so this put's own walk has no
+        // trail way home. Under ground (where a trail home matters) the chest walk is not offered (rule 22): the goal's walk
+        // up is a Step.ToSurface, whose hand still weighs the trail (StepHands.surfaceByTrail), and the climb stands beside it.
+        // What piece 10 needs: docs/ARCHITECTURE.md, the deposit goal row (the trail as a priced way)
         if (step.chest() != null) {
             chest = step.chest().clone();
             phase = Phase.WALK;

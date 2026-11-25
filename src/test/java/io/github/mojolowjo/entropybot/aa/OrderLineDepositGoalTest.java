@@ -203,6 +203,79 @@ class OrderLineDepositGoalTest {
         assertInstanceOf(Step.Deposit.class, c.steps().get(c.steps().size() - 1), c.why());
     }
 
+    /**
+     * Stage 4 review 3 (point 2): the deposit goal's kept is the reverse of an order's - its run may use up what is owed only
+     * by putting it in the chest. The runner holds every kept amount from the run's crafts (Goals.keptForRun with consume,
+     * AaRuntime.keptFromUse, Crafting.planBag), so the chain may price no craft, place or lend of the owed items: under
+     * ground with the walk up held, no pickaxe, no source known and nothing but the owed cobblestone and logs (and 2 sticks), there is no
+     * way up - said - never a pickaxe from the owed logs or a pillar of the owed cobblestone. Its put still counts them.
+     */
+    @Test
+    void theDepositChain_neverUsesWhatIsOwed_asTheRunnerHoldsItBack() {
+        OrderLineSim s = lineDue();
+        s.bag.remove("dirt");
+        s.bag.remove("wooden_pickaxe");
+        s.bag.put("stick", 2);
+        s.seen.clear();                          // no tree or stone known: the owed items are the only material near
+        s.under(20);
+        s.path = (x, y, z, d) -> x == -53 ? PathPrice.Answer.unreachable("no path from under ground") : priced(10);
+        s.tick();
+        WorldFacts.of(s.bb).learned(NeedChain.surfaceKey(0, 84, 0), "the walk up ended short", "cobblestone", s.bb.in);
+        Goals.Goal dg = s.depositGoal();
+        assertNotNull(dg, s.said.toString());
+        Map<String, Integer> held = Goals.keptForRun(s.bb, dg.id(), true, true);
+        assertEquals(32, held.get("cobblestone"), "the runner holds the owed amounts from use: " + held);
+        assertEquals(16, held.get("oak_log"), held.toString());
+        assertTrue(Goals.keptForRun(s.bb, dg.id(), true, false).isEmpty(), "the put's own free bag counts them");
+        var c = Goals.chain(s.bb, dg);
+        for (Step st : c.steps()) {
+            assertFalse(st instanceof Step.Craft, "no craft from the owed amounts: " + c.why());
+            if (st instanceof Step.Climb k) assertNull(k.lendItem(), "no lend of the owed amounts: " + c.why());
+        }
+        assertFalse(c.ok(), "no way up but the owed items: " + c.why());
+        assertTrue(c.missing().startsWith("no way to the main chest"), c.missing());
+    }
+
+    /**
+     * Stage 4 review 3 (point 2, the worker path since job-own-aside-worker): the deposit goal's chain is priced on the
+     * tick only (Goals.chain: no ask reaches the planner worker for it), and an order's ask on the worker - its trip's legs
+     * or its own chain (SyncPlanner: the snapshot, PlannerWorker.resolve, the port's live check) - starts from a bag with
+     * the owed amounts off, as the tick's: no planner drop.
+     */
+    @Test
+    void theWorkerPath_theDepositIsPricedOnTheTick_andAnOrdersWorkerBagHoldsNoOwedAmount() {
+        OrderLineSim s = lineDue();
+        List<String> keys = new java.util.ArrayList<>();
+        List<Map<String, Integer>> bags = new java.util.ArrayList<>();
+        s.bb.fact(io.github.mojolowjo.entropybot.aa.brain.BatchWay.PLANNER_FACT, new io.github.mojolowjo.entropybot.aa.brain.BatchWay.Planner() {
+            @Override public NeedChain.Legs legs(String key, Playbook pb, java.util.Set<String> keptFuel, NeedChain.World w) {
+                keys.add(key);
+                bags.add(NeedChain.liveBag(w));
+                return s.sync.legs(key, pb, keptFuel, w);
+            }
+
+            @Override public boolean ready(String key) { return s.sync.ready(key); }
+
+            @Override public NeedChain.Chain own(String key, io.github.mojolowjo.entropybot.aa.brain.BatchWay.OwnAsk ask, NeedChain.World w) {
+                keys.add(key);
+                bags.add(ask.bagLess(NeedChain.liveBag(w)));
+                return s.sync.own(key, ask, w);
+            }
+        });
+        Goals.Goal dg = s.depositGoal();
+        var c = Goals.chain(s.bb, dg);
+        assertTrue(c.ok(), c.why());
+        assertTrue(keys.isEmpty(), "the deposit goal never asks the worker: " + keys);
+        Goals.Goal stick = s.order("stick", 4, "b2", false);
+        Goals.chain(s.bb, stick);
+        assertFalse(keys.isEmpty(), "the order asks the worker");
+        for (Map<String, Integer> b : bags) {
+            assertEquals(0, b.getOrDefault("minecraft:oak_log", 0), "the owed logs are off the worker's bag: " + b);
+            assertEquals(0, b.getOrDefault("minecraft:cobblestone", 0), "the owed cobblestone too: " + b);
+        }
+        assertTrue(s.sync.drops.isEmpty(), "no planner drop: " + s.sync.drops);
+    }
+
     /** The deposit goal is skipped by every LineDeposits check (deposit 0, line null): nothing of it is kept or weighed. */
     @Test
     void theGoalIsNoDOrder() {
