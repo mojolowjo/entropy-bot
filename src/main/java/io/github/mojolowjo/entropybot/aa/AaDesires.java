@@ -468,7 +468,9 @@ public final class AaDesires {
             // the explore step (Baritone's explore) until a source of the order's item is known; the order is priced after it
             if (g.lookAround) {
                 g.lookAround = false;
-                return JobPort.TaskSpec.steps(TaskKind.EXPLORE, List.<Step>of(new Step.Explore(NeedChain.exploreMinutes(), g.r.key())), "owner goal");
+                // job-deposit-park-wake: the deposit goal's leg has no item to end it (it waits on its held chest walk, which lifts
+                // by the distance from where the walk failed): the leg runs its minutes, then the deposit is priced from there
+                return JobPort.TaskSpec.steps(TaskKind.EXPLORE, List.<Step>of(new Step.Explore(NeedChain.exploreMinutes(), g.depositGoal ? null : g.r.key())), "owner goal");
             }
             var rt = io.github.mojolowjo.entropybot.aa.brain.Goals.routine(bb, g);
             List<Step> s = rt == null ? null : rt.steps();

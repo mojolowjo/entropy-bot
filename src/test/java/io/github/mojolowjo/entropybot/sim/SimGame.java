@@ -122,6 +122,7 @@ final class SimGame {
         this.feet = feet.clone();
         Only.set(Only.ORDERS);
         BatchWay.clear();
+        io.github.mojolowjo.entropybot.aa.brain.StationHolds.INSTANCE.reset();      // a new world: its held stations go (as AaRuntime's)
         data = TestData.planner();
         vanillaWood(data);
         data.install();
@@ -485,6 +486,12 @@ final class SimGame {
             // the walk up and the climb do give one in the game (StepHands: FactChange.surface, FactChange.climb): the same here
             if (tr != null && s instanceof Step.ToSurface t) { io.github.mojolowjo.entropybot.aa.moves.FactChange.surface(t.x(), t.y(), t.z(), tr); fact = io.github.mojolowjo.entropybot.aa.moves.FactChange.take(); }
             if (tr != null && s instanceof Step.Climb) { io.github.mojolowjo.entropybot.aa.moves.FactChange.climb(tr); fact = io.github.mojolowjo.entropybot.aa.moves.FactChange.take(); }
+            // job-deposit-park-wake: the walk to a station that ends short gives the game's station fact too (StepHands.toStation:
+            // "<name> at x y z out for this order: the walk to it ended short: ...", held in StationHolds by Goals.replan)
+            if (!last.ok() && s instanceof Step.ToStation t) {
+                io.github.mojolowjo.entropybot.aa.moves.FactChange.stationWalk(t.name(), t.x(), t.y(), t.z(), "the walk to it ended short: " + last.text());
+                fact = io.github.mojolowjo.entropybot.aa.moves.FactChange.take();
+            }
             clock.advance(Math.round(last.seconds() * 1000));       // structural: milliseconds a second
             if (("goal." + Goals.DEPOSIT_KEY).equals(runDesire)) depositLegs.add(leg(s) + (last.ok() ? "" : "!"));
             say("  " + s.text() + " -> " + last.text() + String.format(Locale.ROOT, " (%.1f s)", last.seconds()));

@@ -84,6 +84,25 @@ public final class PricedAnswers {
     public static final String NO_PROGRESS_WAIT = "no progress: Baritone's search stopped on its budget with no step past the start - not the search's end"
             + " (rule 15: not known, never unreachable); searched again from the next cell, or Baritone's estimate after the first-answer wait";
 
+    /** job-deposit-park-wake: {@code a} is the fork's budget stop with no step past the start ({@link #NO_PROGRESS_WAIT}). Pure. */
+    public static boolean noProgress(PathPrice.Answer a) {
+        return a != null && a.kind() == PathPrice.Kind.COMPUTING && a.reason() != null && a.reason().startsWith(NO_PROGRESS_WAIT);
+    }
+
+    /** job-deposit-park-wake: the start of the words of a walk answered no progress from the cell the bot stands on. */
+    public static final String NO_PROGRESS_HERE = PathPrice.NO_PROGRESS_HERE;
+
+    /**
+     * job-deposit-park-wake (pilot c606aca8 w004): the answer for a walk the fork answered no progress from {@code feet} (null:
+     * not known) - NONE (no NOT_KNOWN prefix: the way drops, the chain never stands for it again) with the words; it is held
+     * while the bot stands on that cell (FirstAnswerClock), searched again from any other. Pure.
+     */
+    public static PathPrice.Answer noProgressHere(int[] feet) {
+        String at = feet == null || feet.length < 3 ? "here" : feet[0] + " " + feet[1] + " " + feet[2];     // structural: x y z
+        return PathPrice.Answer.none(NO_PROGRESS_HERE + " (" + at + "): Baritone's search from this cell stopped on its budget with no step past the start;"
+                + " held while I stand on this cell, searched again from the next one (rule 15: not known is never a price, nor a second wait)");
+    }
+
     /**
      * 0.39.z76 send-back 3 (rule 18 amended, rule 22; run AU 01:57:53-02:02:53: walks "COMPUTING (queued: 4 in flight)" for
      * 5 min): a walk still not known ({@code a} COMPUTING) after {@code waitS} (pathCost.firstAnswerWaitS) of asks from the

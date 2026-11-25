@@ -46,6 +46,31 @@ final class FirstAnswerClock {
      * Baritone's estimate ({@code estimateS}, read only then).
      */
     PathPrice.Answer answer(String key, PathPrice.Answer a, long now, int waitS, DoubleSupplier estimateS) {
+        return answer(key, a, now, waitS, estimateS, null);
+    }
+
+    /**
+     * job-deposit-park-wake (pilot c606aca8 w004 09:44-09:47: "walk to 93 65 74: COMPUTING (no progress ...)" 25 times from one
+     * cell, the bot standing 30 s each time, 213 s in all): the walks answered "no progress" from a cell, key -&gt; that cell.
+     * A search that stopped on its budget with no step past its start is the answer from that cell (the fork keeps it for
+     * its own start cell only): the walk from there is not known to be possible - {@link PricedAnswers#noProgressHere}, a
+     * NONE (the way drops, never a stand on it again) - while the bot stands on that cell; any other cell asks the fork
+     * again. Rule 15: not known is never a price, and never another wait on the same question.
+     */
+    private final Map<String, int[]> noProgress = new HashMap<>();
+
+    /** As above, {@code feet}: the cell the bot stands on (null: not known - the no-progress answer is said, nothing held). */
+    PathPrice.Answer answer(String key, PathPrice.Answer a, long now, int waitS, DoubleSupplier estimateS, int[] feet) {
+        int[] np = noProgress.get(key);
+        if (np != null && (feet == null || !java.util.Arrays.equals(np, feet) || !PricedAnswers.waits(a))) { noProgress.remove(key); np = null; }
+        if (PricedAnswers.noProgress(a) || np != null) {
+            clocks.remove(key);
+            if (feet != null) {
+                if (noProgress.size() >= max) noProgress.clear();
+                noProgress.put(key, feet.clone());
+            }
+            return PricedAnswers.noProgressHere(feet);
+        }
         if (!PricedAnswers.waits(a)) { clocks.remove(key); return a; }
         // 0.39.z78 J6c run EU (1a; 10:39:58-10:40:37: two lip walks "chunks not loaded" stood 30 s on nothing - 0 walks
         // computing): a walk into chunks not loaded has no search to wait on - it is ranked at once by Baritone's own goal

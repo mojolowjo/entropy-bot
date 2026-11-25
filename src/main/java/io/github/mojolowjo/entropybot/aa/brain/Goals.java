@@ -235,12 +235,25 @@ public final class Goals {
 
     /** The one look-around leg is still to come for {@code g} (read by {@link #parkedTick} and {@link #stillChanges}). */
     static boolean lookAroundDue(Goal g) {
-        // deposit-goal: an explore is no way for a deposit (rule 22)
-        return !g.looked && g.strip == null && !g.depositGoal && g.park != null && g.park.kind() == ParkKind.PLACE;
+        // deposit-goal (stage 3): was "an explore is no way for a deposit (rule 22)" - a priced explore way, yes; but this leg is
+        // no way of a chain, it is the owner's stop-wake move (2026-11-21) with every order stopped. job-deposit-park-wake (pilot
+        // c606aca8 w005: the deposit goal parked on its held chest walk, every order parked, 253 s standing with the line in the
+        // bag): a PLACE park of the deposit goal waits on the hold that lifts by distance only, so it takes the one leg too. Safe
+        // since job-deposit-short-wake: an order waking meanwhile takes only itself out of the due deposit, never the goal
+        if (g.looked || g.strip != null || g.parked == null) return false;
+        if (!g.depositGoal) return g.park != null && g.park.kind() == ParkKind.PLACE;
+        // the deposit goal: a park that moving lifts - its PLACE park or the honest loop's (the same walk failed twice from the
+        // same place, sim SimChestUpTest) - never one only the owner's word changes (no main chest set; a full or gone chest)
+        return !g.chestHeld && !g.parked.contains(io.github.mojolowjo.entropybot.aa.NeedChain.NO_MAIN_CHEST)
+                && (g.park != null && g.park.kind() == ParkKind.PLACE || g.loopPark != null);
     }
 
     /** {@link #wake(Goal)}; {@code worldClimb}: another order's failed climb holds here for it (a world fact, run EJ). */
     static String wake(Goal g, boolean worldClimb) {
+        // job-deposit-park-wake (rule 7: never a wake that cannot come): the deposit goal that took its look-around leg and
+        // stopped again waits on nothing that moves by itself while every order is stopped
+        if (g.depositGoal && g.looked && (g.park != null || g.loopPark != null) && (g.climbRetried || !climbHeld(g) && !worldClimb))
+            return "it looked around once already: no wake by itself while every order is stopped (the line stays owed: a new aa deposit x y z, room in the main chest or another order that moves me)";
         if (g.loopPark != null)
             return "wakes when a need in the bag rises, it moves " + Math.round(Failures.movedV()) + " blocks or a new source is seen";
         String climb = !g.climbRetried && (climbHeld(g) || worldClimb) ? "tries once more on the climb way when every order is parked under ground" : null;
@@ -332,7 +345,7 @@ public final class Goals {
                 g.looked = true;
                 g.lookAround = true;
                 g.wakeSaid = null;
-                String line = "order " + g.r.key() + " looks around: every order is stopped and nothing they wait on changes while I stand here; one explore leg (Baritone's explore), then it is priced again (it stopped on: " + g.parked + ")";
+                String line = (g.depositGoal ? "the line's deposit" : "order " + g.r.key()) + " looks around: every order is stopped and nothing they wait on changes while I stand here; one explore leg (Baritone's explore), then it is priced again (it stopped on: " + g.parked + ")";
                 g.parked = null;
                 g.loopPark = null;
                 g.park = null;
@@ -815,7 +828,8 @@ public final class Goals {
         boolean station = sourceFact && src.startsWith(io.github.mojolowjo.entropybot.aa.NeedChain.STATION_AT);
         if (station) {
             int[] at = stationCell(src);
-            if (at != null) StationHolds.INSTANCE.walkFailed(g.r.key(), at[0], at[1], at[2], fact.text(), feet);
+            // job-deposit-park-wake: a walk that ended short is told apart (its finish may be priced once from here)
+            if (at != null) StationHolds.INSTANCE.walkFailed(g.r.key(), at[0], at[1], at[2], fact.text(), feet, failed instanceof io.github.mojolowjo.entropybot.aa.moves.Step.ToStation);
             sourceFact = at == null;                             // not a cell (never): held as any source, said
         }
         if (sourceFact) g.sources.failedFor(g.id(), src, fact.text(), bb.clock.now(), positional(src) || headingHold(src) ? bb.in : null, ORDER_LIFE_MS);

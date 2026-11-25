@@ -97,7 +97,7 @@ public final class LivePathPrice implements PathPrice {
         // 0.39.z77 round fix 1: CHUNKS keeps the clock too (run BH); 0.39.z78 ea (run EA 20:19:51-20:20:48): the clock is the
         // walk's, wherever the bot stands - a move no longer starts it again (FirstAnswerClock)
         return firstAsked.answer(key(x, y, z, into), a, mc.level.getGameTime(), io.github.mojolowjo.entropybot.aa.NeedChain.firstAnswerWaitS(),
-                () -> estimate(x, y, z));
+                () -> estimate(x, y, z), Jobs.here(mc.player));     // job-deposit-park-wake: a no-progress answer is held by the cell
     }
 
     /** 0.39.z76 send-back 3 / 0.39.z78 ea: the walks' first-answer clocks. */

@@ -32,16 +32,33 @@ public final class StationHolds {
      * One held station: its cell, the order that learned it (null: a refusal, for every order), the reason, the feet when
      * the walk failed (null: a refusal), the block id at the cell when refused (null: a walk hold), the lift state.
      */
-    public record Hold(int x, int y, int z, String order, String reason, int[] from, String block) {
+    public record Hold(int x, int y, int z, String order, String reason, int[] from, String block, boolean shortWalk, boolean again) {
         public Hold {
             from = from == null ? null : from.clone();
         }
 
         public String key() { return NeedChain.stationKey(x, y, z); }
 
-        /** "held for &lt;order&gt;: &lt;reason&gt;" / "refused for every order: &lt;reason&gt;" - how every reader says it (rule 7). */
-        public String said() { return (order == null ? "refused for every order" : "held for " + order) + ": " + reason; }
+        /**
+         * "held for &lt;order&gt;: &lt;reason&gt;" / "refused for every order: &lt;reason&gt;" - how every reader says it (rule 7).
+         * job-deposit-park-wake: a walk that ended short carries {@link #SHORT} (the planner may price a finish of it) or,
+         * ended short again from within failures.moved of the first stop, {@link #AGAIN} (no finish from here).
+         */
+        public String said() {
+            return (order == null ? "refused for every order" : "held for " + order) + ": " + reason + (shortWalk ? "; " + (again ? AGAIN : SHORT) : "");
+        }
     }
+
+    /**
+     * job-deposit-park-wake (pilot c606aca8 w005: the walk to the main chest 9 blocks up ended short below it and the hold
+     * left the deposit goal no way): the words of a walk hold whose walk ended short here once - a fact about its last
+     * blocks, not about the walk; the planner may price ways to finish it (NeedChain.deposit). Read by the planner from the
+     * held keys (the one store's words, rule 23).
+     */
+    public static final String SHORT = "the walk ended short here once: a finish of it may be priced";
+
+    /** job-deposit-park-wake: the words of a walk hold that ended short again from within failures.moved of its first stop. */
+    public static final String AGAIN = "the walk ended short again from here: no finish of it from here";
 
     private final Map<String, Hold> holds = new LinkedHashMap<>();
     /** The walk holds the bot stands far enough away from now (the band's lifted state, by key). */
@@ -49,14 +66,27 @@ public final class StationHolds {
 
     /** The walk to the station at x y z ended short from {@code feet} with it out of reach ({@code order}: who learned it). */
     public synchronized void walkFailed(String order, int x, int y, int z, String reason, int[] feet) {
-        Hold h = new Hold(x, y, z, order, reason, feet, null);
+        walkFailed(order, x, y, z, reason, feet, false);
+    }
+
+    /**
+     * As above; {@code shortWalk}: the failed step was the walk itself (Step.ToStation ended short), not a use or a put at
+     * the station. A short walk that failed before from within failures.moved of these feet (its hold still holding) is
+     * held {@link Hold#again} - the finish was the one more question from here, and it was answered.
+     */
+    public synchronized void walkFailed(String order, int x, int y, int z, String reason, int[] feet, boolean shortWalk) {
+        String key = NeedChain.stationKey(x, y, z);
+        Hold was = holds.get(key);
+        boolean again = shortWalk && was != null && was.shortWalk() && !back.contains(key) && was.from() != null && feet != null
+                && Failures.moved(was.from(), feet) <= Failures.movedV();
+        Hold h = new Hold(x, y, z, order, reason, feet, null, shortWalk, again);
         holds.put(h.key(), h);
         back.remove(h.key());
     }
 
     /** The station at x y z ({@code block}: its block id now) is refused for every order: it never opened / its use was given up. */
     public synchronized void refused(int x, int y, int z, String block, String reason) {
-        Hold h = new Hold(x, y, z, null, reason, null, block);
+        Hold h = new Hold(x, y, z, null, reason, null, block, false, false);
         holds.put(h.key(), h);
         back.remove(h.key());
     }

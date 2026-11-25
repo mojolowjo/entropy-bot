@@ -60,6 +60,12 @@ public interface PathPrice {
      */
     String NO_ESTIMATE = "walk: no estimate after the first-answer wait";
 
+    /**
+     * job-deposit-park-wake (pilot c606aca8 w004): the start of the reason of a walk whose search answered no progress from
+     * the cell the bot stands on (commands.FirstAnswerClock): the way drops like {@link #NO_ESTIMATE} (no NOT_KNOWN prefix).
+     */
+    String NO_PROGRESS_HERE = "walk: not known to be possible from here";
+
     /** The start of every not-a-price text a way fails with (aa why / aa debug; {@link NeedChain.Chain#waiting}). */
     String NOT_KNOWN = "walk: path not known";
 
