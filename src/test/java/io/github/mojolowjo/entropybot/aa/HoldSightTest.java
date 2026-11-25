@@ -82,6 +82,52 @@ class HoldSightTest {
         assertTrue(s.said.stream().anyMatch(l -> l.contains("short: oak_log 13 of 16")), "named (rule 7): " + s.said);
     }
 
+    /**
+     * Send-back item 4: the live sight fact from its own parts, not set by hand - the nearby scan's answers (the rule
+     * NearbyLive.readSince runs, Inputs.oldestInUse), the chunk pass's arrivals (PassSchedule.pendingArrivals, as
+     * ChunkPass stamps arrivalsReadAt when none is left) and the wiring's min (Inputs.sightAt). The hold lasts through a
+     * deferred renewal and an arrived chunk not read yet, and ends once both have read since the park: the run 3 circle
+     * stays closed while the bot stands.
+     */
+    @Test
+    void theLiveSightFact_fromTheScanAndThePass_holdsThenEnds() {
+        Goals.Goal[] g = new Goals.Goal[2];
+        OrderLineSim s = w044(g);
+        Goals.Goal log = g[1];
+        long fresh = Tuning.l("nearby.cacheMs");
+        long p = log.parkedAtMs;
+        long[] answer = {p - 500, p};                  // {at, askedAt}: made before the park, asked at it
+        long[] stale = {p - 9000, p - 2 * fresh};     // a set nobody asks any more: no answer in use
+        io.github.mojolowjo.entropybot.sense.PassSchedule pass = new io.github.mojolowjo.entropybot.sense.PassSchedule();
+        pass.loaded(4, 7, p);                          // a chunk arrived at the park, not read yet
+        long[] arrivalsReadAt = {p - 1000};
+        java.util.function.LongSupplier sight = () -> io.github.mojolowjo.entropybot.aa.core.Inputs.sightAt(
+                io.github.mojolowjo.entropybot.aa.core.Inputs.oldestInUse(s.clock.now(), fresh, List.of(answer, stale)), arrivalsReadAt[0]);
+        java.util.function.Supplier<String> held = () -> Goals.stillChanges(List.of(log), log, false, false, false, sight.getAsLong());
+
+        s.clock.advance(100);
+        assertEquals(p - 1000, sight.getAsLong(), "the older of the two readings: the pass, with a chunk arrived since");
+        assertNotNull(held.get(), "held: the scan and the pass both behind the park");
+        s.clock.advance(fresh);
+        answer[1] = s.clock.now();                     // asked again, the renewal deferred by the budget: its answer stays old
+        assertNotNull(held.get(), "a deferred renewal holds on");
+        answer[0] = s.clock.now();                     // renewed
+        assertEquals(p - 1000, sight.getAsLong(), "the scan read again, the pass not yet");
+        assertNotNull(held.get());
+        assertEquals(1, pass.pendingArrivals());
+        pass.missed(5, 7, s.clock.now());              // a missed patch of a chunk not loaded: nothing
+        pass.take(4, 7, s.clock.now(), 8);
+        if (pass.pendingArrivals() == 0) arrivalsReadAt[0] = s.clock.now();     // as ChunkPass.tick stamps it
+        assertTrue(sight.getAsLong() >= p, "both read since the park");
+        assertNull(held.get(), "nothing can change now: the hold ends (the run 3 circle stays closed)");
+        pass.loaded(4, 7, s.clock.now());
+        assertTrue(pass.missed(4, 7, s.clock.now() + 1), "a patch on a chunk due: deduped");
+        assertEquals(1, pass.pendingArrivals(), "a resend counts as an arrival");
+        pass.take(4, 7, s.clock.now(), 8);
+        assertTrue(pass.missed(4, 7, s.clock.now()));
+        assertEquals(0, pass.pendingArrivals(), "a missed patch's rescan is no arrival (no new chunk came)");
+    }
+
     /** Pure: the sight fact counts only for a park that waits on a new source, and for every order of the line. */
     @Test
     void stillChanges_sight_perPark() {

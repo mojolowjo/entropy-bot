@@ -110,12 +110,15 @@ public final class RunJob extends Node {
             return end(bb, Status.FAILURE, "timeout");
         }
         // job-hold-sight (worlds run 4 w054: "after 180 s in EXPLORE" during cuts, 12 times): the watch reads the running typed
-        // step - its kind in the words, its own limit (a judged step runs to steps.stepMaxS) and its own start
+        // step - its kind in the words, and its own limit and start only for a step that has a limit of its own (the stand
+        // on its own bound); any other step, a judged cut included, keeps the task's watch (review: the hand-off bound)
         JobPort.StepWatch sw = bb.port.stepWatch(taskId);
+        boolean ownLimit = sw != null && sw.limitMs() >= 0;
         long quiet = now - lastProgressAt;
-        if (sw != null) quiet = Math.min(quiet, sw.ageMs());
-        long limit = sw == null || sw.limitMs() < 0 ? running.noProgressMs() : sw.limitMs();
-        String in = sw == null ? String.valueOf(running.kind()) : "step " + sw.kind() + " (" + sw.step() + ") of " + running.kind() + ", its limit " + limit / 1000 + " s";  // structural: milliseconds per second
+        if (ownLimit) quiet = Math.min(quiet, sw.ageMs());
+        long limit = ownLimit ? sw.limitMs() : running.noProgressMs();
+        String in = sw == null ? String.valueOf(running.kind()) : "step " + sw.kind() + " (" + sw.step() + ") of " + running.kind() + ", its limit " + limit / 1000   // structural: milliseconds per second
+                + " s" + (ownLimit ? " (its own)" : " (the task's: the step has no limit of its own)");
         if (quiet > limit) {
             long s = quiet / 1000;  // structural: milliseconds per second
             // 0.39.z71 (D2 3.2): with monitor.stallS below this watch it fires only when the step monitor is off or broken: said

@@ -585,7 +585,6 @@ public final class StepHands implements Steps.Hands {
         reset();
     }
 
-    /** A collect / chop ended: the policy intent back to travel (the fork process put its own settings back). */
     /**
      * job-hold-sight (worlds run 4 w037, w039): the feet when they stand under ground (Jobs.underGround, the planner's own
      * test), null: on the surface, or no level. A cut that got nothing from there is the place's fact (ChopEnd).
@@ -596,6 +595,7 @@ public final class StepHands implements Steps.Hands {
         return Jobs.underGround(p.level(), me[0], me[1], me[2]) ? me : null;
     }
 
+    /** A collect / chop ended: the policy intent back to travel (the fork process put its own settings back). */
     private void endMining() {
         mining = false;
         io.github.mojolowjo.entropybot.guard.PolicyRuntime.INSTANCE.setIntent(io.github.mojolowjo.entropybot.guard.BreakPolicy.Intent.TRAVEL, "steps end");

@@ -137,10 +137,9 @@ final class NearbyLive {
      * the clock while the bot stands (Inputs.sightAtMs).
      */
     long readSince(long now) {
-        long min = now;
-        long fresh = Tuning.l("nearby.cacheMs");
-        for (Cached k : sets.values()) if (now - k.askedAt < fresh) min = Math.min(min, k.at());
-        return min;
+        java.util.List<long[]> answers = new java.util.ArrayList<>(sets.size());
+        for (Cached k : sets.values()) answers.add(new long[]{k.at(), k.askedAt});
+        return io.github.mojolowjo.entropybot.aa.core.Inputs.oldestInUse(now, Tuning.l("nearby.cacheMs"), answers);   // send-back item 4: the pure rule, tested
     }
 
     private static double dist(int[] a, int[] b) {

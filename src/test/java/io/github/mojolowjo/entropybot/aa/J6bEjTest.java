@@ -112,6 +112,9 @@ class J6bEjTest {
         Z71StepMonitorTest.run(run, h, p, 40);
         assertTrue(p.facts.isEmpty() && run.running(), "the wiggle: no stall verdict in 40 s");
         assertTrue(run.monitorJudges(), "the watch at 40 s: left to the monitor (the bound starts)");
+        // job-hold-sight send-back item 2: a judged step keeps the task's watch (no own limit), so this bound stays live
+        assertEquals("Climb", run.watch().kind());
+        assertEquals(-1, run.watch().limitMs(), "a judged step has no limit of its own: the task's watch reads it");
         Z71StepMonitorTest.run(run, h, p, 80);
         assertTrue(p.facts.isEmpty(), "still no stall verdict at 80 s: the monitor alone would never end it");
         assertFalse(run.monitorJudges(), "the watch at 80 s: past monitor.stallS since the hand-off - the watch reads it again");

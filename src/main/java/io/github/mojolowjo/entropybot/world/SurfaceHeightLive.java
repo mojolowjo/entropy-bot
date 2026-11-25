@@ -32,15 +32,35 @@ public final class SurfaceHeightLive {
     /**
      * job-hold-sight: the ground over x z under any tree - {@link #noLeaves} with the logs walked past too (the game's
      * {@code BlockTags.LOGS}): a trunk beside the feet is no wall of a hole (SurfaceHeight.pitDepth reads this). NOT_KNOWN:
-     * not known (rule 15).
+     * not known (rule 15). Send-back item 3: and past every block {@link #notGround} names (a bamboo grove's stalks, a
+     * fence, a cactus are no wall of a hole either).
      */
     public static int ground(LevelReader level, int x, int z) {
         BlockPos.MutableBlockPos m = new BlockPos.MutableBlockPos(x, 0, z);
         return SurfaceHeight.noLeaves(level.hasChunk(x >> 4, z >> 4), level.getHeight(Heightmap.Types.MOTION_BLOCKING, x, z), level.getMinBuildHeight(), y -> {
             m.setY(y);
-            var st = level.getBlockState(m);
-            return st.is(BlockTags.LEAVES) || st.is(BlockTags.LOGS) || !st.blocksMotion();
+            return notGround(level.getBlockState(m));
         });
+    }
+
+    /**
+     * job-hold-sight send-back item 3 (the reviewer: a bamboo jungle or a village alley read "under ground" on the real
+     * surface by the walled-across rule): a block the ground reader walks past - leaves, logs (the game's tags), no motion
+     * blocked, and the stalks, posts and plant blocks that stand on the ground rather than being it: bamboo, cactus,
+     * chorus, huge mushroom blocks (stems and caps, a tree's kind), fences, fence gates, walls, panes and bars. Read by the
+     * block's class as well as its tag (Loader notes: vanilla {@code FenceBlock}, {@code FenceGateBlock}, {@code WallBlock},
+     * {@code IronBarsBlock}, {@code BambooStalkBlock}, {@code CactusBlock}, {@code ChorusPlantBlock}, {@code
+     * HugeMushroomBlock}, {@code BlockTags.FENCES / FENCE_GATES / WALLS}; a mod's fence or wall extends the same classes or
+     * joins the same tags; the classes also answer in a JUnit with no tags bound).
+     */
+    public static boolean notGround(net.minecraft.world.level.block.state.BlockState st) {
+        if (st.is(BlockTags.LEAVES) || st.is(BlockTags.LOGS) || !st.blocksMotion()) return true;
+        if (st.is(BlockTags.FENCES) || st.is(BlockTags.FENCE_GATES) || st.is(BlockTags.WALLS)) return true;
+        var b = st.getBlock();
+        return b instanceof net.minecraft.world.level.block.FenceBlock || b instanceof net.minecraft.world.level.block.FenceGateBlock
+                || b instanceof net.minecraft.world.level.block.WallBlock || b instanceof net.minecraft.world.level.block.IronBarsBlock
+                || b instanceof net.minecraft.world.level.block.BambooStalkBlock || b instanceof net.minecraft.world.level.block.CactusBlock
+                || b instanceof net.minecraft.world.level.block.ChorusPlantBlock || b instanceof net.minecraft.world.level.block.HugeMushroomBlock;
     }
 
     /** The first cell over the column's top blocking block (leaves count), NOT_KNOWN when not loaded or no data (rule 15). */

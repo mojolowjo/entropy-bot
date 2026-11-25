@@ -811,15 +811,17 @@ public final class Steps {
 
     /**
      * job-hold-sight (worlds run 4 w054: the outer watch said "180 s in EXPLORE" during cuts and ended every second one): the
-     * running step as the watch reads it - its kind (the step's own type), its words, its limit (a step the monitor judges or
-     * one standing on its own bound: steps.stepMaxS, the limit this runner ends it at; any other: -1, the task's own no-progress limit as the watch's
-     * own) and its age, in ms of game ticks. Null: no step runs. Reads no monitor state (the hand-off bound starts only when
-     * the watch fires, {@link #monitorJudges}).
+     * running step as the watch reads it - its kind (the step's own type), its words, its limit (a step standing on its own
+     * bound, {@link #standsOnItsOwnBound}: steps.stepMaxS, the limit this runner ends it at; any other: -1, the task's own
+     * no-progress limit, so a judged step keeps the watch and the 93fd77f5 hand-off bound ({@link #monitorJudges}): a cut has
+     * no limit of its own, so the task's is its limit) and its age, in ms of game ticks. Null: no step runs. Reads no monitor
+     * state (the hand-off bound starts only when the watch fires).
      */
     public io.github.mojolowjo.entropybot.aa.core.JobPort.StepWatch watch() {
         if (phase != Phase.RUNNING || idx < 0 || idx >= steps.size()) return null;
         Step s = steps.get(idx);
-        boolean own = standsOnItsOwnBound() || (!paused && monitorOn);
+        // review (send-back 1, item 2): not monitorOn - that moved every monitored step to steps.stepMaxS, past the hand-off bound
+        boolean own = standsOnItsOwnBound();
         long tickMs = 50;                                    // game fact: 20 game ticks per second
         return new io.github.mojolowjo.entropybot.aa.core.JobPort.StepWatch(s.getClass().getSimpleName(), s.text(),
                 own ? stepTicks() * tickMs : -1, Math.max(0, now - stepStart) * tickMs);

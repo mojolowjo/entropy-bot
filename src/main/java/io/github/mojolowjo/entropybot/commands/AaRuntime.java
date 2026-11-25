@@ -2266,7 +2266,7 @@ public final class AaRuntime implements JobPort {
         // job-hold-sight (worlds run 4 w044): when the known sources were read over what is loaded - the nearby scan's oldest
         // answer in use and the chunk pass's last moment with no arrived chunk unread (Goals.stillChanges reads it)
         long nowMs = io.github.mojolowjo.entropybot.aa.brain.GameClock.ms();
-        in.sightAtMs = Math.min(c.nearby.readSince(nowMs), io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE.arrivalsReadAt());
+        in.sightAtMs = io.github.mojolowjo.entropybot.aa.core.Inputs.sightAt(c.nearby.readSince(nowMs), io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE.arrivalsReadAt());
         // AA_STEP3 A1: the world spawn for the death cost's walk back (client Level.getSharedSpawnPos, the level data)
         var sp = mc.level.getSharedSpawnPos();
         in.spawnPos = sp == null ? null : new int[]{sp.getX(), sp.getY(), sp.getZ()};

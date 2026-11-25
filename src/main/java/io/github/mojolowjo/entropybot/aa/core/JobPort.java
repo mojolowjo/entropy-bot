@@ -125,9 +125,9 @@ public interface JobPort {
     /**
      * job-hold-sight (worlds run 4 w054: "outer watch fired after 180 s in EXPLORE" 12 times during cuts, every second one
      * ending a cut that the step monitor saw working): the running typed step the no-progress watch reads - its kind and
-     * words ({@code kind}, {@code step}), the limit it runs under ({@code limitMs}: a step the step monitor judges, or one
-     * standing on its own bound, runs to its own limit, steps.stepMaxS from its start; -1: any other, the task's
-     * own no-progress limit) and how long it has run ({@code ageMs}).
+     * words ({@code kind}, {@code step}), the limit it runs under ({@code limitMs}: a step with a limit of its own, the stand
+     * on its own bound, runs to it, steps.stepMaxS from its start; -1: any other, a judged step included, the task's own
+     * no-progress limit) and how long it has run ({@code ageMs}).
      */
     record StepWatch(String kind, String step, long limitMs, long ageMs) {}
 

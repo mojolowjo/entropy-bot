@@ -5870,10 +5870,9 @@ public final class NeedChain {
                     wk = new Walked(Double.NaN, "", "boxed in here (" + boxedNow + "): no walk to a source from this cell until the way out", PathPrice.Kind.NONE);
                     walkNote(c, sp.x(), walkY, sp.z(), sp.dist(), wk.fail(), wk);
                     c.fail = wk.fail();
-                } else if (cutFrom != null) {
-                    wk = upThenCut(c, sp, cutFrom, upFrom);
+                } else if (cutFrom != null && (wk = upThenCut(c, sp, cutFrom, upFrom)) != null) {
                     walkNote(c, sp.x(), walkY, sp.z(), sp.dist(), wk.fail() == null ? "from the surface after the way up" : wk.fail(), wk);
-                } else wk = walk(c, sp.x(), walkY, sp.z(), sp.dist());
+                } else wk = walk(c, sp.x(), walkY, sp.z(), sp.dist());     // send-back item 1: on the surface the fact says nothing: the plain walk
                 if (c.fail != null) {                       // 0.39.z41: no price for this walk
                     if (wk.kind() == PathPrice.Kind.UNREACHABLE) c.unreach(spotKey(word, sp), wk.fail());   // the z33 source fact; z69 fix 1: that spot only
                     if (sp == first) return null;           // the way's own spot: the way cannot be picked
@@ -7823,18 +7822,24 @@ public final class NeedChain {
      * job-hold-sight: the walk of a cut whose walk from here failed under ground ({@code held}: that fact) - the way up first
      * (the priced walk up, {@link #surfaceWalk}; held or no path: the climb, {@link #climbUp}), taken once per way
      * ({@code upFrom[0]}: the surface cell it leaves the bot at), then the walk from that cell to the tree by Baritone's
-     * estimate from there (ranked, at least the straight metres; no estimate: the straight metres, said). Not under ground
-     * (or the surface not known): no cut from this cell until the bot moves (the fact's words). A failure sets
-     * {@code c.fail} (the walk up still computing: the way waits, rule 18).
+     * estimate from there (ranked, at least the straight metres; no estimate: the straight metres, said). The surface over
+     * the bot not known: no cut priced from here (rule 15, said). Null: the feet are on the surface - the fact is "no way
+     * from under ground there" and says nothing about a walk from the surface, so the caller prices the plain walk
+     * (send-back item 1: the bot walked up within failures.moved of the failed cell, a shallow dig or a ravine's rim; every
+     * tree refused there left the order nothing priced). A failure sets {@code c.fail} (the walk up still computing: the
+     * way waits, rule 18).
      */
     private static Walked upThenCut(Ctx c, Spot sp, String held, int[][] upFrom) {
         String upLine = null;
         if (upFrom[0] == null) {
             Surface over = c.w.where() == null || c.w.where().surface() == null ? null : c.w.where().surface().get();
-            if (over == null || !over.under()) {
-                c.fail = "the cut's walk from here failed (" + held + "): no cut from this cell until the bot moves failures.moved"
-                        + (over == null ? " (the surface over the bot is not known, rule 15)" : "");
+            if (over == null) {
+                c.fail = "the cut's walk from here failed (" + held + "): the surface over the bot is not known, so no way up is priced (rule 15)";
                 return new Walked(Double.NaN, "", c.fail, PathPrice.Kind.NONE);
+            }
+            if (!over.under()) {
+                c.note(() -> "cut: " + held + " is a fact of under ground; the feet are on the surface now: the plain walk");
+                return null;
             }
             String up = surfaceWalk(c);
             if (up == null && c.fail != null) return new Walked(Double.NaN, "", c.fail, PathPrice.Kind.NONE);     // its path is not known yet: the way waits

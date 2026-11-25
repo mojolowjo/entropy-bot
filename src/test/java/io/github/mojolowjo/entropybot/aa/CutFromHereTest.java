@@ -83,6 +83,29 @@ class CutFromHereTest {
         assertTrue(c.ok() && c.steps().get(0) instanceof Step.ChopTree, "held by distance: from elsewhere the cut is priced as ever: " + c.steps() + " / " + c.why());
     }
 
+    /**
+     * Send-back item 1: the bot walked up out of a shallow dig and stands on the surface within failures.moved (16 m) of the
+     * failed cell - the place's fact is about under ground there, so the cut is priced as the plain walk from the surface
+     * (no way up, no refusal), on the tick and through the worker.
+     */
+    @Test
+    void onTheSurfaceNearTheFailedCell_thePlainWalk() {
+        int[] rim = {FEET[0] + 3, 36, FEET[2] + 2};            // 3.6 m from the failed feet, on the surface (depth 0)
+        NeedChain.Surface top = new NeedChain.Surface(0, rim[0], rim[1], rim[2], 0);
+        World w = held(ScenariosTest.w(Map.of(), false, false, Map.of("oak_log", List.of(TREE)))
+                .withWhere(new NeedChain.WhereFacts(x -> null, () -> top, () -> rim.clone(), () -> null)));
+        Chain c = NeedChain.resolve("oak_log", 5, w);
+        assertTrue(c.ok(), "the log way is not refused on the surface: " + c.why());
+        Step.ChopTree cut = assertInstanceOf(Step.ChopTree.class, c.steps().get(0), "the cut straight from the surface, no way up: " + c.steps() + " / " + c.why());
+        assertArrayEquals(new int[]{30, 70, -7}, cut.at(), c.why());
+        assertFalse(c.why().contains("no cut from this cell"), c.why());
+        var sync = new io.github.mojolowjo.entropybot.commands.SyncPlanner(null);
+        var ask = new BatchWay.OwnAsk("oak_log", List.of("minecraft:oak_log"), 5, false);
+        Chain worker = sync.own("goal.oak_log", ask, w);
+        assertTrue(sync.drops.isEmpty(), "no planner drop: " + sync.drops);
+        assertEquals(c.steps().stream().map(Step::text).toList(), worker.steps().stream().map(Step::text).toList(), "the worker prices the same plain walk");
+    }
+
     @Test
     void w037_throughThePlannerWorker_theSameWay() {
         World w = held(w037(FEET));
