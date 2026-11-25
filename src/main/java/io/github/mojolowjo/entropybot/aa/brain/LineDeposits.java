@@ -102,6 +102,44 @@ public final class LineDeposits {
         return out;
     }
 
+    /**
+     * job-kept-crafts review 3 (worlds run 4 w044: the parked oak_log -d order held 7 of 16, the torch's chain cut a tree for
+     * one log, the chop's 6 went into that order's hold and "needs 1 of logs_that_burn; the bag will hold 0"): per counted id,
+     * how many more of it {@link #kept} (same {@code self} and {@code skip}) would hold as the bag of that item grows - the
+     * holds read from the bag that are not whole yet. A get of the item brings these into the other orders' holds before any
+     * is free, so the planner asks them on top of its own need (NeedChain's source ways, World.fills). Each id on its own, as
+     * {@link #take} fills it; empty: none. Pure; the one reader of the holds, {@link #keptPer}, is asked on a bag with more.
+     */
+    public Map<String, Integer> fills(Map<String, Integer> bag, java.util.List<Goals.Goal> goals, Goals.Goal self, java.util.Collection<Goals.Goal> skip) {
+        Map<String, Integer> out = new TreeMap<>();
+        if (bag == null) return out;
+        // the items an order read from the bag may hold (one with none of it in the bag yet too: keptPer leaves it out)
+        Set<String> ids = new java.util.TreeSet<>();
+        int more = 0;
+        java.util.List<Goals.Goal> readers = new java.util.ArrayList<>();
+        for (Goals.Goal o : goals) if (o.deposit > 0) readers.add(o);
+        for (Map<String, Goals.Goal> ended : lineEnded.values()) readers.addAll(ended.values());
+        for (Goals.Goal o : readers) {
+            ids.addAll(o.r.counts());
+            more += Math.max(0, o.deposit);
+        }
+        if (ids.isEmpty() || more <= 0) return out;
+        Map<String, Integer> now = kept(bag, goals, self, skip);
+        for (String id : ids) {
+            int then = kept(withMore(bag, id, more), goals, self, skip).getOrDefault(id, 0);
+            int fill = then - now.getOrDefault(id, 0);
+            if (fill > 0) out.put(id, fill);
+        }
+        return out;
+    }
+
+    /** {@code bag} with {@code more} of {@code id} added (null id: a copy). */
+    private static Map<String, Integer> withMore(Map<String, Integer> bag, String id, int more) {
+        Map<String, Integer> b = new java.util.HashMap<>(bag);
+        if (id != null) b.merge(id, more, Integer::sum);
+        return b;
+    }
+
     /** One order's share of {@link #kept}: the order and what the bag holds for its deposit (counted id -> n). */
     public record Kept(Goals.Goal order, Map<String, Integer> items) {}
 

@@ -575,7 +575,18 @@ public final class NeedChain {
                         Function<String, List<Mob>> mobs, LootBook loot, Function<String, int[]> band, double horizonBlocks, PathPrice path,
                         Function<String, Spot> stationAt, Function<String, Integer> usesLeft, List<String> held, Function<String, StripBand> strip,
                         Function<String, CaveWay> cave, Rooms rooms, WhereFacts where,
-                        List<baritone.api.process.Reserves.Reserve<String>> reserves) {
+                        List<baritone.api.process.Reserves.Reserve<String>> reserves, Map<String, Integer> fills) {
+        /**
+         * job-kept-crafts review 3: no other order's -d hold fills from what comes into the bag ({@link #fills} empty).
+         */
+        public World(Map<String, Integer> bag, boolean tableNear, boolean furnaceNear, Function<String, List<Spot>> seenAll,
+                     Function<String, List<Mob>> mobs, LootBook loot, Function<String, int[]> band, double horizonBlocks, PathPrice path,
+                     Function<String, Spot> stationAt, Function<String, Integer> usesLeft, List<String> held, Function<String, StripBand> strip,
+                     Function<String, CaveWay> cave, Rooms rooms, WhereFacts where,
+                     List<baritone.api.process.Reserves.Reserve<String>> reserves) {
+            this(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, stationAt, usesLeft, held, strip, cave, rooms, where, reserves, null);
+        }
+
         /**
          * forecast (owner 2026-11-08): no reserve table (nothing in the bag is claimed: every placeable block is spare). Merge
          * review 2026-11-23: a copy of a World (every with...() and without...()) never goes through this one - it hands its
@@ -663,6 +674,9 @@ public final class NeedChain {
             if (rooms == null) rooms = Rooms.NONE;
             if (where == null) where = WhereFacts.NONE;
             reserves = reserves == null ? List.of() : List.copyOf(reserves);
+            Map<String, Integer> fl = new java.util.TreeMap<>();
+            if (fills != null) for (var e : fills.entrySet()) if (e.getValue() != null && e.getValue() > 0) fl.merge(io.github.mojolowjo.entropybot.aa.brain.Thing.path(e.getKey()), e.getValue(), Integer::sum);
+            fills = Map.copyOf(fl);
             if (horizonBlocks <= 0) horizonBlocks = Unit.blocks(Sequencer.defaultHorizonS());
         }
 
@@ -675,42 +689,42 @@ public final class NeedChain {
             this(bag, tableNear, false, w -> { Spot s = seen == null ? null : seen.apply(w); return s == null ? List.of() : List.of(s); }, null, null, null, horizonBlocks);
         }
 
-        public World withMobs(Function<String, List<Mob>> m, LootBook l) { return new World(bag, tableNear, furnaceNear, seenAll, m, l, band, horizonBlocks, path, stationAt, usesLeft, held, strip, cave, rooms, where, reserves); }
+        public World withMobs(Function<String, List<Mob>> m, LootBook l) { return new World(bag, tableNear, furnaceNear, seenAll, m, l, band, horizonBlocks, path, stationAt, usesLeft, held, strip, cave, rooms, where, reserves, fills); }
 
-        public World withBand(Function<String, int[]> b) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, b, horizonBlocks, path, stationAt, usesLeft, held, strip, cave, rooms, where, reserves); }
+        public World withBand(Function<String, int[]> b) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, b, horizonBlocks, path, stationAt, usesLeft, held, strip, cave, rooms, where, reserves, fills); }
 
         /** path-cost: the walks priced by Baritone's complete path (null: no walk has a price). */
-        public World withPath(PathPrice p) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, p, stationAt, usesLeft, held, strip, cave, rooms, where, reserves); }
+        public World withPath(PathPrice p) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, p, stationAt, usesLeft, held, strip, cave, rooms, where, reserves, fills); }
 
         /** station-memory: where the known stations stand (recipe kind -> spot; null: no position known). */
-        public World withStations(Function<String, Spot> at) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, at, usesLeft, held, strip, cave, rooms, where, reserves); }
+        public World withStations(Function<String, Spot> at) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, at, usesLeft, held, strip, cave, rooms, where, reserves, fills); }
 
         /** 0.39.z33: the uses left of the bag's best stack of a tool id ({@link io.github.mojolowjo.entropybot.aa.brain.ToolUses}). */
         /** 0.39.z43: the strip facts per need word ({@link StripBand}; null: no strip way for it). */
-        public World withStrip(Function<String, StripBand> s) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, stationAt, usesLeft, held, s, cave, rooms, where, reserves); }
+        public World withStrip(Function<String, StripBand> s) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, stationAt, usesLeft, held, s, cave, rooms, where, reserves, fills); }
 
         /** 0.39.z44: the cave-mouth facts per need word ({@link CaveWay}; null: no cave way for it). */
-        public World withCave(Function<String, CaveWay> k) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, stationAt, usesLeft, held, strip, k, rooms, where, reserves); }   // z68 review 1: keeps the where facts
+        public World withCave(Function<String, CaveWay> k) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, stationAt, usesLeft, held, strip, k, rooms, where, reserves, fills); }   // z68 review 1: keeps the where facts
 
-        public World withUses(Function<String, Integer> u) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, stationAt, u, held, strip, cave, rooms, where, reserves); }
+        public World withUses(Function<String, Integer> u) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, stationAt, u, held, strip, cave, rooms, where, reserves, fills); }
 
         /** 0.39.z67 item 1: the cells with room known now (solid ground the bot stood on, known stations; dist from the bot). */
         public World withRooms(List<Spot> cells) {
             return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, stationAt, usesLeft, held, strip, cave,
-                    new Rooms(cells, rooms.hereFailed()), where, reserves);
+                    new Rooms(cells, rooms.hereFailed()), where, reserves, fills);
         }
 
         /**
          * forecast (owner 2026-11-08, run JBJ-T2: a 14-level shaft with no block to spare): the reserve table the fork's lease
          * holds (the chain's claims and the orders' targets, D1) - what the forecast bag may NOT place on a way back up.
          */
-        public World withReserves(List<baritone.api.process.Reserves.Reserve<String>> r) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, stationAt, usesLeft, held, strip, cave, rooms, where, r); }
+        public World withReserves(List<baritone.api.process.Reserves.Reserve<String>> r) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, stationAt, usesLeft, held, strip, cave, rooms, where, r, fills); }
 
         /** 0.39.z76 send-back 2: the order's held sources ("key: why"), as the live world reads them from the order. */
-        public World withHeld(List<String> h) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, stationAt, usesLeft, h, strip, cave, rooms, where, reserves); }
+        public World withHeld(List<String> h) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, stationAt, usesLeft, h, strip, cave, rooms, where, reserves, fills); }
 
         /** 0.39.z68: where explore targets generate and the surface over the bot ({@link WhereFacts}). */
-        public World withWhere(WhereFacts w) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, stationAt, usesLeft, held, strip, cave, rooms, w, reserves); }   // merge review 2026-11-23: keeps the reserve table
+        public World withWhere(WhereFacts w) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, stationAt, usesLeft, held, strip, cave, rooms, w, reserves, fills); }   // merge review 2026-11-23: keeps the reserve table
 
         /**
          * D11 (the anchor rule; z75's "later steps priced from where the bot will be"): the same world with the FEET fact at
@@ -730,8 +744,15 @@ public final class NeedChain {
             return withWhere(new WhereFacts(where.of(), surface == null ? where.surface() : surface, () -> p, where.base()));
         }
 
+        /**
+         * job-kept-crafts review 3 (worlds run 4 w044): per item path, how many of the item that comes into the bag go into
+         * another order's -d hold before any is free (Goals.keptOff from LineDeposits.fills, the one reader of the holds);
+         * a source way of the item asks them on top of its need ({@link NeedChain#sourceFrom}). Empty: none.
+         */
+        public World withFills(Map<String, Integer> f) { return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, stationAt, usesLeft, held, strip, cave, rooms, where, reserves, f); }
+
         /** 0.39.z77 J2: the same world with another bag (a chain priced from the bag another left). */
-        public World withBag(Map<String, Integer> b) { return new World(b, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, stationAt, usesLeft, held, strip, cave, rooms, where, reserves); }
+        public World withBag(Map<String, Integer> b) { return new World(b, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, stationAt, usesLeft, held, strip, cave, rooms, where, reserves, fills); }
 
         /**
          * 0.39.z67 item 1 (run Y 09:26:14 / 09:31:16): the order's held place failures ({@code keyWhy}: its dropped sources;
@@ -759,7 +780,7 @@ public final class NeedChain {
                 if (!close) cells.add(s);
             }
             return new World(bag, tableNear, furnaceNear, seenAll, mobs, loot, band, horizonBlocks, path, stationAt, usesLeft, held, strip, cave,
-                    new Rooms(cells, here), where, reserves);
+                    new Rooms(cells, here), where, reserves, fills);
         }
 
         /**
@@ -772,7 +793,7 @@ public final class NeedChain {
             Function<String, List<Spot>> less = sa instanceof Lookup lk
                     ? ((Lookup) (w, skip) -> lk.apply(w, skip == null ? held : held.or(skip)).stream().filter(sp -> !held.test(word(w), sp)).toList()).refusing(lk::refused)
                     : w -> sa.apply(w).stream().filter(sp -> !held.test(word(w), sp)).toList();
-            return new World(bag, tableNear, furnaceNear, less, mobs, loot, band, horizonBlocks, path, stationAt, usesLeft, this.held, strip, cave, rooms, where, reserves);
+            return new World(bag, tableNear, furnaceNear, less, mobs, loot, band, horizonBlocks, path, stationAt, usesLeft, this.held, strip, cave, rooms, where, reserves, fills);
         }
 
         /**
@@ -827,7 +848,7 @@ public final class NeedChain {
             boolean fn = furnaceNear && !heldStation(sa, keyWhy, io.github.mojolowjo.entropybot.aa.brain.ItemWorth.SMELT);
             // 0.39.z77 walk: a walk target the order holds (ended short twice at the same feet) answers unreachable
             PathPrice pathLess = heldWalks(path, keyWhy);
-            return new World(bag, tn, fn, less.seenAll, mobs, loot, b, horizonBlocks, pathLess, stationLess, usesLeft, h, stripLess, caveLess, rooms, where, reserves);
+            return new World(bag, tn, fn, less.seenAll, mobs, loot, b, horizonBlocks, pathLess, stationLess, usesLeft, h, stripLess, caveLess, rooms, where, reserves, fills);
         }
 
         /** 0.39.z65 review 1: the known station of the kind is one the order dropped. */
@@ -1852,6 +1873,8 @@ public final class NeedChain {
         List<String> held() { return rec("held", null, w.held()); }
         /** forecast: the reserve table (the fork's lease's claims; empty: nothing claimed). */
         List<baritone.api.process.Reserves.Reserve<String>> reserves() { return rec("reserves", null, w.reserves()); }
+        /** job-kept-crafts review 3: the other orders' -d holds that fill from what comes in (World.fills), a fact of the node that reads it. */
+        Map<String, Integer> fills() { return rec("fills", null, w.fills()); }
         Rooms rooms() { return rec("rooms", null, w.rooms()); }
         boolean tableNear() { return rec("tableNear", null, w.tableNear()); }
         boolean furnaceNear() { return rec("furnaceNear", null, w.furnaceNear()); }
@@ -1886,6 +1909,7 @@ public final class NeedChain {
                 case "horizon" -> w.horizonBlocks();
                 case "held" -> w.held();
                 case "reserves" -> w.reserves();
+                case "fills" -> w.fills();
                 case "rooms" -> w.rooms();
                 case "tableNear" -> w.tableNear();
                 case "furnaceNear" -> w.furnaceNear();
@@ -5918,6 +5942,12 @@ public final class NeedChain {
         // 0.39.z37 (S39): a tool made first out of the asked item's own stock (the pickaxe takes 3 of the bag's cobblestone)
         // consumes before the collect counts: what it took is lacking again
         int remaining = lack + Math.max(0, haveBefore - have(c, asked));
+        // job-kept-crafts review 3 (worlds run 4 w044: a cut for one log, the chop's 6 all went into the parked oak_log -d
+        // order's hold, "needs 1 of logs_that_burn; the bag will hold 0"): what comes in fills the other orders' holds that
+        // are not whole first (World.fills, the runner's same hold), so the get asks those on top of its need
+        int fill = fillLeft(c, gives);
+        remaining += fill;
+        if (fill > 0) c.note(() -> fill + " " + shw(gives) + " more asked: the other orders' -d holds of it fill first");
         Walked firstWalk = null;
         String backUp = null;           // forecast: the way back up from a covered spot's dig down, in the way's words
         // 0.39.z74 item 1 (rule 15): a spot whose block's yield of the item is not known is left out (said); none left: no way
@@ -6061,7 +6091,9 @@ public final class NeedChain {
                 } else c.pickWorn += take;     // 0.39.z33: one use a block (game fact: a pickaxe loses 1 durability per block mined)
             }
             c.taken.merge(sp.key(), take, Integer::sum);
-            c.bag.merge(gives, got, Integer::sum);
+            int toHold = Math.min(got, fillLeft(c, gives));             // job-kept-crafts review 3: the holds' part first
+            if (toHold > 0) c.taken.merge(fillKey(gives), toHold, Integer::sum);
+            c.bag.merge(gives, got - toHold, Integer::sum);
             remaining -= got;
             // forecast (owner 2026-11-08): a covered spot's collect digs down for its blocks - the way back up is priced
             // against the forecast bag after it (the orders' and the chain's reserves are no spare), a Climb step follows
@@ -6078,7 +6110,8 @@ public final class NeedChain {
         // review 3 item 2 (rule 7): no spot gave anything and one was left out for its dig down: that reason is the failure
         if (spotFail != null && remaining >= remainingAtStart) { c.fail = spotFail; return null; }
         String how = (!log && first.isCovered() ? coverText(gives, first) : (log ? "cut tree" : "dig " + shw(gives)) + " seen " + Math.round(first.dist()) + " m")
-                + (pre == null ? "" : " with " + pre);
+                + (pre == null ? "" : " with " + pre)
+                + (fill > 0 ? " (" + fill + " more for the other orders' -d holds of " + shw(gives) + ", which fill first)" : "");
         if (firstWalk != null) how = noted(how, firstWalk);
         if (backUp != null) how += " + " + backUp;
         if (remaining > 0) {
@@ -6086,6 +6119,22 @@ public final class NeedChain {
             return leaf == null ? null : how + " + " + leaf;
         }
         return how;
+    }
+
+    /**
+     * job-kept-crafts review 3: the chain's count of what its gets put into the other orders' -d holds of {@code gives}, kept
+     * in {@link Ctx#taken} under this key (a snapshot and a planner node carry it, as the blocks taken from a spot).
+     */
+    static String fillKey(String gives) { return "fill " + io.github.mojolowjo.entropybot.aa.brain.Thing.path(gives); }
+
+    /**
+     * job-kept-crafts review 3: how many of {@code gives} that this chain brings in still go into the other orders' -d holds
+     * before any is free ({@link World#fills} less what the chain's gets already put there); 0: none.
+     */
+    static int fillLeft(Ctx c, String gives) {
+        if (gives == null) return 0;
+        int f = c.w.fills().getOrDefault(io.github.mojolowjo.entropybot.aa.brain.Thing.path(gives), 0);
+        return f <= 0 ? 0 : Math.max(0, f - c.taken.getOrDefault(fillKey(gives), 0));
     }
 
     /**

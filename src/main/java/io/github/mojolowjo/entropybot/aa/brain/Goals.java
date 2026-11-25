@@ -1815,13 +1815,26 @@ public final class Goals {
         Map<String, Integer> kept = keptFromOthers(bb, g);
         var reserves = bb.in == null || bb.in.bag == null ? List.<baritone.api.process.Reserves.Reserve<String>>of()
                 : plannerReserves(g, finished(bb), bb.in.bag, keptPer(bb), notOff);
-        if (kept.isEmpty()) return w.withReserves(reserves);
+        // job-kept-crafts review 3 (w044): the same orders' holds that are not whole fill from what comes in first, so a
+        // source way of their item asks those on top of its need (World.fills); the runner holds them the same (keptForRun)
+        Map<String, Integer> fills = fillsFromOthers(bb, g);
+        if (kept.isEmpty()) return w.withReserves(reserves).withFills(fills);
         Map<String, Integer> bag = new java.util.LinkedHashMap<>(w.bag());
         for (var e : bag.entrySet()) {
             int k = kept.getOrDefault(Thing.path(e.getKey()), 0);
             if (k > 0) e.setValue(Math.max(0, e.getValue() - k));
         }
-        return w.withBag(bag).withReserves(reserves);
+        return w.withBag(bag).withReserves(reserves).withFills(fills);
+    }
+
+    /**
+     * job-kept-crafts review 3 (worlds run 4 w044): of the holds {@link #keptFromOthers} reads (the same orders: not {@code g},
+     * not its trip's open ones), how many more of each item (by path) they take as the bag of it grows
+     * ({@link LineDeposits#fills}); empty: none, or the bag is not read.
+     */
+    public static Map<String, Integer> fillsFromOthers(Blackboard bb, Goal g) {
+        if (bb.in == null || bb.in.bag == null || !(bb.fact(LineDeposits.FACT) instanceof LineDeposits ld)) return Map.of();
+        return ld.fills(bb.in.bag, of(bb), g, g == null ? null : BatchWay.open(bb, g));
     }
 
     /**
