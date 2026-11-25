@@ -229,6 +229,29 @@ class SimGameTest {
         assertEquals(4, g.chest.get("minecraft:torch"), g.chest.toString());
     }
 
+    /**
+     * job-own-aside-worker (worlds run 4, w003 and six more: "no way to get it: oak_log is in the bag: 0.0 s" with 10 of 16
+     * held): the simulator now plans through the planner worker's path (SyncPlanner: the snapshot, PlannerWorker.resolve,
+     * the port's check), as the game does. A log order of 16 -d with 10 already in the bag gathers the 6 more and deposits
+     * 16 whole; the worker's results hold on the live check (no drop on facts that did not move).
+     */
+    @Test
+    void aHeldPartOfTheOrdersOwnDepositIsNotCountedTwice_w003() {
+        SimWorld w = SimWorld.flat(63, "minecraft:grass_block", 40);
+        w.column(10, 64, 0, 12, "minecraft:spruce_log");
+        w.set(3, 64, -5, "minecraft:chest");
+        SimGame g = new SimGame(w, new int[]{0, 64, 0});
+        g.mainAt = "3 64 -5";
+        g.give("minecraft:spruce_log", 10);
+        g.order("spruce_log", 16, "b1", true);
+        String end = g.play(900);
+        String t = g.timelineText();
+        assertEquals("done", end, t);
+        assertFalse(t.contains("spruce_log is in the bag"), "the 10 held are not the 6 asked: " + t);
+        assertEquals(16, g.chest.get("minecraft:spruce_log"), "the -d amount whole: " + g.chest);
+        assertEquals(java.util.List.of(), g.planner.drops, "the worker path's results hold in a world that stands still: " + t);
+    }
+
     /** Slice 3: the orders of a scenario's words - open ones with their deposit word, the finished ones first. */
     @Test
     void aScenariosWords_giveItsOrders() {

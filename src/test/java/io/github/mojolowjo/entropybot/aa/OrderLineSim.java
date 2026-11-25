@@ -98,11 +98,15 @@ final class OrderLineSim {
 
             @Override public boolean ready(String key) { return !thinking[0]; }
 
+            // job-own-aside-worker (worlds run 4): the landed answer is the worker path's (SyncPlanner), as in the game
             @Override public NeedChain.Chain own(String key, io.github.mojolowjo.entropybot.aa.brain.BatchWay.OwnAsk ask, World w) {
-                return thinking[0] ? NeedChain.thinking("thinking: 2 nodes dirty").chain() : ask.resolve(w);
+                return thinking[0] ? NeedChain.thinking("thinking: 2 nodes dirty").chain() : sync.own(key, ask, w);
             }
         });
     }
+
+    /** The planner worker's path, synchronously (job-own-aside-worker); its drops are a planner fault. */
+    final io.github.mojolowjo.entropybot.commands.SyncPlanner sync = new io.github.mojolowjo.entropybot.commands.SyncPlanner(line -> port.log(line));
 
     /** The worker's answer landed: from now on every ask is the resolve itself. */
     Runnable plannerAnswers = () -> { };

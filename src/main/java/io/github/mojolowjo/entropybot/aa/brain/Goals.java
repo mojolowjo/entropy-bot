@@ -863,7 +863,13 @@ public final class Goals {
         io.github.mojolowjo.entropybot.aa.NeedChain.Chain gap = null;
         double tail = Double.NaN;
         if (sp.why() == null) {
-            var w = chainWorld(bb, g);
+            // job-own-aside-worker (worlds run 4, w060 / w065: "craft oak_planks 4 - missing 1 oak_log" repaired with the same
+            // craft twice, its log the order's own held -d one): the gap prices without the order's own and its trip's held
+            // -d amounts (ownKeptHeld, the runner's keptFromUse answer), so it never crafts from what the runner holds; the
+            // gap's own item stays counted (a gap for the held item itself asks only what is missing, as its step counts it)
+            Map<String, Integer> held = new java.util.HashMap<>(ownKeptHeld(bb, g, null));
+            held.remove(Thing.path(sp.item()));
+            var w = heldOff(chainWorld(bb, g), held);
             if (w != null) gap = io.github.mojolowjo.entropybot.aa.NeedChain.resolve(sp.item(), sp.n(), w);
             tail = 0;
             for (int i = sp.served() + 1; i < left.steps().size(); i++) {
@@ -1737,6 +1743,18 @@ public final class Goals {
         // review sent back (2): all of n held aside is a met ask (0: the chain gets nothing), never the whole n again
         int askN = Math.max(0, n - aside);
         return new BatchWay.OwnAsk(group ? key : ids.isEmpty() ? key : ids.get(0), ids, askN, group, taken);
+    }
+
+    /**
+     * job-own-aside-worker (worlds run 4, w060 / w065): {@code w} with every held -d amount of {@code held} (by item path,
+     * {@link #ownKeptHeld}) off its bag - {@link #ownAside} over all the held words, not the order's own items only (a
+     * repair's gap is for an ingredient, and every one of these amounts is refused by the runner's craft bag). Pure.
+     */
+    static io.github.mojolowjo.entropybot.aa.NeedChain.World heldOff(io.github.mojolowjo.entropybot.aa.NeedChain.World w, Map<String, Integer> held) {
+        if (w == null || held == null || held.isEmpty()) return w;
+        var bag = new java.util.LinkedHashMap<>(w.bag());
+        ownAside(bag, new java.util.HashMap<>(held), new java.util.ArrayList<>(held.keySet()), null);
+        return w.withBag(bag);
     }
 
     public static Map<String, Integer> keptFromOthers(Blackboard bb, Goal g) {

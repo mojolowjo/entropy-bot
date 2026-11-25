@@ -14,6 +14,29 @@ import static org.junit.jupiter.api.Assertions.*;
  * runner (keptFromUse) holds the 20 from every craft; the order's own chain sets the same 20 aside and asks only 12.
  */
 class OwnAsideTest {
+    /**
+     * job-own-aside-worker (worlds run 4, w060: "craft oak_planks 4 - missing 1 oak_log" with oak_log 2 kept, repaired with
+     * the same craft twice; w065 the same with 2): a repair's gap prices without the held -d amounts (Goals.heldOff over
+     * ownKeptHeld), so it never crafts planks from the logs the runner's craft bag refuses.
+     */
+    @Test
+    void aRepairGapNeverCraftsFromAHeldAmount() {
+        try {
+            TestData.planner().install();
+            var w = new io.github.mojolowjo.entropybot.aa.NeedChain.World(new LinkedHashMap<>(Map.of("minecraft:oak_log", 2, "minecraft:dirt", 3)), false, x -> null);
+            var plain = io.github.mojolowjo.entropybot.aa.NeedChain.resolve("minecraft:oak_planks", 4, w);
+            assertTrue(plain.ok() && !plain.explore(), "with the logs free the craft stands from the bag: " + plain.why());
+            var off = Goals.heldOff(w, Map.of("oak_log", 2));
+            assertEquals(0, off.bag().get("minecraft:oak_log"), "the 2 held logs are off the gap's world");
+            assertEquals(3, off.bag().get("minecraft:dirt"), "the rest of the bag as it is");
+            var gap = io.github.mojolowjo.entropybot.aa.NeedChain.resolve("minecraft:oak_planks", 4, off);
+            assertTrue(!gap.ok() || gap.explore(), "no craft from the held logs (no tree known: an explore or no way): " + gap.why() + " " + gap.steps());
+            assertSame(w, Goals.heldOff(w, Map.of()), "nothing held: the world as it is");
+        } finally {
+            TestData.clear();
+        }
+    }
+
     @Test
     void anOrdersOwnHeldAmountIsSetAsideAndOnlyTheRestIsAsked() {
         Map<String, Integer> bag = new LinkedHashMap<>(Map.of("minecraft:cobblestone", 20, "minecraft:oak_planks", 4));

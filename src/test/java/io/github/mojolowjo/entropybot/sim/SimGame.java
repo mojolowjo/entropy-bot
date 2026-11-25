@@ -120,8 +120,14 @@ final class SimGame {
         catalog = catalog(data);
         bb.fact(NeedChain.WORLD_FACT, (Supplier<World>) this::facts);
         bb.fact(io.github.mojolowjo.entropybot.aa.brain.MainChest.FACT, (Supplier<io.github.mojolowjo.entropybot.aa.brain.MainChest.Answer>) () -> io.github.mojolowjo.entropybot.aa.brain.MainChest.ofText(mainAt, null));   // deposit-goal piece 3: the one reader
+        // job-own-aside-worker (worlds run 4): the trips' legs and the orders' own chains through the planner worker's path,
+        // as the game resolves them (snapshot, PlannerWorker.resolve, the port's live check), synchronously
+        bb.fact(BatchWay.PLANNER_FACT, planner);
         sense();
     }
+
+    /** The planner worker's path, synchronously; its drops (a planner fault: the sim's world stands still) go to the timeline. */
+    final io.github.mojolowjo.entropybot.commands.SyncPlanner planner = new io.github.mojolowjo.entropybot.commands.SyncPlanner(line -> timeline.add(line));
 
     /** One order read from a scenario's words. */
     record Asked(String item, int n, boolean deposit) {}
