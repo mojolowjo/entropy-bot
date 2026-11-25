@@ -2648,6 +2648,127 @@ public final class NeedChain {
         return finish(c, "pickaxe", phrase == null ? "a pickaxe of tier " + tier + " is in the bag" : "pickaxe <- " + phrase);
     }
 
+    /**
+     * deposit-goal plan, stage 2 (pieces 3, 5, 8 folded in; owner 2026-11-23: the line's deposit is a planned, priced goal
+     * with its own ways out of the ground): the chain that puts {@code owedIds} (full id -> count, LineDeposits.owed) into the
+     * main chest ({@code chest}, MainChest.of). The ways are options for {@link #choose} (rule 1): the walk to the chest and
+     * the put (Step.ToStation + Step.Deposit), and under ground the walk up ({@link #surfaceWalk}) and the climb
+     * ({@link #climbUp}, with its pickaxe-first and lend ways). A way out is one leg: the chain ends after it, the goal stays
+     * unmet and is priced again from the new feet. Under ground (or the surface not known, rule 15) only a PRICED walk to the
+     * chest is offered (rule 22); on the surface an estimate is ranked (rule 18 amended, run JAC). A walk still computing is
+     * the chain's wait (PathPrice.NOT_KNOWN: the bot stands). No way: the failure names every way's reason (rule 7).
+     * The owed items are the deposit's own: never spare blocks, lent only by a priced lend way (their ORDER reserves).
+     */
+    public static Chain deposit(Map<String, Integer> owedIds, io.github.mojolowjo.entropybot.aa.brain.MainChest.Answer chest, World w) {
+        Map<String, Integer> owed = new TreeMap<>();
+        if (owedIds != null) for (var e : owedIds.entrySet()) if (e.getValue() != null && e.getValue() > 0) owed.merge(id(e.getKey()), e.getValue(), Integer::sum);
+        World w2 = w == null ? null : w.withReserves(owedReserves(w.reserves(), owed));
+        return root("deposit", java.util.Arrays.asList(owed, chest), w2, c -> depositIn(c, owed, chest), NeedChain::fresh);
+    }
+
+    /** deposit-goal stage 2: the reserve table with an ORDER reserve for each owed item no reserve names yet (counted once). */
+    static List<baritone.api.process.Reserves.Reserve<String>> owedReserves(List<baritone.api.process.Reserves.Reserve<String>> rs, Map<String, Integer> owed) {
+        List<baritone.api.process.Reserves.Reserve<String>> out = new ArrayList<>(rs == null ? List.of() : rs);
+        for (var e : owed.entrySet()) {
+            String p = io.github.mojolowjo.entropybot.aa.brain.Thing.path(e.getKey());
+            boolean named = false;
+            for (var r : out) for (String m : r.members) if (io.github.mojolowjo.entropybot.aa.brain.Thing.path(m).equals(p)) named = true;
+            if (!named) out.add(io.github.mojolowjo.entropybot.aa.moves.Reservations.order("deposit " + sh(e.getKey()), List.of(e.getKey()), e.getValue()));
+        }
+        return out;
+    }
+
+    /** deposit-goal stage 2: the words of a chest walk not offered from under ground (rule 22). */
+    public static final String CHEST_NOT_PRICED = "the walk to the main chest is not a priced path";
+
+    private static Chain depositIn(Ctx c, Map<String, Integer> owed, io.github.mojolowjo.entropybot.aa.brain.MainChest.Answer chest) {
+        final String name = "deposit";
+        if (owed.isEmpty()) { c.fail = "nothing owed to the main chest"; return finish(c, name, name); }
+        if (chest == null) chest = new io.github.mojolowjo.entropybot.aa.brain.MainChest.None("no main chest reader answered");
+        int x, y, z;
+        switch (chest) {
+            case io.github.mojolowjo.entropybot.aa.brain.MainChest.None n -> {
+                c.fail = "no main chest set (" + n.why() + ")";
+                return finish(c, name, name);
+            }
+            case io.github.mojolowjo.entropybot.aa.brain.MainChest.NotLoaded n -> { x = n.x(); y = n.y(); z = n.z(); }
+            case io.github.mojolowjo.entropybot.aa.brain.MainChest.Known k -> { x = k.x(); y = k.y(); z = k.z(); }
+        }
+        double bonus = chest instanceof io.github.mojolowjo.entropybot.aa.brain.MainChest.Known k ? Math.max(0, k.bonusS()) : 0;
+        Surface over = c.w.where().surface().get();
+        boolean under = over != null && (over.depth() >= AaLadder.surfaceDepth() || over.hole() && over.depth() > 0);   // the explore's test (rule 22)
+        String overWhy = over == null ? "the surface over the bot is not known (its column is not loaded; rule 15: not known is never on the surface)" : null;
+        String key = stationKey(x, y, z);
+        String held = null;
+        if (c.w.held() != null) for (String h : c.w.held()) if (h.equals(key) || h.startsWith(key + ":")) { held = h; break; }
+        List<Alt> ways = new ArrayList<>();
+        List<String> notOffered = new ArrayList<>();
+        if (held != null) notOffered.add("the walk to the main chest at " + x + " " + y + " " + z + " is held (" + held + ")");
+        else {
+            final boolean strict = under || over == null;
+            ways.add(new Alt("walk to the main chest", () -> {
+                String walked = stationWalk(c, "container", "main chest", x, y, z, strict);
+                if (walked == null) return null;
+                c.steps.add(new Step.Deposit(null, Map.copyOf(owed), new int[]{x, y, z}));
+                if (bonus > 0) c.addS(bonus);
+                return "put " + counted(owed) + " into the main chest: " + walked;
+            }));
+        }
+        if (overWhy != null) notOffered.add(overWhy);
+        if (under) {
+            ways.add(new Alt("walk up", () -> {
+                String up = surfaceWalk(c);
+                if (up == null && c.fail == null) {
+                    String why = heldLine(c, SURFACE_AT);
+                    if (why == null) for (var e : c.unreachableRead().entrySet()) if (e.getKey().startsWith(SURFACE_AT)) { why = e.getKey() + ": " + e.getValue(); break; }
+                    c.fail = "no walk up (" + (why == null ? SURFACE_IS_HERE : why) + ")";
+                }
+                return up;
+            }));
+            ways.add(new Alt("climb", () -> climbUp(c, over)));
+        }
+        int d0 = c.dropped.size();
+        Trial win = choose(c, ways, null);
+        if (win == null) {
+            if (c.fail != null && c.fail.startsWith(PathPrice.NOT_KNOWN)) return finish(c, name, name);     // rule 22: the bot stands
+            List<String> why = new ArrayList<>(notOffered);
+            for (int i = d0; i < c.dropped.size(); i++) why.add(c.dropped.get(i));
+            if (c.fail != null && !why.contains(c.fail)) why.add(c.fail);
+            c.fail = "no way to the main chest at " + x + " " + y + " " + z + " (" + String.join("; ", why) + ")";
+            return finish(c, name, name);
+        }
+        String head = name + " <- " + win.phrase();
+        if (!notOffered.isEmpty()) head += " (not offered: " + String.join("; ", notOffered) + ")";
+        return finish(c, name, head);
+    }
+
+    /**
+     * deposit-goal stage 2: the walk to a station cell as a step - {@link #walk} (the one walk pricer, rule 23) and a
+     * Step.ToStation when it takes more than 0 s (knownWalk's two lines, without its table/furnace marks). {@code strict}
+     * (under ground, or the surface not known): only a PRICED walk is offered (rule 22), an estimate or chunks not loaded
+     * fail with their words. Else an estimate is ranked as it is and chunks not loaded on the straight metres (rule 18
+     * amended, run JAC), said. A walk still computing fails with PathPrice.NOT_KNOWN (the wait). Null with {@code c.fail}.
+     */
+    private static String stationWalk(Ctx c, String kind, String label, int x, int y, int z, boolean strict) {
+        int[] feet = c.w.where().feet() == null ? null : c.w.where().feet().get();
+        double dist = feet != null && feet.length >= 3 ? dist3(new int[]{x, y, z}, feet) : 0;    // structural: x y z; no feet: no floor
+        Walked wk = walk(c, x, y, z, dist);
+        if (strict && wk.kind() != PathPrice.Kind.PRICED && wk.kind() != PathPrice.Kind.COMPUTING) {
+            c.fail = CHEST_NOT_PRICED + " (" + wk.kind().name().toLowerCase(java.util.Locale.ROOT) + (wk.fail() == null ? "" : ": " + wk.fail())
+                    + "): not offered from under ground (rule 22)";
+            return null;
+        }
+        if (!strict && wk.kind() == PathPrice.Kind.CHUNKS && feet != null) {
+            c.fail = null;
+            double es = io.github.mojolowjo.entropybot.aa.brain.Unit.seconds(dist);
+            wk = new Walked(es, "walk ~" + s(es) + " (" + RANKED + ", not priced: chunks not loaded, the straight " + Math.round(dist) + " m)", null, PathPrice.Kind.ESTIMATED);
+        }
+        if (c.fail != null) return null;
+        if (wk.seconds() > 0) c.steps.add(new Step.ToStation(kind, label, x, y, z));
+        c.addS(wk.seconds());
+        return noted("at the " + label + " " + x + " " + y + " " + z, wk);
+    }
+
     // ---- 0.39.z77 J2: the playbook way (D5 J2; SHAPE CHANGE 2026-10-26: every plain-item order's one trip, BatchWay) ----
 
     /** 0.39.z77 J2: the name of a playbook chain (its why line starts with it). */
@@ -5285,6 +5406,9 @@ public final class NeedChain {
         if (s instanceof Step.Collect k) return "collect " + k.item();
         if (s instanceof Step.TakeStation t) return "take at " + t.x() + " " + t.y() + " " + t.z();   // 0.39.z48
         if (s instanceof Step.ToStation t) return stationKey(t.x(), t.y(), t.z());                  // 0.39.z65 review 1
+        // deposit-goal stage 2 (piece 5): the put's own faults (no chest block, nothing opened) hold the chest's cell, the
+        // key the chest walk reads (StationHolds, lifted by distance); a put with no chest cell has no key as before
+        if (s instanceof Step.Deposit d && d.chest() != null && d.chest().length >= 3) return stationKey(d.chest()[0], d.chest()[1], d.chest()[2]);   // structural: x y z
         if (s instanceof Step.ToBand b) return io.github.mojolowjo.entropybot.aa.moves.FactChange.bandKey(b.minY(), b.maxY());   // 0.39.z42
         // 0.39.z43 / z46: a strip that ended (lava, no path, no pickaxe) or the walk down to it; 0.39.z78 strip: held by its
         // heading at its Y, the one strip key every reader asks (stripHold)
