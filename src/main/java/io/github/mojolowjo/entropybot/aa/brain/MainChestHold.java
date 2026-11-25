@@ -46,7 +46,10 @@ public final class MainChestHold {
         Matcher m = FULL.matcher(text);
         if (m.find()) {
             int x = Integer.parseInt(m.group(1)), y = Integer.parseInt(m.group(2)), z = Integer.parseInt(m.group(3));
-            return new Hold(Kind.FULL, x, y, z, "the main chest at " + x + " " + y + " " + z + " is full (" + m.group(4) + " left out of the last put)");
+            // review 6: a chest that refused the items while it showed empty slots is held as refusing them, not as full
+            int room = text.indexOf(DepositRule.ROOM_SEEN);
+            String what = room < 0 ? "is full" : "refused the last put while it showed " + text.substring(room + DepositRule.ROOM_SEEN.length(), text.indexOf(')', room)).replace(" at the count", "");
+            return new Hold(Kind.FULL, x, y, z, "the main chest at " + x + " " + y + " " + z + " " + what + " (" + m.group(4) + " left out of the last put)");
         }
         m = GONE.matcher(text);
         if (m.find()) {
@@ -67,7 +70,8 @@ public final class MainChestHold {
     public String refused(String text) {
         Hold h = refusal(text);
         if (h == null) return null;
-        if (h.equals(hold)) return null;
+        // review 6 (rule 7, once): the same kind at the same cell is the same hold, whatever words recorded it
+        if (hold != null && hold.kind() == h.kind() && hold.at(h.x(), h.y(), h.z())) return null;
         hold = h;
         return "deposit held: " + h.why() + "; it holds until " + liftWords(h.kind());
     }

@@ -123,13 +123,15 @@ public final class Storage {
         String[] w = lastOpened.split(" ");
         if (w.length != 3) return;              // structural: x y z
         // review 5: room is an empty slot, or a stack of an owed item below its stack size (it takes more of that item)
-        var owed = rt.depositOwed();
+        // review 6: owed keys by the step's one normalisation (NeedChain.id), so a key that fell back to a bare id matches too
+        java.util.Set<String> owed = new java.util.HashSet<>();
+        for (String k : rt.depositOwed().keySet()) owed.add(io.github.mojolowjo.entropybot.aa.NeedChain.id(k));
         int free = 0;
         for (var s : p.containerMenu.slots) {
             if (s.container == p.getInventory()) continue;
             if (!s.hasItem()) { free++; continue; }
             var st = s.getItem();
-            if (st.getCount() < st.getMaxStackSize() && owed.containsKey(BuiltInRegistries.ITEM.getKey(st.getItem()).toString())) free++;
+            if (st.getCount() < st.getMaxStackSize() && owed.contains(io.github.mojolowjo.entropybot.aa.NeedChain.id(BuiltInRegistries.ITEM.getKey(st.getItem()).toString()))) free++;
         }
         try {
             rt.chestHoldSaid(rt.chestHold.roomSeen(Integer.parseInt(w[0]), Integer.parseInt(w[1]), Integer.parseInt(w[2]), free));

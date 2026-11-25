@@ -217,9 +217,15 @@ public final class DepositRule {
      * A short exact put's failure words (review 5): what went in, the split note if any, and always the full words, since a
      * split that stayed for lack of an empty chest slot is a full chest too (MainChestHold.refusal reads the full words).
      */
-    public static String shortWords(int putN, int meant, int[] chest, String onlyText, String splitNote) {
-        return "deposit: " + putN + " of " + meant + " items went in at " + at(chest) + " (" + onlyText + ")" + splitNote + ": " + full(chest, meant - putN);
+    public static String shortWords(int putN, int meant, int[] chest, String onlyText, String splitNote, int freeSlots) {
+        // review 6: a chest that still showed empty slots at the count refused the items for another reason (a desync, a
+        // container that takes only some items); the words say what was seen, and the hold says it too (MainChestHold)
+        return "deposit: " + putN + " of " + meant + " items went in at " + at(chest) + " (" + onlyText + ")" + splitNote + ": " + full(chest, meant - putN)
+                + (freeSlots > 0 ? ROOM_SEEN + freeSlots + " empty slot" + (freeSlots == 1 ? "" : "s") + " at the count)" : "");
     }
+
+    /** Review 6: the words of a short put whose chest still showed empty slots (MainChestHold.refusal reads them). */
+    public static final String ROOM_SEEN = " (it refused them while it showed ";
 
     /** "chest at x y z gone" (review 4: the words MainChestHold.refusal reads, one producer for the game and the sim). */
     public static String gone(int[] at) {

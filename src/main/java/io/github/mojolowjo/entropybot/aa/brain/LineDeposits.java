@@ -549,6 +549,20 @@ public final class LineDeposits {
      * ({@link Kind#WOKE_TAKEN_BACK}); the line is weighed on the bag again when it ends. The words for a deposit that is on
      * its way or went already say that, never "waits for it" (rule 7).
      */
+    /**
+     * Review 6 (serious: every leg that ended wrote its part into {@link Goals.Goal#depositPut}, a reached put included,
+     * and a wake then cut the order's amount by its noted part as well; {@link #take} took depositPut off a second time -
+     * cobblestone 32 -d stopped with 20, the 20 reached the chest, the wake left 12 and take asked for none): what the wake
+     * cuts off the amount is what is in the chest for the order - its depositPut when a leg noted it (the count of what
+     * went in), else {@code noted} (a put that ended with no leg count) - and depositPut is cleared, so the amount alone
+     * holds it from then on. One count, never two.
+     */
+    private static int inChest(Goals.Goal g, int noted) {
+        int put = g.depositPut.values().stream().mapToInt(Integer::intValue).sum();
+        g.depositPut.clear();
+        return put > 0 ? put : noted;
+    }
+
     public Out reopen(Goals.Goal g) {
         Map<String, Goals.Goal> back = dueLine.get(g.line);
         if (back != null) {
@@ -560,6 +574,7 @@ public final class LineDeposits {
             // merge review 2026-11-23: an earlier deposit that did not reach the chest took nothing of it
             Map<String, Integer> went = outside && !g.depositMissed && g.depositTook != null ? g.depositTook : Map.of();
             int gone = went.values().stream().mapToInt(Integer::intValue).sum();
+            if (outside && !g.depositMissed) gone = inChest(g, gone);
             g.depositWeighed = false;
             g.depositMissed = false;
             g.depositTook = null;
@@ -595,8 +610,8 @@ public final class LineDeposits {
         if (wasOpen || missed) {
             // the line has not ended, or its deposit never reached the chest: the order is simply open again (its note
             // was of the bag then, nothing was taken)
-        } else if (noted > 0) {
-            g.deposit = Math.max(0, g.deposit - noted);       // the line's deposit took them already
+        } else if (noted > 0 || !g.depositPut.isEmpty()) {
+            g.deposit = Math.max(0, g.deposit - inChest(g, noted));       // the line's deposit took them already
         }
         if (g.deposit <= 0) return new Out(Kind.WOKE_GONE, g.r.key() + " woke: its deposit went with the line already (" + Step.Deposit.onlyText(took) + ") - nothing more to deposit", null);
         lineOpen.computeIfAbsent(g.line, k -> new LinkedHashSet<>()).add(g.r.key());

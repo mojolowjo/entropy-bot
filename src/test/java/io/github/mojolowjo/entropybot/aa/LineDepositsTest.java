@@ -615,6 +615,33 @@ class LineDepositsTest {
         assertTrue(s.deposits.owedOrders().isEmpty());
     }
 
+    /**
+     * Review 6 (serious): the game's path - PutWatch counts at the clicks, the step's end (legEnded) notes depositPut, the
+     * task's end reads it reached. A stop with 20 of 32, the 20 reach the chest, a wake, then done: the 12 left are owed whole.
+     */
+    @Test
+    void aReachedPutThenAWakeOwesTheRestOnce() {
+        OrderLineSim s = new OrderLineSim();
+        Goals.Goal cob = s.order("cobblestone", 32, "b9", true);
+        s.bag.put("cobblestone", 20);
+        cob.parked = "stopped";
+        assertEquals(Kind.DUE, s.deposits.weigh(cob, "stopped", s.bag, AT).kind());
+        io.github.mojolowjo.entropybot.aa.brain.PutWatch w = new io.github.mojolowjo.entropybot.aa.brain.PutWatch(s.deposits);
+        w.started(7, false);
+        w.moved(Map.of("cobblestone", 20));                  // the count at the clicks
+        w.legEnded();                                        // StepHands: the Deposit step ended
+        assertNotNull(w.ended(7, true, null, "done"));
+        s.bag.remove("cobblestone");
+        assertTrue(s.deposits.owed().isEmpty(), "reached: nothing owed");
+        cob.parked = null;
+        LineDeposits.Out woke = s.deposits.sweep(cob, s.bag, AT);
+        assertEquals(Kind.WOKE_OPEN, woke.kind(), woke.text());
+        s.bag.put("cobblestone", 12);
+        LineDeposits.Out done = s.deposits.weigh(cob, "done", s.bag, AT);
+        assertEquals(Kind.DUE, done.kind(), done.text());
+        assertEquals(Map.of(id(cob, "cobblestone"), 12), s.deposits.owed(), "the 12 left, asked once");
+    }
+
     @Test
     void aWakeBeforeThePutTakesTheOwedDepositBack() {
         OrderLineSim s = new OrderLineSim();

@@ -200,12 +200,32 @@ class PutWatchTest {
     void aShortPutWithASplitThatStayed_isAFullChestHold() {
         int[] c = {3, 64, -5};
         String words = io.github.mojolowjo.entropybot.aa.brain.DepositRule.shortWords(0, 32, c, "cobblestone 32",
-                " (32 of a split stack stayed: no empty chest slot for it)");
+                " (32 of a split stack stayed: no empty chest slot for it)", 0);
         var h = io.github.mojolowjo.entropybot.aa.brain.MainChestHold.refusal(words);
         assertNotNull(h, words);
         assertEquals(io.github.mojolowjo.entropybot.aa.brain.MainChestHold.Kind.FULL, h.kind());
         assertEquals(3, h.x());
         assertEquals(-5, h.z());
+        assertTrue(h.why().contains("is full"), h.why());
+    }
+
+    /** Review 6: a short put whose chest still showed empty slots is held, and its words do not call it full. */
+    @Test
+    void aShortPutWithRoomShown_isHeldAsRefusing_notFull() {
+        int[] c = {3, 64, -5};
+        String words = io.github.mojolowjo.entropybot.aa.brain.DepositRule.shortWords(10, 32, c, "cobblestone 32", "", 4);
+        var h = io.github.mojolowjo.entropybot.aa.brain.MainChestHold.refusal(words);
+        assertNotNull(h, words);
+        assertFalse(h.why().contains("is full"), h.why());
+        assertTrue(h.why().contains("refused the last put while it showed 4 empty slots"), h.why());
+    }
+
+    /** Review 6 (rule 7): a gone chest recorded by the reader, then by the put's words, is one hold, said once. */
+    @Test
+    void theSameGoneCell_byTwoWordings_isSaidOnce() {
+        var hold = new io.github.mojolowjo.entropybot.aa.brain.MainChestHold();
+        assertNotNull(hold.refused("deposit: chest at 3 64 -5 gone (stone there)"));
+        assertNull(hold.refused("deposit: chest at 3 64 -5 gone"));
     }
 
     @Test

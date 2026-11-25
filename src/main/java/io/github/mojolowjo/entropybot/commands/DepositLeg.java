@@ -471,12 +471,14 @@ final class DepositLeg {
         if (step.only() != null) {
             putN = Math.max(0, onlyBefore - DepositRule.onlyInBag(bag(p), step.only()));
             putItems = putPerItem(onlyPerItem, bag(p), step.only());
+            int freeSlots = 0;                       // review 6: the chest's empty slots as the count saw them
+            for (Slot q : p.containerMenu.slots) if (q.container != p.getInventory() && !q.hasItem()) freeSlots++;
             c.storage.rememberOpen(p);
             Gui.close(p);
             int meant = total(before);
             // review 5: a split that stayed for lack of an empty slot is a full chest too, so the full words always go
             // (MainChestHold.refusal reads them; without them the goal parked as a PLACE park and walked back without end)
-            if (putN < meant) return Car.Status.failed(DepositRule.shortWords(putN, meant, chest, Step.Deposit.onlyText(step.only()), splitNote));
+            if (putN < meant) return Car.Status.failed(DepositRule.shortWords(putN, meant, chest, Step.Deposit.onlyText(step.only()), splitNote, freeSlots));
             // asked-not-put (run JBO-T1 22:54:30: "deposited 4 items ... (cobblestone 17, spruce_log 3, torch 4)" - the bag held
             // 4 of the 24 asked; rule 7): the list is what was ASKED; when the bag held fewer, the line says so
             int asked = step.only().values().stream().mapToInt(Integer::intValue).sum();

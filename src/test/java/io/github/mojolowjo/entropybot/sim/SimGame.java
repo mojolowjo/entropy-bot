@@ -54,6 +54,8 @@ final class SimGame {
     final Blackboard bb = new Blackboard(clock, port, new Tracer());
     final Brain brain = new Brain("brain", "sim");
     final LineDeposits deposits = new LineDeposits();
+    /** Review 6: the put's ends go through the runtime's one reader (PutWatch), as StepHands and AaRuntime drive it. */
+    final io.github.mojolowjo.entropybot.aa.brain.PutWatch put = new io.github.mojolowjo.entropybot.aa.brain.PutWatch(deposits);
 
     final SimWorld world;
     /** How far the fake senses see on each axis (an endless map sets it lower: the explore then has something to find). */
