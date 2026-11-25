@@ -5680,7 +5680,7 @@ public final class NeedChain {
                     c.addS(cov);
                     c.partDig += cov;
                     c.steps.add(digTo(sp));
-                    if (c.pickItem != null) c.pickWorn += coverWear(sp);      // review 2: the cover dig wears the pickaxe (checked with the take below)
+                    if (c.pickItem != null) c.pickWorn += coverWearOf(c, sp);      // review 2: the cover dig wears the pickaxe (checked with the take below)
                     c.note(() -> coverText(gives, sp) + ": " + s(cov));
                 } else if (!log && sp.cover() == 0) {
                     c.note(() -> "dig " + shw(gives) + " seen " + Math.round(sp.dist()) + " m exposed at " + sp.x() + " " + sp.y() + " " + sp.z());
@@ -5716,7 +5716,7 @@ public final class NeedChain {
                 // before the walk down. On the surface the worn one digs on (re-planned when it breaks), as before.
                 if (!log && sp.isCovered()) {
                     final int tk = take;
-                    if (pickWear(c, take, "the collect of " + tk + " " + shw(blockOf(gives, sp)) + " under ground", false) == null) {
+                    if (pickWear(c, take, tierOf(gives, sp), "the collect of " + tk + " " + shw(blockOf(gives, sp)) + " under ground", false) == null) {
                         spotFail = leaveSpot(c, sp, spotSnap);
                         firstWalk = fw0; backUp = bu0; remaining = rem0;
                         continue;
@@ -5899,17 +5899,17 @@ public final class NeedChain {
         }));
         if (c.pickTier >= 1) ways.add(new Alt("a staircase", () -> {     // structural: tier 1 = the least pickaxe
             String tool = c.pickItem;
-            String r = pickWear(c, stairWear(lv, spare), "the staircase up " + lv + " levels", false);
+            String r = pickWear(c, stairWear(lv, spare), 1, "the staircase up " + lv + " levels", false);     // structural: tier 1 = any pickaxe
             if (r == null) return null;
             c.steps.add(new Step.Climb());
             c.addS(stairs);
             return "a staircase with the " + sh(tool) + ": " + s(stairs) + r + " (" + sx + ")";
         }));
-        // the extra blocks dug first come from the same spot: only while it has them (count 0: not counted, as many as needed)
-        int spotHas = spotLeft(c, sp);
-        boolean more = spotHas == UNCOUNTED || spotHas >= shortBy;
-        if (shortBy > 0 && more) ways.add(new Alt(shortBy + " extra block" + (shortBy == 1 ? "" : "s") + " and a pillar", () -> {
-            String r = c.pickItem != null && tierOf(gives, sp) >= 1 ? pickWear(c, shortBy, shortBy + " extra blocks dug first", false) : "";
+        // the extra blocks dug first: the spot's, or past its count the shaft's own walls of the same block (review 4: always
+        // offered, as before this branch - with no pickaxe it is the only way up from a dirt, sand or gravel shaft)
+        if (shortBy > 0) ways.add(new Alt(shortBy + " extra block" + (shortBy == 1 ? "" : "s") + " and a pillar", () -> {
+            int t = tierOf(gives, sp);
+            String r = c.pickItem != null && t >= 1 ? pickWear(c, shortBy, t, shortBy + " extra blocks dug first", false) : "";
             if (r == null) return null;
             if (collectAt != null && c.steps.get(collectAt) instanceof Step.Collect k) c.steps.set(collectAt, new Step.Collect(k.item(), k.n() + shortBy, k.at()));
             c.steps.add(new Step.Climb());
@@ -5926,7 +5926,6 @@ public final class NeedChain {
                 (lend, back) -> "a pillar of " + lv + " with " + shortBy + " kept " + shw(lend) + " lent: " + s(pillar) + ", collected again after: " + back + " (" + sx + ")") : List.of();
         if (shortBy > 0 && lends.isEmpty()) whyNot.add("a lend of kept blocks: " + (c.lending ? "not inside another lend's collect again"
                 : placeable < lv ? placeable + " placeable blocks for " + lv + " levels" : "no placeable block with " + shortBy + " the reserves lend (whole and weighted reserves never lend)"));
-        if (shortBy > 0 && !more) whyNot.add("extra blocks: the spot has " + Math.max(0, spotHas) + " left, " + shortBy + " short");
         if (c.pickTier < 1) whyNot.add("a staircase: no pickaxe");
         int d0 = c.dropped.size();
         Trial win = choose(c, ways, null);
@@ -5995,24 +5994,6 @@ public final class NeedChain {
         return items;
     }
 
-    /** structural: {@link #spotLeft}'s answer for a spot whose blocks were not counted (its count 0: as many as needed). */
-    static final int UNCOUNTED = -1;
-
-    /** pickaxe price review 3 item 7: the blocks a spot has left after this chain's takes, {@link #UNCOUNTED} when its count is not known. */
-    static int spotLeft(Ctx c, Spot sp) {
-        if (sp.count() <= 0) return UNCOUNTED;      // structural: a Spot's count 0 = not counted (the scan's own meaning)
-        return Math.max(0, sp.count() - c.taken.getOrDefault(sp.key(), 0));
-    }
-
-    /**
-     * pickaxe price review 3 item 6: the pickaxe uses of collecting {@code n} lent blocks of {@code item} again - {@code n} when
-     * its block asks for a pickaxe (the mining data's tier), else 0; no mining data: 0, not a price (rule 15, as {@link #coverWear}).
-     */
-    static int lendWear(String item, int n) {
-        MiningTiers.Source src = MiningTiers.source();
-        if (src == null || n <= 0) return 0;
-        return src.blockTier(id(item)) >= 1 ? n : 0;      // structural: tier 1 = the least pickaxe
-    }
 
     /** pickaxe price: the pickaxe uses a staircase takes a level (Tuning forecast.stairBreaksPerLevel). */
     static int stairBreaksPerLevel() { return Math.max(0, Tuning.i("forecast.stairBreaksPerLevel")); }
@@ -6057,14 +6038,25 @@ public final class NeedChain {
      * pickaxe price (plan step 6, run 3 w070: a staircase then a collect, the wooden pickaxe broke under ground): what the chain's
      * pickaxe and the bag's other pickaxes have left in uses ({@link #heldUses}, {@link #bagPickUses}), less what this chain
      * wore. ToolUses' scale: UNKNOWN, UNLIMITED. No pickaxe: 0.
+     * Review 4 (serious, the iron-kit order): only pickaxes that dig {@code tier} count - a take is checked at its block's
+     * tier (a wooden spare never covers an iron take), the cover and the climb at tier 1. The chain's wear (pickWorn) is
+     * charged against every tier's pool (on the safe side: it may have been the lower pickaxe's, rule 14).
      */
-    private static int pickUsesLeft(Ctx c) {
+    private static int pickUsesLeft(Ctx c, int tier) {
+        int total = pickUsesBefore(c, tier);
+        if (total == io.github.mojolowjo.entropybot.aa.brain.ToolUses.UNKNOWN || total == io.github.mojolowjo.entropybot.aa.brain.ToolUses.UNLIMITED) return total;
+        return Math.max(0, total - c.pickWorn);
+    }
+
+    /** The pool {@link #pickUsesLeft} subtracts the chain's wear from (no clamp): the held one's uses when it digs {@code tier}, plus the bag's. */
+    private static int pickUsesBefore(Ctx c, int tier) {
         if (c.pickItem == null) return 0;
         int uses = heldUses(c, c.pickItem);
         if (uses == io.github.mojolowjo.entropybot.aa.brain.ToolUses.UNKNOWN || uses == io.github.mojolowjo.entropybot.aa.brain.ToolUses.UNLIMITED) return uses;
-        int[] bag = bagPickUses(c, c.pickItem, 1);       // structural: tier 1 = the least pickaxe digs stone
+        if (MiningTiers.toolTier(c.pickItem, "pickaxe") < tier) uses = 0;    // the held one cannot drop this tier
+        int[] bag = bagPickUses(c, c.pickItem, tier);
         if (bag == null) return io.github.mojolowjo.entropybot.aa.brain.ToolUses.UNLIMITED;
-        return Math.max(0, uses - c.pickWorn) + bag[0];
+        return uses + bag[0];
     }
 
     /** pickaxe price: the start of the reason a way's breaks pass the pickaxe's uses with no replacement (the tests' hook). */
@@ -6075,24 +6067,35 @@ public final class NeedChain {
 
     /**
      * pickaxe price (review 2): the pickaxe uses of a covered spot's cover dig - its depth when the cover block (a deep cover:
-     * {@link #DIG_DOWN_BLOCK}) asks for a pickaxe (the mining data's tier), else 0; no mining data: 0, not a price (rule 15).
+     * {@link #DIG_DOWN_BLOCK}) asks for a pickaxe (the mining data's tier), else 0; no mining data: ToolUses.UNKNOWN (rule 15:
+     * not loaded is no value; {@link #coverWearOf} says it).
      */
     static int coverWear(Spot sp) {
         if (!sp.isCovered()) return 0;
         MiningTiers.Source src = MiningTiers.source();
-        if (src == null) return 0;
+        if (src == null) return io.github.mojolowjo.entropybot.aa.brain.ToolUses.UNKNOWN;
         String b = deepCover(sp) ? DIG_DOWN_BLOCK : sp.coverBlock() == null ? sp.block() : sp.coverBlock();
         return b != null && src.blockTier(id(b)) >= 1 ? sp.cover() : 0;     // structural: tier 1 = the least pickaxe
+    }
+
+    /** {@link #coverWear} in a chain: not known (no mining data) is said in the chain's notes and not priced (rule 15, rule 7). */
+    static int coverWearOf(Ctx c, Spot sp) {
+        int w = coverWear(sp);
+        if (w != io.github.mojolowjo.entropybot.aa.brain.ToolUses.UNKNOWN) return w;
+        c.note(() -> "the cover over " + sp.key() + ": pickaxe wear not known (no mining data loaded), not priced");
+        return 0;
     }
 
     /**
      * pickaxe price (review 2): the least pickaxe wear of the way back up after a covered spot's collect of {@code take}
      * blocks that adds {@code got} of {@code gives} to {@code bag} (the forecast bag before it): no climb or a pillar of
-     * spare blocks or a lend of kept ones 0, the extra blocks dug first while the spot has them, else the staircase ({@link #stairWear}). Pure but
-     * for Tuning and the reserve math.
+     * spare blocks 0, else the least of the extra blocks dug first (their count when {@code extraNeedsPick}, else 0) and the
+     * staircase ({@link #stairWear}). Review 4: a lend of kept blocks is not counted - its collect again may fail in
+     * wayBackUp (no known source), and the ways left then need the uses bought here; its own wear is priced by its collect
+     * again when it is chosen. Pure but for Tuning and the reserve math.
      */
     static int climbWear(Map<String, Integer> bag, List<baritone.api.process.Reserves.Reserve<String>> reserves, String asked, int askedN,
-                         String gives, int take, int got, int spotLeft, boolean lendOk) {
+                         String gives, int take, int got, boolean extraNeedsPick) {
         int lv = digDownLevels(take);
         if (lv < climbFromLevels()) return 0;
         Map<String, Integer> after = new LinkedHashMap<>(bag == null ? Map.of() : bag);
@@ -6100,10 +6103,7 @@ public final class NeedChain {
         int spare = spareBlocks(after, reserves, asked, askedN);
         int shortBy = Math.max(0, lv - spare);
         if (shortBy == 0) return 0;
-        int least = spotLeft == UNCOUNTED || spotLeft - take >= shortBy ? shortBy : stairWear(lv, spare);
-        // (c) a lend of kept blocks: the collect again wears the pickaxe too (review 3 item 6); none inside a lend (lendOk false)
-        if (lendOk && placeableBlocks(after) >= lv) for (String k : lendItems(after, reserves, shortBy, asked)) least = Math.min(least, lendWear(k, shortBy));
-        return least;
+        return Math.min(extraNeedsPick ? shortBy : 0, stairWear(lv, spare));
     }
 
     /**
@@ -6112,10 +6112,10 @@ public final class NeedChain {
      * {@link #spareTools} (the cheapest pickaxe of the kind the bag and the recipes pay), " with" its phrase; none to be had:
      * null with {@code c.fail} (the way is not possible, the reason said). Unknown uses (rule 15): not a price, said, worn on.
      */
-    private static String pickWear(Ctx c, int wear, String what, boolean craft) {
+    private static String pickWear(Ctx c, int wear, int tier, String what, boolean craft) {
         if (wear <= 0 || c.pickItem == null) return "";
         String tool = c.pickItem;
-        int left = pickUsesLeft(c);
+        int left = pickUsesLeft(c, Math.max(1, tier));      // structural: tier 1 = the least pickaxe
         if (left == io.github.mojolowjo.entropybot.aa.brain.ToolUses.UNLIMITED) return "";
         if (left == io.github.mojolowjo.entropybot.aa.brain.ToolUses.UNKNOWN) {
             c.note(() -> what + ": " + wear + " pickaxe uses; " + sh(tool) + " durability unknown, not priced");
@@ -6131,7 +6131,7 @@ public final class NeedChain {
             return null;
         }
         int said = c.spares.size();
-        String made = spareTools(c, wear, 1);       // structural: tier 1 = the least pickaxe digs stone
+        String made = spareTools(c, wear, Math.max(1, tier));       // structural: tier 1 = the least pickaxe digs stone
         if (made == null) {
             String why = c.spares.size() > said ? c.spares.get(c.spares.size() - 1) : "no spare made";
             c.fail = what + ": " + wear + PICK_SHORT + left + " left, no replacement to be had (" + why + ")";
@@ -6207,7 +6207,9 @@ public final class NeedChain {
         if (log || c.pickItem == null || c.pickMade) return null;
         String tool = c.pickItem;
         // review 3 item 5: the one reader - the held one's uses and the bag's other pickaxes', less this chain's wear
-        int uses = pickUsesLeft(c);
+        // review 4 (serious): the uses of the pickaxes that dig the take's tier (a wooden spare never covers an iron take)
+        final int tierT = Math.max(1, tier);               // structural: tier 1 = the least pickaxe
+        int uses = pickUsesLeft(c, tierT);
         if (uses == io.github.mojolowjo.entropybot.aa.brain.ToolUses.UNKNOWN) { c.note(() -> sh(tool) + ": durability unknown"); return null; }
         if (uses == io.github.mojolowjo.entropybot.aa.brain.ToolUses.UNLIMITED) return null;
         int blocks = 0, remaining = lack;
@@ -6218,13 +6220,16 @@ public final class NeedChain {
             if (remaining <= 0) break;
             int[] tg = takeOf(c, gives, sp, remaining, log);
             if (tg[0] <= 0) continue;
-            if (tierOf(gives, sp) >= 1) blocks += tg[0];
+            boolean pick = tierOf(gives, sp) >= 1;
+            if (pick) blocks += tg[0];
             if (sp.isCovered() && c.leafAt.get(sp.key()) == null) {
-                blocks += coverWear(sp) + climbWear(fb, c.w.reserves(), c.asked, c.askedN, gives, tg[0], tg[1], spotLeft(c, sp), !c.lending);
+                blocks += coverWearOf(c, sp) + climbWear(fb, c.w.reserves(), c.asked, c.askedN, gives, tg[0], tg[1], pick);
             }
             fb.merge(gives, tg[1], Integer::sum);
             remaining -= tg[1];
         }
+        // all of it against the take's tier: the best pickaxe digs first (Baritone takes it), so the cover and the climb wear
+        // the one the take needs - the same count pickWear makes under ground (pickWorn charged to every tier's pool)
         if (blocks <= uses) return null;
         final int total = blocks;
         // review 3 item 1 (serious; the w070 shape: wear past one new pickaxe): the replacements are priced ways and the scorer
@@ -6234,7 +6239,7 @@ public final class NeedChain {
         ways.add(new Alt("the " + sh(tool) + " and spares", () -> {
             int[] made = new int[2];
             int said = c.spares.size();
-            String r = spareTools(c, total, tier, made);
+            String r = spareTools(c, total, tierT, made);
             if (r == null) {
                 if (c.fail == null) c.fail = "spares: " + (c.spares.size() > said ? c.spares.get(c.spares.size() - 1) : "none made");
                 return null;
@@ -6242,7 +6247,10 @@ public final class NeedChain {
             int avail = uses + made[0] * made[1];
             if (avail < total) { c.fail = "spares: " + made[0] + " made (tools.maxSpares), " + avail + " uses for " + total; return null; }
             // the collect counts its own wear from here on: the uses left are the held one's, the bag's and the spares'
-            c.pickWorn = Math.max(0, c.pickWorn + (pickUsesLeft(c) - avail));
+            // review 4: set exactly (no clamp) - the pool before wear less what is available, so pickUsesLeft(c, tier) reads
+            // avail whatever the bag's spares of the held kind are counted at (World.usesLeft gives the worn one's uses)
+            int pool = pickUsesBefore(c, tierT);
+            if (pool != io.github.mojolowjo.entropybot.aa.brain.ToolUses.UNKNOWN && pool != io.github.mojolowjo.entropybot.aa.brain.ToolUses.UNLIMITED) c.pickWorn = pool - avail;
             return r + " beside the " + sh(tool) + "'s " + uses + " uses";
         }));
         for (String pid : new TreeSet<>(ItemWorth.itemsIn("pickaxes"))) {
@@ -6268,8 +6276,10 @@ public final class NeedChain {
         Ctx.Snap before = c.snap();
         double s0 = c.seconds;
         Trial win = choose(c, ways, null);
-        if (win == null) {
-            String why = c.fail;
+        // review 4: a replacement whose materials need an explore first is none now (as wayBackUp and climbUp read it): the
+        // worn one is used, said, and each way's own wear check below prices what it can
+        if (win == null || win.stuck()) {
+            String why = win != null ? "its materials are not known yet (an explore)" : c.fail;
             List<String> reasons = new ArrayList<>(c.dropped.subList(Math.min(before.dropped().size(), c.dropped.size()), c.dropped.size()));
             c.restore(before);
             c.fail = null;
@@ -7460,7 +7470,7 @@ public final class NeedChain {
         if (pick) ways.add(new Alt("climb with the " + sh(c.pickItem), () -> {
             String tool = c.pickItem;
             // the bot stands under ground already: a replacement is made where it is (no "before going down" left)
-            String r = pickWear(c, stairWear(depth, blocks), "the staircase up " + depth + " levels", true);
+            String r = pickWear(c, stairWear(depth, blocks), 1, "the staircase up " + depth + " levels", true);
             if (r == null) return null;
             c.steps.add(new Step.Climb());
             c.addS(sec);
@@ -7476,7 +7486,7 @@ public final class NeedChain {
             if (p == null || c.fail != null || c.stuck) { if (c.fail == null) c.fail = "no pickaxe to be made here (its materials are not known yet)"; return null; }
             // review: the spare blocks counted again after the pickaxe took its share of the bag
             int left = spareBlocks(forecastBag(c), c.w.reserves(), c.asked, c.askedN);
-            String r = pickWear(c, stairWear(depth, left), "the staircase up " + depth + " levels", true);
+            String r = pickWear(c, stairWear(depth, left), 1, "the staircase up " + depth + " levels", true);
             if (r == null) return null;
             c.steps.add(new Step.Climb());
             c.addS(sec);
