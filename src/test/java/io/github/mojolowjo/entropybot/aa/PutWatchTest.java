@@ -242,6 +242,24 @@ class PutWatchTest {
         assertEquals(new io.github.mojolowjo.entropybot.aa.brain.MainChest.Known(9, 64, 9), store.apply(new io.github.mojolowjo.entropybot.aa.brain.MainChest.Known(9, 64, 9), java.util.Set.of("minecraft:cobblestone")).answer());
     }
 
+    /** Review 8: a refusal whose kinds were not read says so (never "?") and lifts when nothing is owed, not before. */
+    @Test
+    void aRefusalOfKindsNotRead_liftsWhenNothingIsOwed() {
+        int[] c = {3, 64, -5};
+        String words = io.github.mojolowjo.entropybot.aa.brain.DepositRule.refusedWords(c, 22, Map.of(), 4);
+        assertFalse(words.contains("?"), words);
+        assertTrue(words.contains(io.github.mojolowjo.entropybot.aa.brain.DepositRule.REFUSED_NOT_READ), words);
+        var store = new io.github.mojolowjo.entropybot.aa.brain.MainChestHold();
+        assertNotNull(store.refused("deposit: " + words));
+        assertEquals(io.github.mojolowjo.entropybot.aa.brain.MainChestHold.Kind.REFUSED, store.hold().kind());
+        assertTrue(store.hold().items().isEmpty(), String.valueOf(store.hold().items()));
+        var known = new io.github.mojolowjo.entropybot.aa.brain.MainChest.Known(3, 64, -5);
+        assertInstanceOf(io.github.mojolowjo.entropybot.aa.brain.MainChest.Held.class, store.apply(known, java.util.Set.of("minecraft:oak_log")).answer(), "something owed: held");
+        var lifted = store.apply(known, java.util.Set.of());
+        assertEquals(known, lifted.answer(), "nothing owed: lifted");
+        assertTrue(lifted.line().contains("nothing is owed any more"), lifted.line());
+    }
+
     /** Review 6 (rule 7): a gone chest recorded by the reader, then by the put's words, is one hold, said once. */
     @Test
     void theSameGoneCell_byTwoWordings_isSaidOnce() {
@@ -277,11 +295,32 @@ class PutWatchTest {
     void aPendingPutOverwrittenByANewStart_isSaid() {
         Line l = due();
         PutWatch w = new PutWatch(l.s().deposits);
+        w.startBegins();
         w.started(PREVIOUS, true);
+        w.startBegins();                                    // another new task's start (the first one's end never read)
         String line = w.started(PREVIOUS, true);
         assertNotNull(line);
         assertTrue(line.contains("the pending put"), line);
         assertTrue(w.on());
+    }
+
+    /** Review 8: a pending put started again inside the same new task's start is the same put: nothing said lost. */
+    @Test
+    void aPendingPutStartedAgainInTheSameStart_isTheSamePut() {
+        Line l = due();
+        Map<String, Integer> owed = l.s().deposits.owed();
+        PutWatch w = new PutWatch(l.s().deposits);
+        w.startBegins();
+        assertNull(w.started(PREVIOUS, true));
+        w.moved(Map.of("cobblestone", 32));
+        assertNull(w.started(PREVIOUS, true), "the same start: no lost line");
+        assertEquals(Map.of("cobblestone", 32), w.movedSoFar(), "its first leg's count kept");
+        w.taskStarted(TASK);
+        assertEquals(TASK, w.task());
+        String end = w.ended(TASK, true, null, "ok");
+        assertTrue(end.contains("reached the chest"), end);
+        assertTrue(l.s().deposits.owed().isEmpty());
+        assertFalse(owed.isEmpty());
     }
 
     /**
@@ -321,6 +360,68 @@ class PutWatchTest {
         assertEquals(32, chest, "the -d amount reached the chest whole, once");
         int noted = cob.depositPut.values().stream().mapToInt(Integer::intValue).sum();
         assertEquals(0, Math.max(0, cob.deposit - noted), "nothing of the order is asked again (amount " + cob.deposit + ", in the chest for it " + noted + ")");
+    }
+
+    /** Review 8: cobblestone 32 -d stopped with 20, a put of it on its way, 10 in; the order wakes (its amount cut to 12). */
+    record Woken(OrderLineSim s, LineDeposits d, Goals.Goal cob, PutWatch w) {}
+
+    static Woken wokenWithTenOnItsWay() {
+        OrderLineSim s = new OrderLineSim();
+        LineDeposits d = s.deposits;
+        Goals.Goal cob = s.order("cobblestone", 32, "b3", true);
+        s.bag.put("cobblestone", 20);
+        cob.parked = "the explore from here froze";
+        assertEquals(Kind.DUE, d.sweep(cob, s.bag, AT).kind());
+        PutWatch w = new PutWatch(d);
+        w.started(TASK, false);
+        w.moved(Map.of("cobblestone", 10));
+        w.legEnded();
+        s.bag.put("cobblestone", 10);
+        cob.parked = null;
+        assertEquals(Kind.WOKE_OPEN, d.reopen(cob).kind());
+        assertEquals(12, cob.deposit, "the line took 20 of it: 10 in the chest, 10 on its way");
+        return new Woken(s, d, cob, w);
+    }
+
+    /**
+     * Review 8 (serious): the wake, then the put's task lost, then the order's re-end. The 10 that was on its way is the
+     * order's own again (its amount back to 22, nothing of it left in due to be replaced or taken back), so the re-end
+     * owes 22 and the chest gets 32.
+     */
+    @Test
+    void aWakeThenALostPut_thenTheReEnd_putsTheWholeAmount() {
+        Woken k = wokenWithTenOnItsWay();
+        assertNotNull(k.w().lost(TASK));
+        assertEquals(22, k.cob().deposit, "the 10 that did not go in is back on its amount");
+        assertTrue(k.d().owed().isEmpty(), "nothing of it is left in due (a re-end or a take-back cannot replace or drop it)");
+        k.s().bag.put("cobblestone", 22);
+        LineDeposits.Out again = k.d().weigh(k.cob(), "done", k.s().bag, AT);
+        assertEquals(Kind.DUE, again.kind(), again.text());
+        assertEquals(Map.of("minecraft:cobblestone", 22), k.d().owed());
+        k.w().started(OTHER, false);
+        k.w().moved(Map.of("cobblestone", 22));
+        assertNotNull(k.w().ended(OTHER, true, null, "ok"));
+        assertTrue(k.d().owed().isEmpty());
+        assertEquals(32, 10 + 22, "the -d amount reached the chest whole, once");
+    }
+
+    /** Review 8: the wake, the re-end (12 due), then the put lost: the 10 and the 12 are owed together, the amount 22. */
+    @Test
+    void aWakeThenTheReEnd_thenALostPut_owesBothParts() {
+        Woken k = wokenWithTenOnItsWay();
+        k.s().bag.put("cobblestone", 22);
+        assertEquals(Kind.DUE, k.d().weigh(k.cob(), "done", k.s().bag, AT).kind());
+        assertNotNull(k.w().lost(TASK));
+        assertEquals(Map.of("minecraft:cobblestone", 22), k.d().owed(), "the 10 back beside the 12, added");
+        assertEquals(22, k.cob().deposit);
+        k.w().started(OTHER, false);
+        k.w().moved(Map.of("cobblestone", 22));
+        assertNotNull(k.w().ended(OTHER, true, null, "ok"));
+        assertTrue(k.d().owed().isEmpty());
+        // a later wake of it (the line's deposit went) takes what went off its amount: nothing more is asked
+        k.cob().parked = null;
+        LineDeposits.Out late = k.d().reopen(k.cob());
+        assertEquals(Kind.WOKE_GONE, late.kind(), late.text());
     }
 
     @Test

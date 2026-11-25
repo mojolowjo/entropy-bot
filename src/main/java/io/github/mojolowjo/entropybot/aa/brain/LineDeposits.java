@@ -226,8 +226,11 @@ public final class LineDeposits {
             return;
         }
         onWay = false;
-        if (!reached) for (Goals.Goal o : wayOrders) o.depositMissed = true;
-        wayCut.clear();          // review 7: kept through failed() (the remainder owed again is still the put's), gone here
+        if (!reached) {
+            for (Goals.Goal o : wayOrders) o.depositMissed = true;
+            cutBack();           // review 8: the owner's cancel - what a wake cut and did not go in is the order's again
+        }
+        wayCut.clear();
         way.clear();
         wayLine.clear();
         wayOrders.clear();
@@ -254,23 +257,55 @@ public final class LineDeposits {
     public void failed() {
         if (!onWay) return;
         onWay = false;
-        // a line that came due while the put ran keeps its own orders; the put's orders join them per line
+        // review 8 (serious, the review's case: cobblestone 32 -d put 20, 10 went in, the order woke - its amount cut to 12,
+        // the 10 still on its way the put's - then the put's task was lost; the 10 came back into due and the order's
+        // re-end REPLACED it with its 12, so the chest got 22 of 32): what a wake cut off an order's amount and did not
+        // reach the chest is the order's own again - back on its amount, never left in due for a later end or take-back
+        // to replace or drop
+        Map<Goals.Goal, Map<String, Integer>> back = cutBack();
+        // a line that came due while the put ran keeps its own orders; the put's orders join them per line. An order open
+        // again (woke) is not among a due line's orders: it is weighed when it ends
         for (var e : wayLine.entrySet()) {
-            Map<String, Goals.Goal> back = dueLine.computeIfAbsent(e.getKey(), k -> new java.util.LinkedHashMap<>());
-            for (Goals.Goal o : wayOrders) if (e.getKey().equals(o.line)) back.putIfAbsent(o.r.key(), o);
+            Map<String, Goals.Goal> line = dueLine.computeIfAbsent(e.getKey(), k -> new java.util.LinkedHashMap<>());
+            for (Goals.Goal o : wayOrders) if (e.getKey().equals(o.line) && o.depositWeighed) line.putIfAbsent(o.r.key(), o);
+            if (line.isEmpty()) dueLine.remove(e.getKey());
         }
         for (var d : way.entrySet()) {
-            Map<String, Integer> now = due.get(d.getKey());
-            if (now == null) due.put(d.getKey(), d.getValue());
-            else {
-                Map<String, Integer> sum = new TreeMap<>(now);
-                for (var i : d.getValue().entrySet()) sum.merge(i.getKey(), i.getValue(), Integer::sum);
-                due.put(d.getKey(), sum);
-            }
+            Map<String, Integer> rest = new TreeMap<>(d.getValue());
+            Map<String, Integer> b = back.get(d.getKey());
+            // an order open again owes its cut part on its own amount (weighed on the bag at its end); one weighed again
+            // since (its new due amount taken on the cut amount) keeps it in due beside the new part, added
+            // (its noted part grows by it too, so a later wake takes off all that went for it)
+            if (b != null && !d.getKey().depositWeighed) for (var i : b.entrySet()) rest.merge(i.getKey(), -i.getValue(), Integer::sum);
+            else if (b != null) d.getKey().depositTook = plus(d.getKey().depositTook == null ? Map.of() : d.getKey().depositTook, b);
+            rest.values().removeIf(n -> n <= 0);
+            if (!rest.isEmpty()) due.merge(d.getKey(), rest, LineDeposits::plus);
         }
         way.clear();
         wayLine.clear();
         wayOrders.clear();
+    }
+
+    /**
+     * Review 8: the put on its way did not reach the chest (failed, or the owner's cancel): per order, the part of what a
+     * wake cut off its amount ({@link #wayCut}) that is still on its way, added back to the order's amount
+     * ({@link Goals.Goal#deposit}); {@link #wayCut} is cleared. Returns what went back, per order (by the way's keys).
+     */
+    private Map<Goals.Goal, Map<String, Integer>> cutBack() {
+        Map<Goals.Goal, Map<String, Integer>> out = new java.util.IdentityHashMap<>();
+        for (var c : wayCut.entrySet()) {
+            Map<String, Integer> on = way.getOrDefault(c.getKey(), Map.of());
+            Map<String, Integer> b = new TreeMap<>();
+            for (var i : c.getValue().entrySet()) {
+                int n = Math.min(i.getValue(), on.getOrDefault(i.getKey(), 0));
+                if (n > 0) b.put(i.getKey(), n);
+            }
+            if (b.isEmpty()) continue;
+            c.getKey().deposit += b.values().stream().mapToInt(Integer::intValue).sum();
+            out.put(c.getKey(), b);
+        }
+        wayCut.clear();
+        return out;
     }
 
     /**
@@ -641,7 +676,8 @@ public final class LineDeposits {
             g.deposit = Math.max(0, g.deposit - noted);
             g.depositPut.clear();
             Map<String, Integer> rest = this.way.get(g);
-            if (rest != null && !rest.isEmpty()) wayCut.merge(g, new TreeMap<>(rest), LineDeposits::plus);
+            // review 8: all of it still on its way is cut now (an earlier cut is a part of it), never more than the way holds
+            if (rest != null && !rest.isEmpty()) wayCut.put(g, new TreeMap<>(rest));
         } else if (noted > 0 || !g.depositPut.isEmpty()) {
             g.deposit = Math.max(0, g.deposit - inChest(g, noted));       // the line's deposit took them already
         }

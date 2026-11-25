@@ -80,6 +80,9 @@ public final class MainChest {
             bb.port.log(out.line());
             bb.port.tellOwner(out.line());
         }
+        // review 8 (rule 15): a block not known for want of the item data is said in the log, once per change
+        String note = h.notKnown(out.answer());
+        if (note != null && bb.port != null) bb.port.log(note);
         return out.answer();
     }
 

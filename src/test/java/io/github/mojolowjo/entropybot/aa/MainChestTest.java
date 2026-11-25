@@ -49,6 +49,13 @@ class MainChestTest {
         assertEquals(early, applied.answer());
         assertNull(applied.line(), "nothing said: nothing is gone");
         assertNull(hold.hold());
+        // review 8: said in the log once per change (the walk may go on it), and its end said
+        String note = hold.notKnown(early);
+        assertTrue(note != null && note.contains("item data is not loaded"), note);
+        assertNull(hold.notKnown(early), "once");
+        assertNull(hold.notKnown(new MainChest.NotLoaded(1, 2, 3)), "the chunk's own reason is no item-data note");
+        assertTrue(hold.notKnown(new MainChest.Known(1, 2, 3)).contains("can be told now"));
+        assertNull(hold.notKnown(new MainChest.Known(1, 2, 3)));
         // the deposit leg's check: not loaded is never gone (its station record is not forgotten)
         assertFalse(io.github.mojolowjo.entropybot.commands.DepositLegProbe.goneAt("minecraft:chest"));
         assertNotNull(io.github.mojolowjo.entropybot.commands.DepositLegProbe.notKnownWords("minecraft:chest"));

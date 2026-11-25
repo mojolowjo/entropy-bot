@@ -54,7 +54,8 @@ public final class MainChestHold {
         if (m.find()) {
             int x = Integer.parseInt(m.group(1)), y = Integer.parseInt(m.group(2)), z = Integer.parseInt(m.group(3));
             Set<String> items = new java.util.TreeSet<>();
-            for (String part : m.group(5).split(", ")) {
+            // review 8: kinds not read: no items, the hold lifts when nothing is owed ({@link #apply})
+            if (!DepositRule.REFUSED_NOT_READ.equals(m.group(5))) for (String part : m.group(5).split(", ")) {
                 int sp = part.lastIndexOf(' ');
                 if (sp > 0) items.add(io.github.mojolowjo.entropybot.aa.NeedChain.id(part.substring(0, sp)));
             }
@@ -80,7 +81,7 @@ public final class MainChestHold {
         return switch (k) {
             case FULL -> "the owner's word (aa deposit x y z), a new main chest, or the chest opened showing room";
             case GONE -> "a main chest set (aa deposit x y z), or its block seen again as a container";
-            case REFUSED -> "the owner's word (aa deposit x y z), a new main chest, or none of the refused items owed any more";
+            case REFUSED -> "the owner's word (aa deposit x y z), a new main chest, or none of the refused items owed any more (nothing owed, when which items was not read)";
         };
     }
 
@@ -142,13 +143,35 @@ public final class MainChestHold {
             String l = lift("its block is a container again");
             return new Applied(a, line == null ? l : line + "; " + l);
         }
-        if (hold != null && hold.kind() == Kind.REFUSED && owedIds != null && !hold.items().isEmpty()
-                && java.util.Collections.disjoint(hold.items(), owedIds)) {
-            String l = lift("none of the refused items is owed any more");
+        // review 8: a refusal whose kinds were not read (no items) lifts when nothing at all is owed
+        if (hold != null && hold.kind() == Kind.REFUSED && owedIds != null
+                && (hold.items().isEmpty() ? owedIds.isEmpty() : java.util.Collections.disjoint(hold.items(), owedIds))) {
+            String l = lift(hold.items().isEmpty() ? "nothing is owed any more (which items it refused was not read)" : "none of the refused items is owed any more");
             return new Applied(a, line == null ? l : line + "; " + l);
         }
         if (hold != null) return new Applied(held(), line);
         return new Applied(a, line);
+    }
+
+    /** Review 8: the not-known note said last (null: none). */
+    private String notKnownSaid;
+
+    /**
+     * Review 8 (rule 15: a fact not known is waited for or said in the log): the main chest's block cannot be told a
+     * container now for a reason other than its chunk (the item data not loaded yet). The deposit chain still plans the walk
+     * toward it (the put reads the block at the chest, never counted gone on it), and the log says so, once per change;
+     * the next answer that is known says it is known again. Null: nothing to say.
+     */
+    public String notKnown(MainChest.Answer a) {
+        if (a instanceof MainChest.NotLoaded n && !MainChest.NotLoaded.CHUNK.equals(n.why())) {
+            String l = "the main chest at " + n.at() + ": " + n.why() + "; the deposit may walk toward it on that, the put reads its block at the chest";
+            if (l.equals(notKnownSaid)) return null;
+            notKnownSaid = l;
+            return l;
+        }
+        if (notKnownSaid == null || a instanceof MainChest.NotLoaded) return null;     // its chunk not loaded: still not told
+        notKnownSaid = null;
+        return "the main chest" + (a.at() == null ? "" : " at " + a.at()) + ": what its block is can be told now";
     }
 
     private MainChest.Held held() {

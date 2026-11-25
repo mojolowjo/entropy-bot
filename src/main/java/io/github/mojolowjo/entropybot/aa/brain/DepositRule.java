@@ -228,9 +228,12 @@ public final class DepositRule {
         return head + refusedWords(chest, meant - putN, refused, freeSlots);
     }
 
+    /** Review 8: the words for refused items whose kinds were not read (MainChestHold holds such a refusal on all that is owed). */
+    public static final String REFUSED_NOT_READ = "which items not read";
+
     /** Review 7: "chest at x y z refused N item(s) (what) while it showed M empty slot(s)" (MainChestHold.refusal reads it). */
     public static String refusedWords(int[] chest, int n, Map<String, Integer> refused, int freeSlots) {
-        String what = refused == null || refused.isEmpty() ? "?" : io.github.mojolowjo.entropybot.aa.moves.Step.Deposit.onlyText(refused);
+        String what = refused == null || refused.isEmpty() ? REFUSED_NOT_READ : io.github.mojolowjo.entropybot.aa.moves.Step.Deposit.onlyText(refused);
         return "chest at " + at(chest) + " refused " + n + " item" + (n == 1 ? "" : "s") + " (" + what + ") while it showed "
                 + freeSlots + " empty slot" + (freeSlots == 1 ? "" : "s");
     }

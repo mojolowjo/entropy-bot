@@ -94,14 +94,22 @@ final class DepositLeg {
         boolean tool = st.isDamageableItem() || st.is(ItemTags.PICKAXES) || st.is(ItemTags.AXES) || st.is(ItemTags.SHOVELS)
                 || st.is(ItemTags.HOES) || st.is(ItemTags.SWORDS);
         boolean food = st.has(DataComponents.FOOD);
-        boolean station = io.github.mojolowjo.entropybot.clear.OwnStations.station(id) || io.github.mojolowjo.entropybot.clear.OwnStations.container(id);
+        // review 8 (rule 15, the one container reader): a block not known to be a container (the item data not loaded) is
+        // kept like a station, never put on a guess; start() says a whole-bag deposit waits for the data
+        boolean station = io.github.mojolowjo.entropybot.clear.OwnStations.station(id)
+                || io.github.mojolowjo.entropybot.aa.brain.ItemWorth.containerOf(id == null ? null : id.toLowerCase()) != io.github.mojolowjo.entropybot.aa.brain.ItemWorth.Container.NO;
         boolean torch = st.getItem() instanceof BlockItem bi && bi.getBlock() instanceof TorchBlock;
         return new DepositRule.Item(id, st.getCount(), tool, food, station, torch);
     }
 
+    /**
+     * A chest item known to place a container (the one reader, ItemWorth.containerOf YES). Review 8 (rule 15): while the
+     * item data is not loaded this is false, and no reader takes that as "no chest": choose() waits first (Nearby.containers
+     * answers NotLoaded, DepositRule.choose WAIT), and place() says the data is not loaded.
+     */
     private static boolean chestItem(ItemStack st) {
         return st.getItem() instanceof BlockItem bi && bi.getBlock().defaultBlockState().is(net.neoforged.neoforge.common.Tags.Blocks.CHESTS)
-                && io.github.mojolowjo.entropybot.clear.OwnStations.container(Gui.itemId(st));
+                && io.github.mojolowjo.entropybot.aa.brain.ItemWorth.containerOf(Gui.itemId(st).toLowerCase()) == io.github.mojolowjo.entropybot.aa.brain.ItemWorth.Container.YES;
     }
 
     private static String chestInBag(LocalPlayer p) {
@@ -126,6 +134,9 @@ final class DepositLeg {
             if (DepositRule.onlyToPut(bag(p), step.only()).isEmpty()) instant[0] = "ok: deposit: none of " + Step.Deposit.onlyText(step.only()) + " in the bag";
             return null;
         }
+        // review 8 (rule 15): which bag items are stations (kept) is not known before the item data is in: said, not guessed
+        if (!io.github.mojolowjo.entropybot.aa.brain.ItemWorth.hasData())
+            return "error: deposit: the item data is not loaded yet, so which bag items are stations (kept in the bag) is not known";
         if (DepositRule.toPut(bag(p), reserves()).isEmpty()) { instant[0] = "ok: deposit: nothing outside the kept set and the reserves in the bag" + heldWords(p); return null; }
         return null;
     }
@@ -283,6 +294,8 @@ final class DepositLeg {
 
     private Car.Status place(LocalPlayer p) {
         String item = chestInBag(p);
+        if (item == null && !io.github.mojolowjo.entropybot.aa.brain.ItemWorth.hasData())
+            return Car.Status.failed("deposit: the item data is not loaded yet, so whether a chest in the bag places a container is not known");
         if (item == null) return Car.Status.failed("deposit: no chest in the bag to place");
         var r = JobHands.get().placeNear(item, Tuning.i("steps.placeNearR"), (int) (20 * Tuning.need("hands.buildS")), "deposit");
         if (r.failed()) return Car.Status.failed("deposit: placing the chest: " + r.why());

@@ -2464,6 +2464,7 @@ public final class AaRuntime implements JobPort {
             String r;
             // review 3 (fault 1): the first step runs inside runTyped, before this task's id is given - a put it starts waits for it
             newTaskStarting = true;
+            put.startBegins();          // review 8: a put started twice in this one start is the same put
             try {
                 r = runTyped(opt == null ? t.kind() + " " + t.source() : opt.memoryKey(), run, t.kind() + " " + (opt == null ? t.source() : opt.id()),
                         run == t.steps() ? t.uses() : null);      // 0.39.z61: the chain's counts go with its own steps only

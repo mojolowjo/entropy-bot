@@ -43,7 +43,9 @@ public final class PutWatch {
     public String started(long current, boolean starting) {
         // review 4 (point 3): the same task starting the put again (an escape resume, an in-run re-plan that splices a new
         // Deposit) keeps what its earlier legs moved; the leg's own count starts afresh
-        boolean again = on && !pending && !starting && task == current;
+        // review 8: a pending put started again inside the SAME new task's start (the same start serial) is that put again,
+        // never "lost"
+        boolean again = on && (!pending && !starting && task == current || pending && starting && pendingStart == starts);
         String line = null;
         if (again) legEnded();                       // review 5: a leg whose end was not read comes off the owed amount now
         else if (on) {
@@ -56,11 +58,21 @@ public final class PutWatch {
         earlier = again ? earlier : Map.of();
         on = true;
         pending = starting;
+        pendingStart = starts;
         task = starting ? -1 : current;
         moved = Map.of();
         deposits.putStarted();
         return line;
     }
+
+    /** Review 8: the new task starts counted ({@link #startBegins}), and the one a pending put started in. */
+    private long starts, pendingStart = -1;
+
+    /**
+     * Review 8: a new task's start begins (AaRuntime.runTask, before runTyped): a pending put started in an earlier start is
+     * another put; one started again in this start is the same put ({@link #started}).
+     */
+    public void startBegins() { starts++; }
 
     /** Review 4 (point 3): what the earlier legs of this same put moved. */
     private Map<String, Integer> earlier = Map.of();
