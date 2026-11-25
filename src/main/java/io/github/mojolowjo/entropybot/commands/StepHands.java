@@ -750,6 +750,13 @@ public final class StepHands implements Steps.Hands {
                 return follow("walk", () -> c.stepJob("walk " + x + " " + y + " " + z, () -> c.walkNearTo(p, x, y, z)));
             }
         }, this::requestStatus);
+        // deposit-goal stage 4: the planned put (a chest given: the deposit goal's step) starts here - what is owed goes on
+        // its way (the take-back cutoff); its end is read with the task's (AaRuntime.putOver). The strip order's deposit
+        // and the plain aa deposit carry no chest and are unchanged
+        if (d.chest() != null) {
+            if (c.aaRuntime == null) return "error: deposit: the put to the chest at " + d.chestText() + " has no owed store (aa not loaded)";
+            c.aaRuntime.putStarted();
+        }
         String[] inst = new String[1];
         String r = deposit.start(p, inst);
         if (inst[0] != null) { instant = inst[0]; deposit = null; }

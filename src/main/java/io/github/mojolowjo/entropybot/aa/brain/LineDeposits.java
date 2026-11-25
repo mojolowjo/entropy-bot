@@ -147,7 +147,7 @@ public final class LineDeposits {
      * deposit back too (tester-2 w003-3: birch_log noted nothing).
      */
     private final Map<String, Map<String, Goals.Goal>> dueLine = new HashMap<>();
-    /** take-back: per line whose deposit run is on its way ({@link #started}), the items it was sent with (for the log). */
+    /** take-back: per line whose deposit run is on its way ({@link #putStarted}), the items it was sent with (for the log). */
     private final Map<String, Map<String, Integer>> wayLine = new HashMap<>();
 
     /** The due items of the orders in {@code ended}, summed. */
@@ -163,22 +163,16 @@ public final class LineDeposits {
     /**
      * Review round 2 (cobblestone 32 -d went with 20, was met while that run climbed out through stone, and its line came
      * due again on the other 12; the run's end removed "the lines on their way" and the 12 with them): the amounts of the
-     * run on its way, per order as {@link #started} sent it. They are kept apart from {@link #due}, so what comes due while
+     * run on its way, per order as {@link #putStarted} sent it. They are kept apart from {@link #due}, so what comes due while
      * the run is on its way (another line, or the SAME line and the same order again) is never the run's to take off.
      */
     private final Map<Goals.Goal, Map<String, Integer>> way = new java.util.IdentityHashMap<>();
-    /** A deposit run is on its way ({@link #started} to {@link #gone}). */
+    /** A deposit run is on its way ({@link #putStarted} to {@link #gone}). */
     private boolean onWay;
 
     /**
-     * take-back: the due deposit's run started: from here a wake of one of its orders leaves it alone. The run takes
-     * exactly what is due now ({@link #due} and {@link #dueLine} are empty after this); what comes due later is a later run's.
-     */
-    public void started() { putStarted(); }
-
-    /**
-     * deposit-goal piece 2: the deposit's put started (today's {@link #started} under a clearer name; started stays as its
-     * delegate until stage 4). What is due now goes on its way.
+     * deposit-goal piece 2: the deposit's put started: what is due now goes on its way; from here a wake
+     * of one of its orders leaves it alone (take-back).
      */
     public void putStarted() {
         for (var e : dueLine.entrySet()) { wayLine.put(e.getKey(), dueOf(e.getValue())); wayOrders.addAll(e.getValue().values()); }
@@ -188,29 +182,12 @@ public final class LineDeposits {
         onWay = true;
     }
 
-    /** take-back: the items of every line whose deposit is due and not started (empty: none). */
-    public Map<String, Integer> dueNow() {
-        Map<String, Integer> out = new TreeMap<>();
-        for (Map<String, Goals.Goal> ended : dueLine.values()) for (var i : dueOf(ended).entrySet()) out.merge(i.getKey(), i.getValue(), Integer::sum);
-        return out;
-    }
-
     /**
-     * take-back: the due items of every line whose deposit is due and not started, by each item's FULL id (the order's own
-     * id, {@link #fullId}) - what the deposit step is sent with (merge review 2026-11-23: a modded -d item sent by its
-     * path was looked for as minecraft:&lt;path&gt;, not found, and the run ended "none of it in the bag").
+     * take-back: the items of every line whose deposit is due and not started (empty: none), by the bag's key. Deposit-goal
+     * stage 4: the not-started part of {@link #owed} - the same sum over {@link #due} alone (one reader, rule 23).
      */
-    public Map<String, Integer> dueIds() {
-        Map<String, Integer> out = new TreeMap<>();
-        for (Map<String, Goals.Goal> ended : dueLine.values())
-            for (Goals.Goal o : ended.values()) {
-                Map<String, Integer> t = due.get(o);
-                if (t != null) for (var i : t.entrySet()) out.merge(fullId(o, i.getKey()), i.getValue(), Integer::sum);
-            }
-        return out;
-    }
-
-    /** The orders of the lines whose deposit run is on its way ({@link #started}), the ones that noted nothing included. */
+    public Map<String, Integer> dueNow() { return sum(java.util.List.of(due), false); }
+    /** The orders of the lines whose deposit run is on its way ({@link #putStarted}), the ones that noted nothing included. */
     private final Set<Goals.Goal> wayOrders = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
 
     /**
@@ -279,16 +256,17 @@ public final class LineDeposits {
 
     /**
      * deposit-goal piece 2: the one reader of what the deposit still owes - the items of {@link #due} and {@link #way}, by
-     * each item's full id ({@link #fullId}), summed. Empty: nothing owed. ({@link #dueNow} and {@link #dueIds} stay until
-     * stage 4.)
+     * each item's full id ({@link #fullId}), summed. Empty: nothing owed.
      */
-    public Map<String, Integer> owed() {
+    public Map<String, Integer> owed() { return sum(java.util.List.of(due, way), true); }
+
+    /** The items of {@code maps}' orders summed, by each item's full id ({@link #fullId}) or the bag's key. */
+    private static Map<String, Integer> sum(java.util.List<Map<Goals.Goal, Map<String, Integer>>> maps, boolean full) {
         Map<String, Integer> out = new TreeMap<>();
-        for (var m : java.util.List.of(due, way))
-            for (var d : m.entrySet()) for (var i : d.getValue().entrySet()) out.merge(fullId(d.getKey(), i.getKey()), i.getValue(), Integer::sum);
+        for (var m : maps)
+            for (var d : m.entrySet()) for (var i : d.getValue().entrySet()) out.merge(full ? fullId(d.getKey(), i.getKey()) : i.getKey(), i.getValue(), Integer::sum);
         return out;
     }
-
     /**
      * deposit-goal piece 2: the orders behind {@link #owed}: every order of the due lines and of the put on its way, the
      * ones that noted nothing included; each once, by identity.
@@ -351,7 +329,7 @@ public final class LineDeposits {
             Out back = reopen(g);
             if (back.kind() == Kind.WOKE_GONE) return back;
             // review 3: a due deposit this weighing took back is said in the line that follows (rule 7), whatever it answers;
-            // the runtime starts a queued deposit only from dueNow(), so a taken-back one never starts
+            // the deposit goal puts only what owed() holds, so a taken-back one never goes
             how = "done (stopped earlier and met since: weighed again" + (back.kind() == Kind.WOKE_TAKEN_BACK ? "; the line's deposit that had not started is taken back and weighed with it" : "") + ")";
         }
         g.depositWeighed = true;

@@ -66,7 +66,17 @@ final class DepositLeg {
         this.step = step;
         this.hands = hands;
         this.request = request;
+        // deposit-goal stage 4: the planned put names its chest (the main chest, MainChest's one reader): no CHOOSE, the
+        // walk and the use go to that chest. Known loss until piece 10: byTrail lives in CHOOSE, so this put has no trail
+        // way home; the plan's walk up and climb stand in for it
+        if (step.chest() != null) {
+            chest = step.chest().clone();
+            phase = Phase.WALK;
+        }
     }
+
+    /** The phase the leg is in (tests: a given chest starts at WALK). */
+    Phase phase() { return phase; }
 
     /** The bag's stacks as DepositRule's item facts (the item data: tool tags / damageable, food, station, torch block). */
     static List<DepositRule.Item> bag(LocalPlayer p) {

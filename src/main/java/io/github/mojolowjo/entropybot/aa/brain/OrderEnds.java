@@ -80,8 +80,8 @@ public final class OrderEnds {
      * deposit-goal plan, stage 3 (piece 4; owner 2026-11-23: the line's deposit is a planned, priced goal): keeps the
      * deposit goal in step with the one owed store ({@link LineDeposits#owed}). Something owed and no deposit goal: the
      * goal is added ({@link Goals#addDeposit}) with its desire; nothing owed and a deposit goal: it leaves with its desire
-     * (the put reached the chest, or a wake took the deposit back). Each said (rule 7). Called after {@link #tick}; the
-     * runtime does not call it until stage 4.
+     * (the put reached the chest, or a wake took the deposit back). Each said (rule 7). Called after {@link #tick} (the
+     * runtime's goals pass since stage 4, the simulator's and OrderLineSim's).
      */
     public static void depositSync(Blackboard bb, Brain brain, LineDeposits deposits, Hooks h) {
         var owed = deposits.owed();

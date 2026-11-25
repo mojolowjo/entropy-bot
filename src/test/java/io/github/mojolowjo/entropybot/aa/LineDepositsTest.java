@@ -92,7 +92,7 @@ class LineDepositsTest {
         OrderLineSim s = new OrderLineSim();
         Goals.Goal cob = s.order("cobblestone", 32, "b1", true), log = s.order("oak_log", 16, "b1", true);
         due(s, cob, log, 11);
-        s.deposits.started();
+        s.deposits.putStarted();
         assertTrue(s.deposits.dueNow().isEmpty(), "started: not due any more");
         assertEquals(32, s.deposits.kept(s.bag, List.of(), null, null).get("cobblestone"), "still kept until the run ends");
         log.parked = null;
@@ -154,7 +154,7 @@ class LineDepositsTest {
         Goals.Goal cob = s.order("cobblestone", 32, "b1", true), log = s.order("oak_log", 16, "b1", true);
         Goals.Goal stick = s.order("stick", 4, "b2", true);
         due(s, cob, log, 11);
-        s.deposits.started();
+        s.deposits.putStarted();
         s.bag.put("stick", 4);
         assertEquals(Kind.DUE, s.deposits.weigh(stick, "done", s.bag, AT).kind());
         s.deposits.gone(true);
@@ -178,7 +178,7 @@ class LineDepositsTest {
         LineDeposits.Out first = s.deposits.sweep(cob, s.bag, AT);
         assertEquals(Kind.DUE, first.kind(), first.text());
         assertEquals(Map.of("cobblestone", 20, "oak_log", 16), first.items());
-        s.deposits.started();
+        s.deposits.putStarted();
         s.bag.put("cobblestone", 32);                        // the run's way up dug through stone
         cob.parked = null;
         LineDeposits.Out again = s.deposits.weigh(cob, "done", s.bag, AT);
@@ -191,7 +191,7 @@ class LineDepositsTest {
         s.bag.remove("oak_log");
         assertEquals(Map.of("cobblestone", 12), s.deposits.dueNow(), "the remainder is still due: the -d amount goes whole");
         assertEquals(Map.of("cobblestone", 12), s.deposits.kept(s.bag, List.of(), null, null), "and still kept");
-        s.deposits.started();
+        s.deposits.putStarted();
         assertTrue(s.deposits.dueNow().isEmpty());
         s.deposits.gone(true);
         assertTrue(s.deposits.kept(s.bag, List.of(), null, null).isEmpty(), "the second run ended: nothing left behind");
@@ -205,7 +205,7 @@ class LineDepositsTest {
     void theEndOfARunSentWithNothingLeavesWhatCameDueMeanwhile() {
         OrderLineSim s = new OrderLineSim();
         Goals.Goal stick = s.order("stick", 4, "b2", true);
-        s.deposits.started();
+        s.deposits.putStarted();
         s.bag.put("stick", 4);
         assertEquals(Kind.DUE, s.deposits.weigh(stick, "done", s.bag, AT).kind());
         s.deposits.gone(true);
@@ -517,7 +517,7 @@ class LineDepositsTest {
             log.parked = "the explore from here froze";
             LineDeposits.Out out = s.deposits.sweep(log, s.bag, how.equals("no chest") ? null : AT);
             assertEquals(how.equals("no chest") ? Kind.NO_CHEST : Kind.DUE, out.kind(), out.text());
-            if (how.equals("failed")) { s.deposits.started(); s.deposits.gone(false); }
+            if (how.equals("failed")) { s.deposits.putStarted(); s.deposits.gone(false); }
             if (how.equals("refused")) s.deposits.gone(false);
             log.parked = null;                               // it woke; the 16 logs are still in the bag
             LineDeposits.Out woke = s.deposits.sweep(log, s.bag, AT);
@@ -536,7 +536,7 @@ class LineDepositsTest {
         OrderLineSim s = new OrderLineSim();
         Goals.Goal cob = s.order("cobblestone", 32, "b1", true), log = s.order("oak_log", 16, "b1", true);
         due(s, cob, log, 11);
-        s.deposits.started();
+        s.deposits.putStarted();
         s.deposits.gone(true);
         log.parked = null;
         assertEquals(Kind.WOKE_OPEN, s.deposits.sweep(log, s.bag, AT).kind());
@@ -557,16 +557,16 @@ class LineDepositsTest {
         Map<String, Integer> bag = Map.of("ingot_osmium", 2);
         assertEquals(Kind.DUE, d.weigh(g, "done", bag, AT).kind());
         assertEquals(Map.of("ingot_osmium", 2), d.dueNow(), "the weighing counts by the bag's key");
-        assertEquals(Map.of(osmium, 2), d.dueIds(), "the step is sent the full id");
+        assertEquals(Map.of(osmium, 2), d.owed(), "the step is sent the full id (owed, the one reader)");
         var stacks = List.of(new io.github.mojolowjo.entropybot.aa.brain.DepositRule.Item(osmium, 2, false, false, false, false));
-        assertEquals(Map.of(osmium, 2), io.github.mojolowjo.entropybot.aa.brain.DepositRule.onlyToPut(stacks, d.dueIds()), "the chest click finds the stack");
+        assertEquals(Map.of(osmium, 2), io.github.mojolowjo.entropybot.aa.brain.DepositRule.onlyToPut(stacks, d.owed()), "the chest click finds the stack");
         assertTrue(io.github.mojolowjo.entropybot.aa.brain.DepositRule.onlyToPut(stacks, d.dueNow()).isEmpty(), "the bare path names minecraft:ingot_osmium: the fault");
         // a vanilla item's full id is the minecraft one
         OrderLineSim s = new OrderLineSim();
         Goals.Goal cob = s.order("cobblestone", 32, null, true);
         s.bag.put("cobblestone", 32);
         assertEquals(Kind.DUE, s.deposits.weigh(cob, "done", s.bag, AT).kind());
-        assertEquals(Map.of("minecraft:cobblestone", 32), s.deposits.dueIds());
+        assertEquals(Map.of("minecraft:cobblestone", 32), s.deposits.owed());
     }
 
     /** A park with no wake (only the owner's word changes it) still ends its line: its bag goes to the chest as before. */
