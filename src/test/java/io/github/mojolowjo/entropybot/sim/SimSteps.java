@@ -530,16 +530,15 @@ final class SimSteps {
     private static Result smelt(SimGame g, Step.Smelt m) {
         String item = full(m.item());
         if (!g.stationNear("minecraft:furnace")) return Result.fail(0, "smelt " + m.item() + ": no furnace in reach of " + g.feet[0] + " " + g.feet[1] + " " + g.feet[2]);
+        String lacks = null;
         for (ItemWorth.Recipe r : ItemWorth.recipes(item)) {
             if (!ItemWorth.SMELT.equals(r.kind())) continue;
-            // the input from what is free first (the planner planned on the free bag: a kept -d log is not the charcoal's),
-            // the whole bag only when the free part cannot pay - as the game's furnace hand would, said in the result
+            // job-review-leftovers (6): the input from the free bag only, as the game's Crafting.smelt (planBag over
+            // AaRuntime.keptFromUse) never pays a smelt from a kept -d amount
             Map<String, Integer> pay = pay(g.useItems(), r, m.n());
-            boolean fromKept = pay == null;
-            if (fromKept) pay = pay(g.bag, r, m.n());
-            if (pay == null) continue;
+            if (pay == null) { lacks = r.inputs() + " (the kept -d amounts left out)"; continue; }
             // reserves-once (b): the fuel from the free bag (never a kept -d amount), the plan's priced fuel first (Step.Smelt.fuel)
-            Map<String, Integer> left = new HashMap<>(fromKept ? g.bag : g.useItems());
+            Map<String, Integer> left = new HashMap<>(g.useItems());
             for (var e : pay.entrySet()) left.merge(e.getKey(), -e.getValue(), Integer::sum);
             var fuel = io.github.mojolowjo.entropybot.craft.CraftPlanner.pickFuel(left, m.n());       // the game's own fuel rule
             if (m.fuel() != null && fuel != null) {
@@ -554,9 +553,9 @@ final class SimSteps {
             for (var e : pay.entrySet()) g.take(e.getKey(), e.getValue());
             for (var e : burn.entrySet()) g.take(e.getKey(), e.getValue());
             g.give(item, m.n());
-            return Result.ok(SMELT_SETUP_S + m.n() * SMELT_S, "smelted " + m.n() + " " + m.item() + " from " + pay + (fromKept ? " (FROM A KEPT -d AMOUNT: nothing free paid it)" : "") + " on " + burn);
+            return Result.ok(SMELT_SETUP_S + m.n() * SMELT_S, "smelted " + m.n() + " " + m.item() + " from " + pay + " on " + burn);
         }
-        return Result.fail(0, "smelt " + m.item() + ": the bag lacks the input; bag " + g.bag);
+        return Result.fail(0, "smelt " + m.item() + ": the bag lacks the input" + (lacks == null ? "" : " " + lacks) + "; bag " + g.bag);
     }
 
     /** What {@code batches} of the recipe take from the bag (each slot one of its options), null: the bag cannot pay. */

@@ -377,10 +377,13 @@ final class SimGame {
     /** The running run's order (its desire id; null: no order's run), as AaRuntime's taskReplan. */
     private String runDesire;
 
+    /** The bag when the running run started (AaRuntime's typedStartBag). */
+    private Map<String, Integer> runStartBag;
+
     private void run(JobPort.TaskSpec t, long id) {
         say("run " + id + " (" + t.source() + "): " + t.steps().size() + " steps");
         runDesire = t.replan() == null ? null : t.replan().desire();
-        Goals.runStarts(bb, runDesire);                  // as AaRuntime.runTyped: the run's own kept amounts at its start
+        runStartBag = new HashMap<>(bag);                // as AaRuntime.runTyped's typedStartBag: the bag at the run's start
         var steps = new io.github.mojolowjo.entropybot.aa.moves.Steps(new Hands());
         steps.start(t.chain(), t.steps(), t.uses(), clock.now() / TICK_MS, t.replan() == null ? null : t.replan().planner());
         for (int n = 0; steps.running() && end == null; n++) {
@@ -522,7 +525,7 @@ final class SimGame {
      */
     Map<String, Integer> useItems() {
         Map<String, Integer> free = new HashMap<>(bag);
-        var kept = runDesire == null ? Goals.kept(bb, null, null) : Goals.keptForRun(bb, runDesire, true, true);
+        var kept = runDesire == null ? Goals.kept(bb, null, null) : Goals.keptForRun(bb, runDesire, true, true, runStartBag);
         for (var e : kept.entrySet()) {
             String id = e.getKey().contains(":") ? e.getKey() : "minecraft:" + e.getKey();
             free.computeIfPresent(id, (k, v) -> Math.max(0, v - e.getValue()));

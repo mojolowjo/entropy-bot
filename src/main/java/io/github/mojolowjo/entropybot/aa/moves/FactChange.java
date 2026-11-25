@@ -9,7 +9,13 @@ package io.github.mojolowjo.entropybot.aa.moves;
  */
 public final class FactChange {
     /** {@code key}: the fact's kind and subject ("station minecraft:crafting_table"); {@code text}: the chat words ("table at 4 -60 -104 gone"). */
-    public record Fact(String key, String text) {
+    public record Fact(String key, String text, String stallKey) {
+        /** A fact with no second held cell. */
+        public Fact(String key, String text) { this(key, text, null); }
+
+        /** review sent back again (4): the same fact carrying the stall cell's own place key as data ({@link #stallPlaceKey}). */
+        public Fact stalledAt(String placeKey) { return new Fact(key, text, placeKey); }
+
         /** 0.39.z41: a new price, not a failure: a walk's path became known (the order is priced again, nothing is charged). */
         public boolean price() { return key.startsWith(PRICE); }
 
@@ -548,6 +554,17 @@ public final class FactChange {
      * plain fact above): a source slot keyed {@link io.github.mojolowjo.entropybot.aa.NeedChain#placeKey}, held for the
      * order; the re-plan places near a cell with room from facts instead, by its priced walk (NeedChain.roomWalk).
      */
+    /**
+     * job-review-leftovers (item 1): the second place fact of a place-near that stalled away from where it was asked: the
+     * stall cell's own place key, carried on the fact as data by {@link StepMonitor#placeStall} (review sent back again:
+     * never read back from the words), held through the same placeKey store as the asked cell (Goals.replan), so a stall
+     * more than place.failedNearM from the asked cell is held at once too. Null: not a place fact, or the feet did not move.
+     */
+    public static String stallPlaceKey(Fact f) {
+        if (f == null || f.key() == null || !f.key().startsWith("source " + io.github.mojolowjo.entropybot.aa.NeedChain.PLACE_AT)) return null;
+        return f.stallKey();
+    }
+
     public static void placeFailed(String item, String why, int[] at) {
         if (at == null || at.length < 3) { placeFailed(item, why); return; }     // structural: x y z
         last = new Fact("source " + io.github.mojolowjo.entropybot.aa.NeedChain.placeKey(at[0], at[1], at[2]),

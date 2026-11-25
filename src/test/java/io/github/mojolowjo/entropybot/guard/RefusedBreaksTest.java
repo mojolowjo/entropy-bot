@@ -30,6 +30,21 @@ class RefusedBreaksTest {
         assertTrue(r.take().contains("-25 -32 -123 1 time ("));
     }
 
+    /** job-review-leftovers (8): the store is bounded; the oldest cell goes out first and its unsaid count is still said. */
+    @Test
+    void boundedOldestOutWithItsCountSaid() {
+        RefusedBreaks r = new RefusedBreaks();
+        r.cap(2);
+        for (int i = 0; i < 3; i++) r.note(OW, 1, 2, 3, RAIL, WHY);
+        r.note(OW, 4, 5, 6, RAIL, WHY);
+        r.note(OW, 7, 8, 9, RAIL, WHY);
+        assertEquals(2, r.size());
+        String t = r.take();
+        assertTrue(t.contains("at 1 2 3 3 times") && t.contains("let go past 2 cells"), t);
+        assertTrue(t.contains("at 7 8 9 1 time"), t);
+        assertTrue(r.note(OW, 1, 2, 3, RAIL, WHY), "a let-go cell refused again is said again");
+    }
+
     /** Review: a refusal tied to its moment (the travel cap, no job, water) is its own record and never a held block. */
     @Test
     void aDifferentReasonOrBlockIsANewRecordAndTheOldCountIsKept() {
@@ -109,5 +124,22 @@ class RefusedBreaksTest {
         for (int t = 1; t < 5 && run.running(); t++) run.tick(t);
         assertNotNull(text[0], run.why());
         assertTrue(text[0].contains("minecraft:rail at -25 -32 -123 5804 times"), text[0]);
+    }
+
+    /** Review sent back: a record replaced at the same cell (a new reason) keeps pending within the cap too. */
+    @Test
+    void aReplacedRecordKeepsPendingWithinTheCap() {
+        RefusedBreaks rb = new RefusedBreaks();
+        rb.cap(2);
+        for (int i = 0; i < 10; i++) {
+            rb.note("overworld", 1, 2, 3, "minecraft:stone", "reason " + i);
+            rb.note("overworld", 1, 2, 3, "minecraft:stone", "reason " + i);
+        }
+        String said = rb.take();
+        assertNotNull(said);
+        assertEquals(4, said.split("; ").length, said);   // two kept lines, one folded total, the live record
+        // review sent back again (item 6): one cell, seven folded records - the count is of lines, not cells
+        assertTrue(said.contains("more breaks in 7 more refusal lines"), said);
+        assertFalse(said.contains("more cells"), said);
     }
 }

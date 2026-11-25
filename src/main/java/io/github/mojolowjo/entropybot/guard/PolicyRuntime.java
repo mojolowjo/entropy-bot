@@ -431,7 +431,12 @@ public final class PolicyRuntime {
 
     /** With an explicit snapshot (the one a calculation captured at its start). */
     public BreakPolicy.Verdict judge(String site, Action action, Intent in, String dim, int x, int y, int z, BlockFacts f, Where me, Snapshot s) {
-        stats.ask(site);
+        return judge(site, true, action, in, dim, x, y, z, f, me, s);
+    }
+
+    /** {@code ask} false: the caller counted the ask at {@code site} already (one count per decision); a deny is still counted. */
+    public BreakPolicy.Verdict judge(String site, boolean ask, Action action, Intent in, String dim, int x, int y, int z, BlockFacts f, Where me, Snapshot s) {
+        if (ask) stats.ask(site);
         try {
             BreakPolicy.Verdict v = BreakPolicy.judge(s, new BreakPolicy.Ask(action, in, dim, x, y, z, f, me));
             if (!v.allowed()) stats.deny(site, v.reason());

@@ -470,9 +470,11 @@ public final class StepMonitor {
         int[] at = asked != null && asked.length >= 3 ? asked : feet != null && feet.length >= 3 ? feet : null;     // structural: x y z
         if (at == null) return null;
         boolean moved = feet != null && feet.length >= 3 && at != feet && (feet[0] != at[0] || feet[1] != at[1] || feet[2] != at[2]);   // structural: x y z
-        return FactChange.noProgress(io.github.mojolowjo.entropybot.aa.NeedChain.sourceKey(pn, at),
+        FactChange.Fact f = FactChange.noProgress(io.github.mojolowjo.entropybot.aa.NeedChain.sourceKey(pn, at),
                 "place " + pn.item().replaceFirst("^minecraft:", "") + " near me failed at " + at[0] + " " + at[1] + " " + at[2]
                         + (moved ? " (stalled at " + feet[0] + " " + feet[1] + " " + feet[2] + ")" : "") + ": " + why);
+        // review sent back again (4): the stall cell rides on the fact as data, never read back from the words
+        return moved ? f.stalledAt(io.github.mojolowjo.entropybot.aa.NeedChain.placeKey(feet[0], feet[1], feet[2])) : f;
     }
 
     /** The key of a stall's plain fact: a step with no source key of its own (Steps.walkStall reads it for a walk). */

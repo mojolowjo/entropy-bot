@@ -54,7 +54,13 @@ public final class Ways {
         NeedChain.World w = Goals.world(bb);
         if (w == null) return new Plan(o, null, "no facts for the chain yet (the senses are not ready)");
         // chop D: a block source whose step failed is held by its own key (Failures); the chain is priced without it
-        if (f != null) w = w.without((item, sp) -> NeedChain.spotHeld(item, sp, k -> f.blocked(need, k, now)));   // 0.39.z69 fix 1: an item key or one spot's
+        if (f != null) {
+            // job-review-leftovers (2): the held cut cells read once from the need's records (a stalled cut holds its tree)
+            List<String> blocked = new java.util.ArrayList<>();
+            for (var r : f.of(need)) if (r.option() != null && f.blocked(need, r.option(), now)) blocked.add(r.option());
+            var trunks = NeedChain.trunksHeld(NeedChain.heldCuts(blocked), w.seenAll());   // review (3): the held trees by their known logs
+            w = w.without((item, sp) -> NeedChain.spotHeld(item, sp, k -> f.blocked(need, k, now), trunks));
+        }   // 0.39.z69 fix 1: an item key or one spot's
         NeedChain.Chain c = NeedChain.of(o, w);
         if (!c.ok()) return new Plan(o, c, c.why());
         if (c.steps().isEmpty()) return new Plan(o, c, o.what() + " is in the bag");

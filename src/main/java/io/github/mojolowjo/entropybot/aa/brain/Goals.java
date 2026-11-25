@@ -787,6 +787,9 @@ public final class Goals {
             sourceFact = at == null;                             // not a cell (never): held as any source, said
         }
         if (sourceFact) g.sources.failedFor(g.id(), src, fact.text(), bb.clock.now(), positional(src) || headingHold(src) ? bb.in : null, ORDER_LIFE_MS);
+        // job-review-leftovers (1): a place-near that stalled away from the asked cell holds the stall cell too, in the same store
+        String stall = sourceFact ? io.github.mojolowjo.entropybot.aa.moves.FactChange.stallPlaceKey(fact) : null;
+        if (stall != null && !stall.equals(src)) g.sources.failedFor(g.id(), stall, fact.text(), bb.clock.now(), positional(stall) || headingHold(stall) ? bb.in : null, ORDER_LIFE_MS);
         // 0.39.z77 world (run CX 22:43:18: the met pickaxe's water-ahead strip re-tried by the helmet): the fact is the world's
         // 0.39.z77 world 3 (review 1): a heading fact is kept by the tunnel's start too - the strip's fresh start, else the
         // square of the feet's column (where a strip from the feet starts, NeedChain.stripStart)
@@ -1557,56 +1560,122 @@ public final class Goals {
      * order's run: nothing, as before.
      */
     public static Map<String, Integer> keptForRun(Blackboard bb, String desireId, boolean orderRun, boolean consume) {
+        return keptForRun(bb, desireId, orderRun, consume, null);
+    }
+
+    /**
+     * job-review-leftovers (item 4): as above, {@code startBag} the bag at the task's first start - the runner's one store of
+     * it (AaRuntime.typedStartBag, the live bag; the simulator's own), read here instead of a second note on the board.
+     * Null: not known (a run started without one), the order's own -d amounts are held whole, said once (rule 7).
+     */
+    public static Map<String, Integer> keptForRun(Blackboard bb, String desireId, boolean orderRun, boolean consume, Map<String, Integer> startBag) {
         if (!orderRun) return Map.of();
         if (consume && desireId != null && bb.fact(FACT) instanceof List<?>)
-            for (Goal g : of(bb)) if (g.id().equals(desireId)) return keptFromUse(bb, g, desireId);
+            for (Goal g : of(bb)) if (g.id().equals(desireId)) return keptFromUse(bb, g, startBag);
         if (consume) return kept(bb, null, null);
         if (desireId != null && bb.fact(FACT) instanceof List<?>)
             for (Goal g : of(bb)) if (g.id().equals(desireId)) return keptFromOthers(bb, g);
         return kept(bb, null, null);
     }
 
-    /** reserves-once (b): the run's own and its trip's kept amounts as the bag held them when the run started ({@link #runStarts}). */
-    record KeptAtStart(String desire, Map<String, Integer> own) {}
-
-    static final String KEPT_AT_START_FACT = "aa.keptAtRunStart";
-
-    /**
-     * reserves-once (b, review: the planner and the runner must hold the same amounts): an order's run starts - what the bag
-     * holds now for its own and its trip's -d amounts (kept less the others') is noted for the run. The planner set exactly
-     * those aside from the trip's start (NeedChain.playbookChain); what the run gathers after its start is the trip's to plan
-     * with, set aside by the planner after the target's own get. Null desire or no such open order: the note is cleared.
-     */
-    public static void runStarts(Blackboard bb, String desireId) {
-        Goal g = null;
-        if (desireId != null && bb.fact(FACT) instanceof List<?>) for (Goal x : of(bb)) if (x.id().equals(desireId)) g = x;
-        if (g == null) { bb.fact(KEPT_AT_START_FACT, null); return; }
-        Map<String, Integer> own = new java.util.HashMap<>(kept(bb, null, null));
-        for (var e : keptFromOthers(bb, g).entrySet()) own.merge(e.getKey(), -e.getValue(), Integer::sum);
-        own.values().removeIf(v -> v <= 0);
-        bb.fact(KEPT_AT_START_FACT, new KeptAtStart(desireId, Map.copyOf(own)));
-    }
+    static final String OWN_WHOLE_SAID_FACT = "aa.keptOwnWholeSaid";
 
     /**
      * reserves-once (b): what an order's run may not use up - the others' kept amounts whole, and of its own and its trip's
-     * what the bag held at the run's start (never more than it holds now). No note for this run (a run started
-     * outside {@link #runStarts}): its own amounts are held whole, said once (rule 7).
+     * ({@link #ownKeptHeld}) what the bag held at the run's start (never more than it holds now). The planner sets the same
+     * amounts aside for every chain of the order ({@link #chain}: a trip's in NeedChain.playbookChain, a plain or group
+     * order's by {@link #ownAside}), so the runner never refuses what the planner priced.
      */
-    private static Map<String, Integer> keptFromUse(Blackboard bb, Goal g, String desireId) {
+    private static Map<String, Integer> keptFromUse(Blackboard bb, Goal g, Map<String, Integer> startBag) {
         Map<String, Integer> out = new java.util.HashMap<>(keptFromOthers(bb, g));
-        Map<String, Integer> all = kept(bb, null, null);
-        KeptAtStart at = bb.fact(KEPT_AT_START_FACT) instanceof KeptAtStart k && desireId.equals(k.desire()) ? k : null;
-        if (at == null && bb.port != null && !desireId.equals(bb.fact(KEPT_AT_START_FACT + ".said"))) {
-            bb.fact(KEPT_AT_START_FACT + ".said", desireId);
-            bb.port.log(g.r.key() + ": no note of the kept amounts at the run's start; its own -d amounts are held whole from its crafts and smelts");
+        if (startBag == null && bb.port != null && !g.id().equals(bb.fact(OWN_WHOLE_SAID_FACT))) {
+            bb.fact(OWN_WHOLE_SAID_FACT, g.id());
+            bb.port.log(g.r.key() + ": the bag at the run's start is not known; its own -d amounts are held whole from its crafts and smelts");
         }
-        for (var e : all.entrySet()) {
-            int own = e.getValue() - out.getOrDefault(e.getKey(), 0);
-            if (own <= 0) continue;
-            int hold = at == null ? own : Math.min(own, at.own().getOrDefault(e.getKey(), 0));
-            if (hold > 0) out.merge(e.getKey(), hold, Integer::sum);
+        for (var e : ownKeptHeld(bb, g, startBag).entrySet()) out.merge(e.getKey(), e.getValue(), Integer::sum);
+        return out;
+    }
+
+    /**
+     * job-review-leftovers (item 4): of {@code g}'s own and its trip's -d amounts, what the bag holds now and held at
+     * {@code atStart} too (the smaller; null {@code atStart}: now only). The one answer the runner (keptFromUse) and the
+     * planner ({@link #ownAside}) read. By item path.
+     */
+    static Map<String, Integer> ownKeptHeld(Blackboard bb, Goal g, Map<String, Integer> atStart) {
+        Map<String, Integer> out = new java.util.HashMap<>();
+        Map<String, Integer> others = keptFromOthers(bb, g);
+        Map<String, Integer> start = null;
+        if (atStart != null && bb.fact(LineDeposits.FACT) instanceof LineDeposits ld) {
+            // review: the start bag is keyed by full id (liveBag, the sim's runStartBag), the -d counts by path (bb.in.bag)
+            Map<String, Integer> byPath = new java.util.HashMap<>();
+            for (var e : atStart.entrySet()) if (e.getValue() != null) byPath.merge(Thing.path(e.getKey()), e.getValue(), Integer::sum);
+            start = new java.util.HashMap<>(ld.kept(byPath, of(bb), null, null));
+            for (var e : ld.kept(byPath, of(bb), g, BatchWay.open(bb, g)).entrySet()) start.merge(e.getKey(), -e.getValue(), Integer::sum);
+        }
+        for (var e : kept(bb, null, null).entrySet()) {
+            int own = e.getValue() - others.getOrDefault(e.getKey(), 0);
+            if (start != null) own = Math.min(own, start.getOrDefault(e.getKey(), 0));
+            if (own > 0) out.put(e.getKey(), own);
         }
         return out;
+    }
+
+    /**
+     * job-review-leftovers (item 4: the trip set the held part of its -d targets aside, a plain or a group order's own chain
+     * did not, so the runner refused a furnace the planner had priced from the order's own kept cobblestone): an order's own
+     * chain prices with what the bag holds of its own -d amount ({@link #ownKeptHeld}) taken off the bag and off the amount
+     * asked - the trip's rule (NeedChain.playbookChain heldKept) for every chain: no inner get uses it up, and the order
+     * still gathers only the rest. {@code ids}: the order's items ({@code key} when none). {@code bag} and {@code held} are
+     * lowered in place; returns the count taken off. Pure.
+     */
+    static int ownAside(Map<String, Integer> bag, Map<String, Integer> held, List<String> ids, String key) {
+        int n = 0;
+        java.util.Set<String> paths = new java.util.HashSet<>();
+        if (ids.isEmpty()) paths.add(Thing.path(key)); else for (String id : ids) paths.add(Thing.path(id));
+        for (var e : bag.entrySet()) {
+            String p = Thing.path(e.getKey());
+            if (!paths.contains(p)) continue;
+            int h = Math.min(e.getValue() == null ? 0 : e.getValue(), held.getOrDefault(p, 0));
+            if (h <= 0) continue;
+            e.setValue(e.getValue() - h);
+            held.merge(p, -h, Integer::sum);
+            n += h;
+        }
+        return n;
+    }
+
+    /**
+     * review sent back (item 4, group orders): how much the order's ask drops for what {@link #ownAside} took off the bag
+     * ({@code taken}, by bag key). A plain order: all of it. A group order: its n is per member (NeedChain.resolveAll gets
+     * n of each), so the ask drops by the fewest taken of any member; a member with more held gathers a little extra,
+     * never short. Pure.
+     */
+    static int askAside(Map<String, Integer> taken, List<String> ids, String key, boolean group) {
+        Map<String, Integer> byPath = new java.util.HashMap<>();
+        for (var e : taken.entrySet()) byPath.merge(Thing.path(e.getKey()), e.getValue(), Integer::sum);
+        if (!group || ids.isEmpty()) { int t = 0; for (int v : byPath.values()) t += v; return t; }
+        int min = Integer.MAX_VALUE;
+        for (String id : ids) min = Math.min(min, byPath.getOrDefault(Thing.path(id), 0));
+        return min;
+    }
+
+    /**
+     * review sent back again (item 1): the order's own ask. What {@link #ownAside} takes off the bag ALWAYS rides in the ask
+     * (the runner's keptFromUse holds every member's own -d amount, so no inner get may use it, even when one member holds
+     * none); only the asked count drops, by {@link #askAside}, to 0 at the least (all held: met, nothing gathered). Pure.
+     */
+    static BatchWay.OwnAsk ownAsk(Map<String, Integer> bag, Map<String, Integer> held, List<String> ids, String key, boolean group, int n) {
+        var ownBag = new java.util.LinkedHashMap<>(bag);
+        ownAside(ownBag, new java.util.HashMap<>(held), ids, key);
+        Map<String, Integer> taken = new java.util.HashMap<>();
+        for (var e : bag.entrySet()) {
+            int d = (e.getValue() == null ? 0 : e.getValue()) - ownBag.getOrDefault(e.getKey(), 0);
+            if (d > 0) taken.put(e.getKey(), d);
+        }
+        int aside = askAside(taken, ids, key, group);
+        // review sent back (2): all of n held aside is a met ask (0: the chain gets nothing), never the whole n again
+        int askN = Math.max(0, n - aside);
+        return new BatchWay.OwnAsk(group ? key : ids.isEmpty() ? key : ids.get(0), ids, askN, group, taken);
     }
 
     public static Map<String, Integer> keptFromOthers(Blackboard bb, Goal g) {
@@ -1736,11 +1805,14 @@ public final class Goals {
         var laps = io.github.mojolowjo.entropybot.aa.core.TickLaps.AA;    // 0.39.z62 item 4: resolves counted while the probe is on
         // 0.39.z77 SHAPE CHANGE (owner 2026-10-26 10:30: playbook first): a plain-item order runs its trip (alone or with its
         // batch), kept per batch, bag and place (R3); the order's own chain only where no trip is derived (said) or for a group
-        final var wf = world;
+        // job-review-leftovers (item 4): the order's own -d amount the bag holds is set aside here as the trip sets it aside
+        // (one answer, ownAside), so the runner's keptFromUse never refuses what this chain priced
+        // review (worker path): the aside rides in the ask, so the planner worker (BatchWay.own, port.own) prices the same
+        // world and count as the tick's own supplier: one answer whoever resolves
+        var ask = ownAsk(world.bag(), ownKeptHeld(bb, g, null), g.r.ids(), g.r.key(), g.r.group(), g.n);
         java.util.function.Supplier<io.github.mojolowjo.entropybot.aa.NeedChain.Chain> own = () -> {
             long t0 = laps.now();
-            var c = g.r.group() ? io.github.mojolowjo.entropybot.aa.NeedChain.resolveAll(g.r.key(), g.r.ids(), g.n, wf)
-                    : io.github.mojolowjo.entropybot.aa.NeedChain.resolve(g.r.ids().isEmpty() ? g.r.key() : g.r.ids().get(0), g.n, wf);
+            var c = ask.resolve(world);
             if (t0 != 0) {
                 laps.resolved(laps.now() - t0);
                 var st = io.github.mojolowjo.entropybot.aa.PlanNodes.last();      // 0.39.z78 D6 (run DT): this thread's node counts
@@ -1751,7 +1823,6 @@ public final class Goals {
         // 0.39.z77 trip (run CU 21:02-21:06): the waiting test (batch false) reads the batch's kept trip while its running step
         // needs no walk (BatchWay.hold); the flag was unused since the SHAPE CHANGE, so every tick's test derived the trip
         // 0.39.z78 D6 (run DT): the one-leg trip's own chain is asked of the planner worker when one is installed (OwnAsk)
-        var ask = new BatchWay.OwnAsk(g.r.group() ? g.r.key() : g.r.ids().isEmpty() ? g.r.key() : g.r.ids().get(0), g.r.ids(), g.n, g.r.group());
         var ch = BatchWay.tripOrder(g) ? BatchWay.trip(bb, g, world, own, !batch, ask) : own.get();
         // 0.39.z41: a source Baritone's complete search found unreachable is the z33 source fact: dropped for the order's life
         for (var e : ch.unreachable().entrySet()) {

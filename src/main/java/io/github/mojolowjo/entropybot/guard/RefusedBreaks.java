@@ -43,17 +43,52 @@ public final class RefusedBreaks {
         String k = key(dim, x, y, z);
         Rec r = map.get(k);
         if (r == null || !Objects.equals(r.block, block) || !Objects.equals(r.reason, reason)) {
-            if (r != null && r.count > r.told) pending.add(text(k, r, r.count - r.told));   // the old record's unsaid count
+            if (r != null && r.count > r.told) unsaid(text(k, r, r.count - r.told), r.count - r.told, cap());   // the old record's unsaid count
             r = new Rec(block, reason);
+            map.remove(k);                                     // the new record is the newest (oldest out first)
             map.put(k, r);
             r.count = 1;
+            bound(cap());
             return true;
         }
         r.count++;
+        map.remove(k);                                         // review: a hot cell is the newest too, so it is let go last
+        map.put(k, r);
         return false;
     }
 
     private final List<String> pending = new ArrayList<>();
+    private int foldedLines, foldedCount;   // review sent back again (6): lines folded, one cell may fold more than once
+
+    /** The most cells held (Tuning guard.refusedCells; a test sets its own); 0 or less: the Tuning entry. */
+    private int capOverride;
+
+    synchronized void cap(int n) { capOverride = n; }
+
+    private int cap() { return capOverride > 0 ? capOverride : io.github.mojolowjo.entropybot.aa.brain.Tuning.i("guard.refusedCells"); }
+
+    /**
+     * job-review-leftovers (8, a long run refused thousands of cells): past {@code cap} cells the oldest goes out; its count
+     * not yet said is kept for the next {@link #take} (rule 7), and a cell refused again later is a new record, said again.
+     */
+    private void bound(int cap) {
+        var it = map.entrySet().iterator();
+        while (map.size() > Math.max(1, cap) && it.hasNext()) {   // structural: the newest record always stays
+            Map.Entry<String, Rec> e = it.next();
+            Rec r = e.getValue();
+            if (r.count > r.told) {
+                // review: pending is bounded by the same cap; past it only the totals are kept, said in one line (rule 7)
+                unsaid(text(e.getKey(), r, r.count - r.told) + " (the oldest cell, let go past " + cap + " cells)", r.count - r.told, cap);
+            }
+            it.remove();
+        }
+    }
+
+    /** review sent back: every unsaid count goes through here, so pending stays within the cap; past it only totals (rule 7). */
+    private void unsaid(String line, int n, int cap) {
+        if (pending.size() < Math.max(1, cap)) pending.add(line);
+        else { foldedLines++; foldedCount += n; }
+    }
 
     private static String text(String key, Rec r, int n) {
         String cell = key.substring(key.indexOf(' ') + 1);
@@ -65,6 +100,9 @@ public final class RefusedBreaks {
     public synchronized String take() {
         List<String> out = new ArrayList<>(pending);
         pending.clear();
+        if (foldedLines > 0) out.add("the guard refused " + foldedCount + " more breaks in " + foldedLines + " more refusal lines let go (past the cap of lines)");
+        foldedLines = 0;
+        foldedCount = 0;
         for (Map.Entry<String, Rec> e : map.entrySet()) {
             Rec r = e.getValue();
             int n = r.count - r.told;

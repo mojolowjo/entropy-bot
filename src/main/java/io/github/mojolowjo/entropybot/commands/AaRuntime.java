@@ -1308,7 +1308,8 @@ public final class AaRuntime implements JobPort {
         var rp = taskReplan;
         boolean task = taskStarting || (typedRun && runner.taskHolds());
         if (!task) return io.github.mojolowjo.entropybot.aa.brain.Goals.keptForRun(bb, null, true, consume);
-        return io.github.mojolowjo.entropybot.aa.brain.Goals.keptForRun(bb, rp == null ? null : rp.desire(), rp != null, consume);
+        return io.github.mojolowjo.entropybot.aa.brain.Goals.keptForRun(bb, rp == null ? null : rp.desire(), rp != null, consume,
+                typedStartMs >= 0 ? typedStartBag : null);      // job-review-leftovers (4): the one start-bag store
     }
 
     /** The task's run is being started on the runner: its first step runs before the runner is marked as the task's (runTyped). */
@@ -2765,9 +2766,8 @@ public final class AaRuntime implements JobPort {
             fastEndSeen = -1;                            // review 4: no end held from an earlier task
             LocalPlayer sp = Minecraft.getInstance().player;
             typedStartAt = sp == null ? null : Jobs.here(sp);
-            // reserves-once (b): the task's own and its trip's kept amounts as the bag holds them at its first start (an escape
-            // goes on with the same note; keptFromUse reads it)
-            io.github.mojolowjo.entropybot.aa.brain.Goals.runStarts(bb, taskReplan == null ? null : taskReplan.desire());
+            // reserves-once (b) / job-review-leftovers (4): typedStartBag is the one store of the bag at the task's first start;
+            // keptFromUse reads the run's own kept amounts at its start from it (Goals.keptForRun with the start bag)
         }
         var rp = taskReplan;
         // 0.39.z30: an order's step failing on a changed fact is charged in Failures under the order by the fact's key, then re-planned

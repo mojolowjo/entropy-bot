@@ -86,14 +86,30 @@ public final class BatchWay {
      * 0.39.z78 D6 (run DT): an order's own chain as the worker resolves it - NeedChain.resolveAll({@code what}, {@code ids},
      * {@code n}) for a group, else NeedChain.resolve({@code what}, {@code n}) - Goals' own supplier as a request.
      */
-    public record OwnAsk(String what, List<String> ids, int n, boolean group) {
+    public record OwnAsk(String what, List<String> ids, int n, boolean group, Map<String, Integer> aside) {
         public OwnAsk {
             ids = ids == null ? List.of() : List.copyOf(ids);
+            aside = aside == null ? Map.of() : Map.copyOf(aside);
         }
 
-        /** The chain on {@code w} (the worker's resolve, or Goals' own on the tick). */
+        public OwnAsk(String what, List<String> ids, int n, boolean group) { this(what, ids, n, group, Map.of()); }
+
+        /**
+         * The chain on {@code w} (the worker's resolve, or Goals' own on the tick). job-review-leftovers review: {@code aside}
+         * (bag key to count, Goals.ownAside: the order's own held -d amount) is taken off {@code w}'s bag first, so the worker
+         * and the tick price the same world and {@code n} is already the rest.
+         */
         public NeedChain.Chain resolve(NeedChain.World w) {
-            return group ? NeedChain.resolveAll(what, ids, n, w) : NeedChain.resolve(what, n, w);
+            NeedChain.World on = pricedOn(w);
+            return group ? NeedChain.resolveAll(what, ids, n, on) : NeedChain.resolve(what, n, on);
+        }
+
+        /** The world {@link #resolve} prices on: {@code w} with {@code aside} off its bag. */
+        public NeedChain.World pricedOn(NeedChain.World w) {
+            if (aside.isEmpty() || w == null) return w;
+            Map<String, Integer> bag = new java.util.LinkedHashMap<>(w.bag());
+            for (var e : aside.entrySet()) bag.computeIfPresent(e.getKey(), (k, v) -> Math.max(0, v - e.getValue()));
+            return w.withBag(bag);
         }
     }
 

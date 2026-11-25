@@ -83,12 +83,30 @@ class D14StationsTest {
         assertFalse(StationPlace.onSurface(40, noLeaves), "24 under: under ground");
         assertFalse(StationPlace.onSurface(64, SurfaceHeight.NOT_KNOWN), "not known: never claimed");
 
-        StationPlace.Ask up = StationPlace.ask(new int[]{0, 64, 0}, noLeaves, null);
+        StationPlace.Ask up = StationPlace.ask(new int[]{0, 64, 0}, noLeaves, 64, null);
         assertTrue(up.surface());
-        StationPlace.Ask base = StationPlace.ask(new int[]{0, 64, 0}, noLeaves, new int[]{10, 64, 0});
+        StationPlace.Ask base = StationPlace.ask(new int[]{0, 64, 0}, noLeaves, 64, new int[]{10, 64, 0});
         assertArrayEquals(new int[]{10, 64, 0}, base.center());
-        StationPlace.Ask farBase = StationPlace.ask(new int[]{0, 40, 0}, noLeaves, new int[]{100, 64, 0});
+        StationPlace.Ask farBase = StationPlace.ask(new int[]{0, 40, 0}, noLeaves, 64, new int[]{100, 64, 0});
         assertArrayEquals(new int[]{0, 40, 0}, farBase.center());
         assertFalse(farBase.surface());
+    }
+
+    /**
+     * job-review-leftovers (3), run 3 w005: the feet at 20 28 -10 at the floor of the bot's own open shaft (its column's
+     * leaf-free height is the floor, 28), the ground round it at 64. The cell asked from is under ground, not on the surface.
+     */
+    @Test
+    void w005_anOpenShaftsColumnIsNotTheSurface() {
+        int ring = StationPlace.ringSurface((x, z) -> x == 20 && z == -10 ? 28 : 64, 20, -10);
+        assertEquals(64, ring);
+        assertTrue(StationPlace.onSurface(28, 28), "the column alone reads the shaft floor as the surface (the w005 misreading)");
+        assertFalse(StationPlace.onSurface(28, 28, ring), "36 under the ground round it: under ground");
+        StationPlace.Ask a = StationPlace.ask(new int[]{20, 28, -10}, 28, ring, null);
+        assertFalse(a.surface(), a.why());
+        assertTrue(a.why().contains("open to the sky"), a.why());
+        assertTrue(StationPlace.onSurface(63, 64, 65), "a step lower than the ground round: still the surface");
+        assertEquals(SurfaceHeight.NOT_KNOWN, StationPlace.ringSurface((x, z) -> SurfaceHeight.NOT_KNOWN, 0, 0), "not loaded: not known");
+        assertFalse(StationPlace.onSurface(64, 64, SurfaceHeight.NOT_KNOWN), "not known: never claimed (rule 15)");
     }
 }
