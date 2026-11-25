@@ -5643,9 +5643,12 @@ public final class NeedChain {
             if (c.fail != null) return null;
             if (c.stuck) return "dig " + shw(gives) + " seen " + Math.round(first.dist()) + " m (after " + pre + ")";      // the pickaxe's own source is still to find: the chain ends at that explore
         }
-        if (pre == null && tier >= 1) {
-            pre = wornPickaxe(c, word, gives, lack, order, log, tier);
+        // job-own-aside-worker (worlds run 4, w006): the pickaxe just made for this tier is checked too - its uses are known
+        // (a new one's), so a take, cover and climb past them get the replacement priced here, before going down
+        if (tier >= 1) {
+            String worn = wornPickaxe(c, word, gives, lack, order, log, tier);
             if (c.fail != null) return null;
+            if (worn != null) pre = pre == null ? worn : pre + ", then " + worn;
             if (c.stuck) return "dig " + shw(gives) + " seen " + Math.round(first.dist()) + " m (after " + pre + ")";
         }
         // 0.39.z37 (S39): a tool made first out of the asked item's own stock (the pickaxe takes 3 of the bag's cobblestone)
@@ -6274,7 +6277,10 @@ public final class NeedChain {
      * new pickaxe's phrase, null: none inserted.
      */
     private static String wornPickaxe(Ctx c, String word, String gives, int lack, List<Spot> order, boolean log, int tier) {
-        if (log || c.pickItem == null || c.pickMade) return null;
+        // job-own-aside-worker (worlds run 4, w006: "69 pickaxe uses needed, 11 left, no replacement under ground" on every
+        // covered spot, the first plan 64 s): a pickaxe made in this chain is counted too - its uses are known (heldUses: its
+        // MAX_DAMAGE, less this chain's wear), so the replacement is priced before going down as for the held one
+        if (log || c.pickItem == null) return null;
         String tool = c.pickItem;
         // review 3 item 5: the one reader - the held one's uses and the bag's other pickaxes', less this chain's wear
         // review 4 (serious): the uses of the pickaxes that dig the take's tier (a wooden spare never covers an iron take)

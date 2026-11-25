@@ -224,6 +224,26 @@ class ForecastBagTest {
     }
 
     /**
+     * job-own-aside-worker (worlds run 4, w006: "69 pickaxe uses needed, 11 left, no replacement under ground", every covered
+     * spot dropped, the first plan 64 s where run 3 took 3.4 s): the same w070 shape with NO pickaxe in the bag - the
+     * wooden pickaxe is made in the chain (59 uses new) and the take and the climb need more. Its uses are known, so the
+     * collect's pickaxe check counts them (was: skipped for a pickaxe made in the chain) and prices the replacement before
+     * going down; the covered spot stands.
+     */
+    @Test
+    void aPickaxeMadeInTheChainIsCountedBeforeGoingDown_w006() {
+        Spot sp = new Spot(5, 62, 0, 5, STONE).covered(2, "minecraft:dirt");
+        World w = world(sp, Map.of("minecraft:oak_planks", 12, "minecraft:stick", 6, "minecraft:crafting_table", 1));
+        // 48 under 2 dirt: the take 48 and the climb's 41 extra blocks are 89 uses, past the made one's 59 (before the fix:
+        // the check was skipped, the way up ran past the uses with "no replacement under ground", the spot dropped: an explore)
+        Chain c = NeedChain.resolve("cobblestone", 48, w);
+        assertTrue(c.ok() && !c.explore(), c.why());
+        assertTrue(c.steps().stream().anyMatch(s -> s instanceof Step.Collect k && k.item().contains("cobblestone")), "the covered spot is taken: " + c.steps() + " | " + c.why());
+        assertTrue(c.why().contains("then 1 spare wooden_pickaxe") || c.why().contains("then stone_pickaxe"), "the made pickaxe's uses are counted before going down: " + c.why());
+        assertTrue(pickCrafts(c, "_pickaxe") >= 2, "the made pickaxe and its replacement (a spare or a better tier) before the dig: " + c.steps() + " | " + c.why());
+    }
+
+    /**
      * Review 3 item 1: the same wear with no stone to pay a better tier (the asked cobblestone is the only stone): the held
      * one's 50 uses are kept and a spare wooden pickaxe (59) added - 109 uses for 79 - instead of one new one (59) alone.
      */

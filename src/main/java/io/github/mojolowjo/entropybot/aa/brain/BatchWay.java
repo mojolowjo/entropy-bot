@@ -107,9 +107,28 @@ public final class BatchWay {
         /** The world {@link #resolve} prices on: {@code w} with {@code aside} off its bag. */
         public NeedChain.World pricedOn(NeedChain.World w) {
             if (aside.isEmpty() || w == null) return w;
-            Map<String, Integer> bag = new java.util.LinkedHashMap<>(w.bag());
-            for (var e : aside.entrySet()) bag.computeIfPresent(e.getKey(), (k, v) -> Math.max(0, v - e.getValue()));
-            return w.withBag(bag);
+            return w.withBag(lowered(w.bag()));
+        }
+
+        /**
+         * job-own-aside-worker (worlds run 4, w003/w007/w010/w055/w057/w058/w063: the worker started the resolve from the
+         * snapshot's whole live bag, so the held amount counted twice - the ask was the rest, the bag still showed it all, the
+         * order parked "oak_log is in the bag"): the bag a resolve of this ask starts from on the planner worker
+         * (NeedChain.offThread's bag): {@code bag} (the snapshot's live bag, in its order) with {@code aside} off, the words
+         * held at 0 left out as NeedChain.liveBag leaves them out. The same lowering as {@link #pricedOn}: one answer whoever
+         * resolves.
+         */
+        public java.util.LinkedHashMap<String, Integer> bagLess(Map<String, Integer> bag) {
+            java.util.LinkedHashMap<String, Integer> out = lowered(bag);
+            out.values().removeIf(v -> v == null || v <= 0);
+            return out;
+        }
+
+        /** {@code bag} with {@code aside} off each word, clamped at 0, in its order. */
+        private java.util.LinkedHashMap<String, Integer> lowered(Map<String, Integer> bag) {
+            java.util.LinkedHashMap<String, Integer> out = new java.util.LinkedHashMap<>(bag);
+            for (var e : aside.entrySet()) out.computeIfPresent(e.getKey(), (k, v) -> Math.max(0, v - e.getValue()));
+            return out;
         }
     }
 
