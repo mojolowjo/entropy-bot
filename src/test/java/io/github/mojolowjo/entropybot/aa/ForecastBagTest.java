@@ -199,6 +199,111 @@ class ForecastBagTest {
         assertEquals(15 * per, NeedChain.stairWear(15, -3));
     }
 
+    static int pickCrafts(Chain c, String kind) {
+        int n = 0;
+        for (Step s : c.steps()) if (s instanceof Step.Craft k && k.item().endsWith(kind)) n++;
+        return n;
+    }
+
+    /**
+     * Review 3 item 1 (serious; the w070 shape): 64 cobblestone under 2 blocks of dirt with a worn wooden pickaxe (40 uses):
+     * the take 64 and the climb's 63 extra blocks are 127 uses, past one new wooden pickaxe (59). The better tier the bag
+     * pays (a stone pickaxe, 131 new) and the held one with spares are priced ways - the collect never fails "no replacement
+     * under ground".
+     */
+    @Test
+    void wearAboveOneFreshPickaxe_theBetterTierStands() {
+        Spot sp = new Spot(5, 62, 0, 5, STONE).covered(2, "minecraft:dirt");
+        World w = world(sp, Map.of("minecraft:wooden_pickaxe", 1, "minecraft:oak_planks", 6, "minecraft:stick", 4, "minecraft:crafting_table", 1, COBBLE, 3))
+                .withUses(k -> k.endsWith("wooden_pickaxe") ? 40 : io.github.mojolowjo.entropybot.aa.brain.ToolUses.UNLIMITED);
+        Chain c = NeedChain.resolve("cobblestone", 64, w);
+        assertTrue(c.ok(), c.why());
+        assertTrue(c.why().contains("with stone_pickaxe") || c.why().contains("spare wooden_pickaxe"), "the replacement priced before going down: " + c.why());
+        assertTrue(pickCrafts(c, "_pickaxe") >= 1, "a replacement made before going down: " + c.steps());
+    }
+
+    /**
+     * Review 3 item 1: the same wear with no stone to pay a better tier (the asked cobblestone is the only stone): the held
+     * one's 50 uses are kept and a spare wooden pickaxe (59) added - 109 uses for 79 - instead of one new one (59) alone.
+     */
+    @Test
+    void wearAboveOneFreshPickaxe_theHeldUsesKeptAndSparesAdded() {
+        Spot sp = new Spot(5, 62, 0, 5, STONE).covered(2, "minecraft:dirt");
+        World w = world(sp, Map.of("minecraft:wooden_pickaxe", 1, "minecraft:oak_planks", 12, "minecraft:stick", 4, "minecraft:crafting_table", 1))
+                .withUses(k -> k.endsWith("wooden_pickaxe") ? 50 : io.github.mojolowjo.entropybot.aa.brain.ToolUses.UNLIMITED);
+        Chain c = NeedChain.resolve("cobblestone", 40, w);
+        assertTrue(c.ok(), c.why());
+        assertEquals(1, pickCrafts(c, "wooden_pickaxe"), "one spare beside the held one: " + c.steps());
+        assertTrue(c.why().contains("spare wooden_pickaxe"), c.why());
+    }
+
+    /**
+     * Review 3 item 5: the held stone pickaxe has 10 uses, the bag's other wooden one 59 - the one reader counts both (17 uses
+     * for 8 blocks, the cover and 7 extra): no new pickaxe is made before going down.
+     */
+    @Test
+    void theBagsOtherPickaxeCountsBeforeGoingDown() {
+        Spot sp = new Spot(5, 62, 0, 5, STONE).covered(2, STONE);
+        World w = world(sp, Map.of("minecraft:stone_pickaxe", 1, "minecraft:wooden_pickaxe", 1, "minecraft:oak_planks", 3, "minecraft:stick", 2, "minecraft:crafting_table", 1))
+                .withUses(k -> k.endsWith("stone_pickaxe") ? 10 : k.endsWith("wooden_pickaxe") ? 59 : io.github.mojolowjo.entropybot.aa.brain.ToolUses.UNLIMITED);
+        Chain c = NeedChain.resolve("cobblestone", 8, w);
+        assertTrue(c.ok(), c.why());
+        assertEquals(0, pickCrafts(c, "_pickaxe"), "no pickaxe made: " + c.steps());
+    }
+
+    /**
+     * Review 3 item 2 (before this branch a way up always stood): 16 dirt under dirt with no pickaxe and no spare block - the
+     * near spot's dig down has no way up (no pickaxe, no extra blocks there) - the next spot (exposed, 30 m) is taken.
+     * The passing JBJ-T2 shape is {@link #aCoveredCollectThatDigsDownPricesItsWayBackUp}.
+     */
+    @Test
+    void noWayUpAtOneSpot_theNextSpotIsTried() {
+        Spot near = new Spot(5, 62, 0, 5, "minecraft:dirt", 16).covered(2, "minecraft:dirt");
+        Spot far = new Spot(30, 64, 0, 30, "minecraft:dirt", 20);
+        World w = Z77StoneHereTest.world(word -> List.of(near, far)).withBag(Map.of());
+        Chain c = NeedChain.resolve("dirt", 16, w);
+        assertTrue(c.ok() && !c.explore(), c.why());
+        assertTrue(c.steps().stream().anyMatch(s -> s instanceof Step.Collect k && k.at() != null && k.at()[0] == 30), c.steps().toString());
+        assertTrue(c.steps().stream().noneMatch(s -> s instanceof Step.Climb), c.steps().toString());
+    }
+
+    /** Review 3 item 3: a whole (not loaded) reserve never lends - the planner offers no lend of it (one answer with the climb). */
+    @Test
+    void aWholeReserveIsNoLend() {
+        ScenariosTest.world("wooden", "stone");
+        assertEquals(40, Reservations.lendable(List.of(Reservations.order("dirt", List.of("minecraft:dirt"), 40)), "dirt"));
+        assertEquals(0, Reservations.lendable(List.of(Reserves.Reserve.whole("minecraft:dirt", "minecraft:dirt", "x")), "minecraft:dirt"));
+        assertEquals(List.of(), NeedChain.lendItems(Map.of("minecraft:dirt", 40), List.of(Reserves.Reserve.whole("minecraft:dirt", "minecraft:dirt", "x")), 15, "cobblestone"));
+        assertEquals(List.of("minecraft:dirt"), NeedChain.lendItems(Map.of("minecraft:dirt", 40), List.of(Reservations.order("dirt", List.of("minecraft:dirt"), 40)), 15, "cobblestone"));
+    }
+
+    /**
+     * Review 3 item 4: two kept blocks may be lent - 50 andesite (no source to collect again) and 40 dirt (a source): one way
+     * each, the scorer takes the one that stands (dirt), never the hand pick "most in the bag".
+     */
+    @Test
+    void oneLendWayPerItem_theScorerChooses() {
+        Spot sp = new Spot(5, 62, 0, 5, STONE, 16).covered(2, "minecraft:dirt");
+        Spot dirt = new Spot(20, 64, 0, 15, "minecraft:dirt");
+        World w = Z77StoneHereTest.world(word -> word.contains("dirt") ? List.of(dirt) : word.contains("andesite") ? List.of() : List.of(sp))
+                .withBag(Map.of("minecraft:wooden_pickaxe", 1, "minecraft:dirt", 40, "minecraft:andesite", 50))
+                .withReserves(List.of(Reservations.order("dirt (finished)", List.of("minecraft:dirt"), 40), Reservations.order("andesite (finished)", List.of("minecraft:andesite"), 50)))
+                .withUses(k -> k.endsWith("wooden_pickaxe") ? 30 : io.github.mojolowjo.entropybot.aa.brain.ToolUses.UNLIMITED);
+        Chain c = NeedChain.resolve("cobblestone", 16, w);
+        assertTrue(c.ok(), c.why());
+        assertTrue(c.steps().stream().anyMatch(s -> s instanceof Step.Climb k && k.lend() == 15 && k.lendItem().endsWith("dirt")), c.steps().toString());
+    }
+
+    /** Review 3 item 6: a lend's collect again wears the pickaxe when its block asks for one (stone kept: 15 uses, not 0). */
+    @Test
+    void climbWearCountsTheLendsCollectAgain() {
+        ScenariosTest.world("wooden", "stone");
+        var rs = List.of(Reservations.order("stone (finished)", List.of(STONE), 40));
+        int wear = NeedChain.climbWear(Map.of(STONE, 40), rs, "cobblestone", 16, COBBLE, 16, 16, 0, true);
+        assertEquals(15, wear, "the lend's collect again (15 stone) beats the staircase's " + NeedChain.stairWear(15, 0));
+        assertEquals(NeedChain.stairWear(15, 0), NeedChain.climbWear(Map.of(STONE, 40), rs, "cobblestone", 16, COBBLE, 16, 16, 0, false), "inside a lend: no second lend");
+    }
+
     /** Fewer levels than forecast.climbFromLevels: no climb step (a jump out). */
     @Test
     void aShallowDigNeedsNoClimb() {

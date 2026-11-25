@@ -46,8 +46,13 @@ the pickaxe (staircase: `stairWear`, `forecast.stairBreaksPerLevel` a level not 
 breaks against `pickUsesLeft` (`heldUses` + `bagPickUses`, the same two readers `spareTools` uses, less `pickWorn`) in
 `pickWear`. Under ground (`wayBackUp`, the covered collect's take) no replacement is made in the middle of the dig: past the
 uses the way drops with the reason; the replacement is priced BEFORE the walk down by `wornPickaxe`, which counts the cover
-(`coverWear`), the take and the least wear of the climb (`climbWear`). `climbUp` (the bot is under ground already) prices
-it there through `spareTools`. Kept blocks may be lent to a pillar (`lendItem`, never the chain's own asked item): the
+(`coverWear`), the take and the least wear of the climb (`climbWear`, a lend's collect again included: `lendWear`) against
+the one reader `pickUsesLeft`; its replacements are ways for `choose`: the held one kept with spares (`spareTools`), or a
+new pickaxe of each kind whose new uses cover the wear. A spot whose take or way up has no way is left out (`leaveSpot`)
+and the next spot tried. `climbUp` (the bot is under ground already) prices
+it there through `spareTools`. Kept blocks may be lent to a pillar (`addLendWays`: one way per item `lendItems` gives,
+only what `Reservations.lendable` / `lendsFrom` - the climb's own test - lends, never a whole or weighted reserve, never
+the chain's own asked item, never inside another lend's collect again, `Ctx.lending`): the
 `Step.Climb(lendItem, lend)` lowers the reserves on that item for its own step only (`Reservations.build` / `lend`, the
 orders' first) and the same amount is collected again right after it (`obtain`), so a -d amount is whole again before any
 later step. `climbUp` adds "make a pickaxe first" (`cheapestPickaxe`) when there is no pickaxe and too few spare blocks.
