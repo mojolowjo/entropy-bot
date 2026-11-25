@@ -142,9 +142,6 @@ public final class DryRun {
             case Step.ToCave w -> Map.of();                // J6b run EF: a walk
             case Step.ToSurface w -> Map.of();             // 0.39.z68: a walk
             case Step.PlaceNear p -> Map.of();
-            // job-kept-crafts: the borrowed kept units stop being held from here on (the free bag gains them; the runner's
-            // hold is lowered by the same n when the step runs, AaRuntime.lend)
-            case Step.Borrow b -> Map.of(NeedChain.word(b.item()), b.n());
             default -> null;
         };
     }

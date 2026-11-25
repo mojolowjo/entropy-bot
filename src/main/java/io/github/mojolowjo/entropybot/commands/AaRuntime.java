@@ -1310,33 +1310,7 @@ public final class AaRuntime implements JobPort {
         boolean task = taskStarting || (typedRun && runner.taskHolds());
         if (!task) return io.github.mojolowjo.entropybot.aa.brain.Goals.keptForRun(bb, null, true, consume);
         return io.github.mojolowjo.entropybot.aa.brain.Goals.keptForRun(bb, rp == null ? null : rp.desire(), rp != null, consume,
-                typedStartMs >= 0 ? typedStartBag : null,       // job-review-leftovers (4): the one start-bag store
-                typedStartMs >= 0 ? (consume ? lentUse : lentCount) : null);     // job-kept-crafts: the task's borrows
-    }
-
-    /**
-     * job-kept-crafts: the running task's borrows (Step.Borrow ran), item path -> the most its run may still hold of the
-     * item: for its crafts and smelts ({@code lentUse}, keptFromUse's reader) and for what its steps count ({@code lentCount},
-     * keptFromOthers'). The one store; emptied at the task's first start.
-     */
-    private final Map<String, Integer> lentUse = new java.util.HashMap<>(), lentCount = new java.util.HashMap<>();
-
-    /**
-     * job-kept-crafts: a Step.Borrow runs - the task's hold on {@code item} (full id) lowered by {@code n} for the rest of the
-     * task, said (rule 7). The met order whose amount it was opens again when the crafts use them (the bag then holds less
-     * than its amount: LineDeposits), so the line collects them again before its deposit. Its words: "ok: ..." or "error: ...".
-     */
-    String lend(String item, int n) {
-        String path = io.github.mojolowjo.entropybot.aa.brain.Thing.path(item);
-        if (typedStartMs < 0 || taskReplan == null) return "error: borrow " + n + " " + path + ": no order's task runs (nothing kept to lend from)";
-        int use = keptFromUse().getOrDefault(path, 0), count = keptFromOthers().getOrDefault(path, 0);
-        if (use < n) return "error: borrow " + n + " " + path + ": the task holds " + use + " of it for the deposits, fewer than the borrow";
-        lentUse.merge(path, use - n, Math::min);
-        lentCount.merge(path, Math.max(0, count - n), Math::min);
-        String line = "borrowed " + n + " kept " + path + ": the task's hold on it " + use + " -> " + (use - n)
-                + " (the -d order whose amount it is opens again for them and the line collects them again before its deposit)";
-        log(line);
-        return "ok: " + line;
+                typedStartMs >= 0 ? typedStartBag : null);      // job-review-leftovers (4): the one start-bag store
     }
 
     /** The task's run is being started on the runner: its first step runs before the runner is marked as the task's (runTyped). */
@@ -2797,8 +2771,6 @@ public final class AaRuntime implements JobPort {
         if (typedStartMs < 0) {         // rule 7: the task's first start (a replan or an escape goes on with the same clock)
             typedStartMs = io.github.mojolowjo.entropybot.aa.brain.GameClock.ms();
             typedStartBag = liveBag();                   // 0.39.z60 item 4: the bag now, not the last sensed one
-            lentUse.clear();                             // job-kept-crafts: an earlier task's borrows end with it
-            lentCount.clear();
             fastEndSeen = -1;                            // review 4: no end held from an earlier task
             LocalPlayer sp = Minecraft.getInstance().player;
             typedStartAt = sp == null ? null : Jobs.here(sp);

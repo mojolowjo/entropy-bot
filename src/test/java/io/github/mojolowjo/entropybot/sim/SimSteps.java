@@ -54,10 +54,6 @@ final class SimSteps {
         if (s instanceof Step.ToSurface t) return climb(g, new int[]{t.x(), t.y(), t.z()});       // the game: done there, or as soon as the feet stand under open sky
         if (s instanceof Step.Explore e) return explore(g, e);
         if (s instanceof Step.Deposit d && d.chest() != null) return deposit(g, d.chest(), d);
-        if (s instanceof Step.Borrow b) {                // job-kept-crafts: as StepHands' (AaRuntime.lend): the run's hold lowered
-            String r = g.lend(b.item(), b.n());
-            return r.startsWith("ok") ? Result.ok(0, r) : Result.fail(0, r);
-        }
         return Result.NOT_SIMULATED;
     }
 

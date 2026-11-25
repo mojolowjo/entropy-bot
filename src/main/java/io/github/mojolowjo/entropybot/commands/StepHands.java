@@ -1798,8 +1798,6 @@ public final class StepHands implements Steps.Hands {
             }
             case Step.PutBack k -> c.stepJob(s.text(), () -> RestoreLive.INSTANCE.startNow(p, "now " + k.radius()));
             case Step.DropJunk k -> now(Storage.drop(p, k.item() + " " + k.n()));
-            // job-kept-crafts: the run's hold on the kept item lowered by n (the one store: AaRuntime's lent cap), said
-            case Step.Borrow k -> now(c.aaRuntime == null ? "error: " + s.text() + ": no AA runtime to lend from" : c.aaRuntime.lend(k.item(), k.n()));
             case Step.FarmPlant k -> c.stepJob(s.text(), () -> c.crafting.farm(p, "plant " + k.crop() + " here " + k.n(), me));
             case Step.Shelter k -> c.stepJob(s.text(), () -> ShelterJob.start(c, p, "", true, me));
             case Step.Sleep k -> c.stepJob(s.text(), () -> SleepJob.start(c, p, ""));
