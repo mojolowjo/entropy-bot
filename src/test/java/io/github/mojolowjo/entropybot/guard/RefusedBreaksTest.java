@@ -125,4 +125,19 @@ class RefusedBreaksTest {
         assertNotNull(text[0], run.why());
         assertTrue(text[0].contains("minecraft:rail at -25 -32 -123 5804 times"), text[0]);
     }
+
+    /** Review sent back: a record replaced at the same cell (a new reason) keeps pending within the cap too. */
+    @Test
+    void aReplacedRecordKeepsPendingWithinTheCap() {
+        RefusedBreaks rb = new RefusedBreaks();
+        rb.cap(2);
+        for (int i = 0; i < 10; i++) {
+            rb.note("overworld", 1, 2, 3, "minecraft:stone", "reason " + i);
+            rb.note("overworld", 1, 2, 3, "minecraft:stone", "reason " + i);
+        }
+        String said = rb.take();
+        assertNotNull(said);
+        assertEquals(4, said.split("; ").length, said);   // two kept lines, one folded total, the live record
+        assertTrue(said.contains("more breaks at 7 more cells"), said);
+    }
 }

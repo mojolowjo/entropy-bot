@@ -280,6 +280,14 @@ public final class CostAdvisorHook {
     }
 
     public static double breakMultiplier(Object token, String dimIfNoToken, int x, int y, int z, BlockState state, PolicyRuntime.StateAt at) {
+        return breakMultiplier(token, dimIfNoToken, x, y, z, state, at, PolicyStats.SITE_ASTAR_COST);
+    }
+
+    /**
+     * job-review-leftovers (8, sent back): {@code site} is where a deny is counted: the break site for Baritone's break
+     * cost, the place site when {@link #placeNeedsRefusedBreak} asks for a place, so a refused place is counted once.
+     */
+    private static double breakMultiplier(Object token, String dimIfNoToken, int x, int y, int z, BlockState state, PolicyRuntime.StateAt at, String site) {
         PolicyRuntime pr = PolicyRuntime.INSTANCE;
         if (!PolicyRuntime.LIVE) return Double.NaN;
         Token t = token instanceof Token tk ? tk : null;
@@ -296,14 +304,14 @@ public final class CostAdvisorHook {
         // a null snapshot refuses here too ("no snapshot", BreakPolicy.pathStructure), never NaN or open
         BreakPolicy.Verdict sv = pr.structureVerdict(s, dim, at, x, y, z);
         if (!sv.allowed()) {
-            pr.stats.deny(PolicyStats.SITE_ASTAR_COST, sv.reason());
+            pr.stats.deny(site, sv.reason());
             return refused(t, x, y, z, state, in, "break", sv.rule(), sv.reason());
         }
         // 0.39.z77 keepout (RULES 16): a keep-out / no-break cell is refused for every intent, MINE included (MINE never
         // asks pr.judge below); the snapshot is non-null here (pathStructure refused a null one)
         BreakPolicy.Verdict kv = BreakPolicy.pathProtect(s, dim, x, y, z);
         if (!kv.allowed()) {
-            pr.stats.deny(PolicyStats.SITE_ASTAR_COST, kv.reason());
+            pr.stats.deny(site, kv.reason());
             return refused(t, x, y, z, state, in, "break", kv.rule(), kv.reason());
         }
         // lava distance (0.39.z40): a break that opens lava onto the bot (lava in the cell or at a face: the fork burrow's test)
@@ -311,32 +319,32 @@ public final class CostAdvisorHook {
         var lava = lava(at);
         if (io.github.mojolowjo.entropybot.guard.LavaNear.opensLava(lava, x, y, z)
                 && !(t != null && t.at() != null && (lava.at(t.at()[0], t.at()[1], t.at()[2]) || lava.at(t.at()[0], t.at()[1] + 1, t.at()[2])))) {
-            pr.stats.deny(PolicyStats.SITE_ASTAR_COST, "the break opens lava");
+            pr.stats.deny(site, "the break opens lava");
             return refused(t, x, y, z, state, in, "break", "lava", "the break opens lava");
         }
         if (dim == null) return in == Intent.TRAVEL ? refused(t, x, y, z, state, in, "break", "no dimension", "fail closed for travel") : Double.NaN;
         double wet = wetMult(at, x, y, z);                                        // wetbreak: 1 dry, 5 beside water, 25 deep
         switch (in) {
             case TRAVEL -> {
-                BreakPolicy.Verdict v = pr.judge(PolicyStats.SITE_ASTAR_COST, BreakPolicy.Action.BREAK, in, dim, x, y, z, pr.facts(at, dim, x, y, z, false), me, s);
+                BreakPolicy.Verdict v = pr.judge(site, BreakPolicy.Action.BREAK, in, dim, x, y, z, pr.facts(at, dim, x, y, z, false), me, s);
                 return v.allowed() ? v.multiplier() * wet : refused(t, x, y, z, state, in, "break", v.rule(), v.reason());
             }
             case MINE -> {
                 // phase 1: mining keeps Baritone's rules, except the owner's: no digging down from in the water
-                pr.stats.ask(PolicyStats.SITE_ASTAR_COST);
+                if (PolicyStats.SITE_ASTAR_COST.equals(site)) pr.stats.ask(site);   // a place probe was asked by placeCost already
                 BlockState up = at.at(x, y + 1, z);
                 if (up != null && PolicyRuntime.fluidOf(up) == BreakPolicy.Fluid.WATER) {
                     // aa-costs: in the water, the drowning risk of the cell (DrownRisk): no air to come back = never, else
                     // a cost; from dry ground a cell under water stays forbidden (it floods the tunnel), as before
                     // aa-water (1f): the risk from this cell's own depth below the water surface and the air now
                     if (me == null || !me.inWater()) {
-                        pr.stats.deny(PolicyStats.SITE_ASTAR_COST, "digging down from in the water");
+                        pr.stats.deny(site, "digging down from in the water");
                         return refused(t, x, y, z, state, in, "break", "water", "digging down from in the water");
                     }
                     int depth = 1 + PolicyRuntime.waterColumn(at, x, y + 1, z);
                     double m = io.github.mojolowjo.entropybot.guard.DrownRisk.breakMult(depth, me.air(), me.pickTier());
                     if (Double.isInfinite(m)) {
-                        pr.stats.deny(PolicyStats.SITE_ASTAR_COST, "digging down from in the water");
+                        pr.stats.deny(site, "digging down from in the water");
                         return refused(t, x, y, z, state, in, "break", "drown risk", "digging down from in the water");
                     }
                     return m;                                                // its own drowning price (no double count)
@@ -354,7 +362,7 @@ public final class CostAdvisorHook {
      */
     static boolean placeNeedsRefusedBreak(Object token, String dimIfNoToken, int x, int y, int z, BlockState current, PolicyRuntime.StateAt at) {
         if (current == null || current.isAir() || current.canBeReplaced()) return false;
-        return breakMultiplier(token, dimIfNoToken, x, y, z, current, at) >= COST_INF;
+        return breakMultiplier(token, dimIfNoToken, x, y, z, current, at, PolicyStats.SITE_ASTAR_PLACE) >= COST_INF;
     }
 
     /**
@@ -405,10 +413,11 @@ public final class CostAdvisorHook {
             // clicks the rail there): a place into a cell that holds a block first needs that block broken; when that break
             // is refused the place is refused too, so the plan and the click agree. Review: it asks the one break decision
             // (breakMultiplier: the no-break run, structure, keep-out, lava, the intent's judge), no second copy (rules 11, 16)
-            // job-review-leftovers (8): breakMultiplier already said the refused cell (and counted its break-site deny, not for
-            // "walking only" or "no breaks"); the place site counts its own deny once here, so every refused place is counted
+            // job-review-leftovers (8, sent back): breakMultiplier said the refused cell and counted its deny at the place
+            // site (not the break site: nothing is broken); only a no-break run's refusal counts nothing there, so it is
+            // counted here: every refused place once
             if (placeNeedsRefusedBreak(token, dimIfNoToken, x, y, z, current, at)) {
-                pr.stats.deny(PolicyStats.SITE_ASTAR_PLACE, "the place needs a refused break");
+                if ((t != null ? t.noBreakBy() : pr.noBreakBy()) != null) pr.stats.deny(PolicyStats.SITE_ASTAR_PLACE, "the place needs a refused break (a no-break run)");
                 return COST_INF;
             }
             BreakPolicy.Verdict v = BreakPolicy.judge(s, new BreakPolicy.Ask(BreakPolicy.Action.PLACE, in, dim, x, y, z, pr.placeFacts(at, dim, x, y, z), me));

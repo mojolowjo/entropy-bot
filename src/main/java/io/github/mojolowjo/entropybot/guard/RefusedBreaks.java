@@ -43,7 +43,7 @@ public final class RefusedBreaks {
         String k = key(dim, x, y, z);
         Rec r = map.get(k);
         if (r == null || !Objects.equals(r.block, block) || !Objects.equals(r.reason, reason)) {
-            if (r != null && r.count > r.told) pending.add(text(k, r, r.count - r.told));   // the old record's unsaid count
+            if (r != null && r.count > r.told) unsaid(text(k, r, r.count - r.told), r.count - r.told, cap());   // the old record's unsaid count
             r = new Rec(block, reason);
             map.remove(k);                                     // the new record is the newest (oldest out first)
             map.put(k, r);
@@ -78,11 +78,16 @@ public final class RefusedBreaks {
             Rec r = e.getValue();
             if (r.count > r.told) {
                 // review: pending is bounded by the same cap; past it only the totals are kept, said in one line (rule 7)
-                if (pending.size() < Math.max(1, cap)) pending.add(text(e.getKey(), r, r.count - r.told) + " (the oldest cell, let go past " + cap + " cells)");
-                else { foldedCells++; foldedCount += r.count - r.told; }
+                unsaid(text(e.getKey(), r, r.count - r.told) + " (the oldest cell, let go past " + cap + " cells)", r.count - r.told, cap);
             }
             it.remove();
         }
+    }
+
+    /** review sent back: every unsaid count goes through here, so pending stays within the cap; past it only totals (rule 7). */
+    private void unsaid(String line, int n, int cap) {
+        if (pending.size() < Math.max(1, cap)) pending.add(line);
+        else { foldedCells++; foldedCount += n; }
     }
 
     private static String text(String key, Rec r, int n) {

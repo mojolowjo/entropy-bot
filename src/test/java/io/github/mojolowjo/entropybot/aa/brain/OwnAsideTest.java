@@ -34,4 +34,20 @@ class OwnAsideTest {
         assertEquals(1, bag.get("minecraft:oak_log"));
         assertEquals(0, bag.get("minecraft:birch_log"));
     }
+
+    @Test
+    void aGroupOrdersAskDropsByTheFewestHeldOfAnyMember() {
+        // reviewer's case: group n=4, 1 of each held; the summed aside asked 2 of each where each member needs 3
+        Map<String, Integer> bag = new LinkedHashMap<>(Map.of("minecraft:oak_log", 1, "minecraft:birch_log", 1));
+        Map<String, Integer> before = new LinkedHashMap<>(bag);
+        Map<String, Integer> held = new HashMap<>(Map.of("oak_log", 1, "birch_log", 1));
+        List<String> ids = List.of("minecraft:oak_log", "minecraft:birch_log");
+        assertEquals(2, Goals.ownAside(bag, held, ids, "logs"));
+        Map<String, Integer> taken = new HashMap<>();
+        for (var e : before.entrySet()) taken.put(e.getKey(), e.getValue() - bag.get(e.getKey()));
+        assertEquals(3, 4 - Goals.askAside(taken, ids, "logs", true), "each member asks its own rest");
+        assertEquals(2, Goals.askAside(Map.of("minecraft:oak_log", 2, "minecraft:birch_log", 5), ids, "logs", true));
+        assertEquals(0, Goals.askAside(Map.of("minecraft:oak_log", 2), ids, "logs", true), "a member with none held");
+        assertEquals(20, Goals.askAside(Map.of("minecraft:cobblestone", 20), List.of("minecraft:cobblestone"), "cobblestone", false));
+    }
 }
