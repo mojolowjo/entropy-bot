@@ -89,6 +89,27 @@ class J6bEqTest {
         scenario(FactChange.take(), "place furnace near me failed at -52 17 -41: " + end);
     }
 
+    /**
+     * review sent back again (4): run 3 w005's shape through Goals.replan - asked from FEET, stalled 40 blocks off. The stall
+     * cell rides on the fact as data, so the order holds both cells, even when the words carry no "(stalled at ...)".
+     */
+    @Test
+    void aStallAwayFromTheAskedCellHoldsBothCellsThroughReplan() {
+        ScenariosTest.world("wooden", "stone");
+        Clock.Fake clock = new Clock.Fake(10_000_000);
+        Blackboard bb = new Blackboard(clock, new FakePort(), new Tracer());
+        bb.fact(NeedChain.WORLD_FACT, (Supplier<NeedChain.World>) () -> ScenariosTest.w(BAG, true, false, Map.of()));
+        int[] stall = {-52, 17, -1};
+        bb.in.pos = stall.clone();
+        bb.in.bag = BAG;
+        Goals.Goal chest = Goals.draft(DebugTreeTest.item("iron_ingot"), 7, 0, clock.now());
+        FactChange.Fact f = io.github.mojolowjo.entropybot.aa.moves.StepMonitor.placeStall(new Step.PlaceNear("furnace"), FEET, stall, "no progress 45 s");
+        FactChange.Fact plain = new FactChange.Fact(f.key(), "place furnace near me failed: no progress 45 s", f.stallKey());   // words without the cell
+        assertNotNull(Goals.replan(bb, chest, new Step.PlaceNear("furnace"), plain, "no progress 45 s"), "re-planned");
+        assertTrue(Goals.droppedSources(chest).containsKey("place at -52 17 -41"), "the asked cell: " + Goals.droppedSources(chest));
+        assertTrue(Goals.droppedSources(chest).containsKey("place at -52 17 -1"), "the stall cell, from the fact's data: " + Goals.droppedSources(chest));
+    }
+
     /** Run EQ: the walk probe's face-check part on a place step. */
     @Test
     void theFaceCheckProbePart() {

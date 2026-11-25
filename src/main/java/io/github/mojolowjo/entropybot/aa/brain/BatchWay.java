@@ -100,13 +100,16 @@ public final class BatchWay {
          * and the tick price the same world and {@code n} is already the rest.
          */
         public NeedChain.Chain resolve(NeedChain.World w) {
-            NeedChain.World on = w;
-            if (!aside.isEmpty()) {
-                Map<String, Integer> bag = new java.util.LinkedHashMap<>(w.bag());
-                for (var e : aside.entrySet()) bag.computeIfPresent(e.getKey(), (k, v) -> Math.max(0, v - e.getValue()));
-                on = w.withBag(bag);
-            }
+            NeedChain.World on = pricedOn(w);
             return group ? NeedChain.resolveAll(what, ids, n, on) : NeedChain.resolve(what, n, on);
+        }
+
+        /** The world {@link #resolve} prices on: {@code w} with {@code aside} off its bag. */
+        public NeedChain.World pricedOn(NeedChain.World w) {
+            if (aside.isEmpty() || w == null) return w;
+            Map<String, Integer> bag = new java.util.LinkedHashMap<>(w.bag());
+            for (var e : aside.entrySet()) bag.computeIfPresent(e.getKey(), (k, v) -> Math.max(0, v - e.getValue()));
+            return w.withBag(bag);
         }
     }
 

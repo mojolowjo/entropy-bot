@@ -50,4 +50,21 @@ class OwnAsideTest {
         assertEquals(0, Goals.askAside(Map.of("minecraft:oak_log", 2), ids, "logs", true), "a member with none held");
         assertEquals(20, Goals.askAside(Map.of("minecraft:cobblestone", 20), List.of("minecraft:cobblestone"), "cobblestone", false));
     }
+
+    @Test
+    void aGroupMemberWithNoneHeldStillKeepsTheOthersAsideOffTheWorld() {
+        // review sent back again (item 1): oak 3 held of its own -d amount, birch none; the aside was cleared and the chain
+        // priced on the full bag, so an inner get could use the oak the runner's keptFromUse holds
+        Map<String, Integer> bag = Map.of("minecraft:oak_log", 3, "minecraft:dirt", 5);
+        List<String> ids = List.of("minecraft:oak_log", "minecraft:birch_log");
+        var ask = Goals.ownAsk(bag, Map.of("oak_log", 3), ids, "logs", true, 4);
+        assertEquals(4, ask.n(), "the fewest held of any member is 0, so the ask stays whole");
+        var w = new io.github.mojolowjo.entropybot.aa.NeedChain.World(bag, false, x -> null);
+        var on = ask.pricedOn(w);
+        assertEquals(0, on.bag().get("minecraft:oak_log"), "the held oak is off the world the chain prices on");
+        assertEquals(5, on.bag().get("minecraft:dirt"));
+        var plain = Goals.ownAsk(Map.of("minecraft:cobblestone", 20), Map.of("cobblestone", 8), List.of("minecraft:cobblestone"), "cobblestone", false, 32);
+        assertEquals(24, plain.n());
+        assertEquals(12, plain.pricedOn(new io.github.mojolowjo.entropybot.aa.NeedChain.World(Map.of("minecraft:cobblestone", 20), false, x -> null)).bag().get("minecraft:cobblestone"));
+    }
 }

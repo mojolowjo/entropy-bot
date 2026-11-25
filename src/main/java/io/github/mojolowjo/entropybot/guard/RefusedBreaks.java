@@ -58,7 +58,7 @@ public final class RefusedBreaks {
     }
 
     private final List<String> pending = new ArrayList<>();
-    private int foldedCells, foldedCount;
+    private int foldedLines, foldedCount;   // review sent back again (6): lines folded, one cell may fold more than once
 
     /** The most cells held (Tuning guard.refusedCells; a test sets its own); 0 or less: the Tuning entry. */
     private int capOverride;
@@ -87,7 +87,7 @@ public final class RefusedBreaks {
     /** review sent back: every unsaid count goes through here, so pending stays within the cap; past it only totals (rule 7). */
     private void unsaid(String line, int n, int cap) {
         if (pending.size() < Math.max(1, cap)) pending.add(line);
-        else { foldedCells++; foldedCount += n; }
+        else { foldedLines++; foldedCount += n; }
     }
 
     private static String text(String key, Rec r, int n) {
@@ -100,8 +100,8 @@ public final class RefusedBreaks {
     public synchronized String take() {
         List<String> out = new ArrayList<>(pending);
         pending.clear();
-        if (foldedCells > 0) out.add("the guard refused " + foldedCount + " more breaks at " + foldedCells + " more cells let go (past the cap of lines)");
-        foldedCells = 0;
+        if (foldedLines > 0) out.add("the guard refused " + foldedCount + " more breaks in " + foldedLines + " more refusal lines let go (past the cap of lines)");
+        foldedLines = 0;
         foldedCount = 0;
         for (Map.Entry<String, Rec> e : map.entrySet()) {
             Rec r = e.getValue();

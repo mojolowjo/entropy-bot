@@ -24,11 +24,15 @@ class SilentEndFactTest {
     void w025_aStalledCutHoldsItsWholeTrunkSoTheNextPlanTakesAnotherTree() {
         ScenariosTest.world("wooden");
         String held = "cut at 276 64 262";
+        List<Spot> logs = new java.util.ArrayList<>();
+        for (int y = 64; y <= 68; y++) logs.add(new Spot(276, y, 262, 10, "minecraft:oak_log", 1));
+        logs.add(new Spot(273, 63, 271, 12, "minecraft:oak_log", 1));
+        var trunks = NeedChain.trunksHeld(NeedChain.heldCuts(List.of(held)), w -> logs);
         for (int y = 65; y <= 68; y++)
-            assertTrue(NeedChain.spotHeld("oak_log", new Spot(276, y, 262, 10, "minecraft:oak_log", 1), held::equals, NeedChain.heldCuts(List.of(held))),
+            assertTrue(NeedChain.spotHeld("oak_log", new Spot(276, y, 262, 10, "minecraft:oak_log", 1), held::equals, trunks),
                     "log 276 " + y + " 262 is of the held trunk (run 3 took it next, 740-1079)");
-        assertFalse(NeedChain.spotHeld("oak_log", new Spot(273, 63, 271, 12, "minecraft:oak_log", 1), held::equals, NeedChain.heldCuts(List.of(held))), "tree B stays open");
-        assertFalse(NeedChain.spotHeld("cobblestone", new Spot(276, 65, 262, 10, "minecraft:stone", 1), held::equals, NeedChain.heldCuts(List.of(held))), "not a log: no trunk");
+        assertFalse(NeedChain.spotHeld("oak_log", new Spot(273, 63, 271, 12, "minecraft:oak_log", 1), held::equals, trunks), "tree B stays open");
+        assertFalse(NeedChain.spotHeld("cobblestone", new Spot(276, 65, 262, 10, "minecraft:stone", 1), held::equals, trunks), "not a log: no trunk");
 
         Map<String, List<Spot>> seen = Map.of("oak_log", List.of(new Spot(276, 65, 262, 10, "minecraft:oak_log", 4),
                 new Spot(273, 63, 271, 14, "minecraft:oak_log", 6)));
@@ -44,10 +48,28 @@ class SilentEndFactTest {
         ScenariosTest.world("wooden");
         List<int[]> cuts = NeedChain.heldCuts(List.of("cut at 100 64 100", "not a cut"));
         assertEquals(1, cuts.size());
+        List<Spot> logs = new java.util.ArrayList<>();
+        for (int y = 64; y <= 66; y++)
+            for (int[] d : new int[][]{{0, 0}, {1, 0}, {0, 1}, {1, 1}}) logs.add(new Spot(100 + d[0], y, 100 + d[1], 10, "minecraft:oak_log", 1));
+        for (int y = 64; y <= 66; y++) logs.add(new Spot(103, y, 100, 10, "minecraft:oak_log", 1));   // a tree one column apart (102 free)
+        var trunks = NeedChain.trunksHeld(cuts, w -> logs);
         for (int[] d : new int[][]{{1, 0}, {0, 1}, {1, 1}})
-            assertTrue(NeedChain.spotHeld("oak_log", new Spot(100 + d[0], 66, 100 + d[1], 10, "minecraft:oak_log", 1), k -> false, cuts),
+            assertTrue(NeedChain.spotHeld("oak_log", new Spot(100 + d[0], 66, 100 + d[1], 10, "minecraft:oak_log", 1), k -> false, trunks),
                     "column " + d[0] + " " + d[1] + " is of the same 2x2 trunk");
-        assertFalse(NeedChain.spotHeld("oak_log", new Spot(103, 64, 100, 10, "minecraft:oak_log", 1), k -> false, cuts), "another tree stays open");
+        assertFalse(NeedChain.spotHeld("oak_log", new Spot(103, 64, 100, 10, "minecraft:oak_log", 1), k -> false, trunks), "another tree stays open");
+    }
+
+    /** review sent back again (3): keyed by the tree, not a distance - a log one column off that does not touch the held tree's logs is open. */
+    @Test
+    void aTreeOneColumnOffThatDoesNotTouchIsOpen() {
+        ScenariosTest.world("wooden");
+        List<int[]> cuts = NeedChain.heldCuts(List.of("cut at 100 64 100"));
+        List<Spot> logs = List.of(new Spot(100, 64, 100, 10, "minecraft:oak_log", 1), new Spot(100, 65, 100, 10, "minecraft:oak_log", 1),
+                new Spot(101, 70, 100, 10, "minecraft:oak_log", 1), new Spot(101, 71, 100, 10, "minecraft:oak_log", 1));
+        var trunks = NeedChain.trunksHeld(cuts, w -> logs);
+        assertTrue(NeedChain.spotHeld("oak_log", logs.get(1), k -> false, trunks));
+        assertFalse(NeedChain.spotHeld("oak_log", logs.get(2), k -> false, trunks), "the neighbour tree's logs do not touch the held one's");
+        assertNull(NeedChain.trunksHeld(List.of(), w -> logs));
     }
 
     /** job-review-leftovers (1): the place stalled away from where it was asked holds the stall cell too, through placeKey. */

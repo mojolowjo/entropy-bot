@@ -1194,7 +1194,7 @@ public final class Steps {
     /** job-refusal-fact: {@code f} with the guard's refused breaks of its step added to its text (same key); null stays null. Pure. */
     public static FactChange.Fact withRefused(FactChange.Fact f, String refused) {
         if (f == null || refused == null || f.text() != null && f.text().contains(refused)) return f;
-        return new FactChange.Fact(f.key(), (f.text() == null ? "" : f.text() + "; ") + refused);
+        return new FactChange.Fact(f.key(), (f.text() == null ? "" : f.text() + "; ") + refused, f.stallKey());   // the stall cell kept (review 4)
     }
 
     /** job-refusal-fact: the guard's refused breaks counted since the last ask (null: none); a failed read says so (rule 7). */

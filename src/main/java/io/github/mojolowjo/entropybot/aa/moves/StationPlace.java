@@ -50,20 +50,18 @@ public final class StationPlace {
         return feetY >= ringY - Tuning.i("station.shaftDepth");
     }
 
-    /** game fact: a dug shaft is 1 or 2 columns wide, so the ring two columns out from the feet stands on the ground round it. */
-    static final int RING = 2;
-
     /**
-     * The median leaf-free height of the {@link #RING} ring of columns round {@code x z} ({@code heightAt}: a column's
+     * The median leaf-free height of the ring (Tuning station.ring: the bot's own shaft width, run 3 w005) of columns round {@code x z} ({@code heightAt}: a column's
      * leaf-free height, {@link io.github.mojolowjo.entropybot.world.SurfaceHeight#NOT_KNOWN} when not loaded); NOT_KNOWN
      * when fewer than half the ring is known (rule 15). Pure.
      */
     public static int ringSurface(java.util.function.IntBinaryOperator heightAt, int x, int z) {
+        int ring = Math.max(1, Tuning.i("station.ring"));     // structural: a ring at least one column out
         List<Integer> hs = new java.util.ArrayList<>();
         int all = 0;
-        for (int dx = -RING; dx <= RING; dx++)
-            for (int dz = -RING; dz <= RING; dz++) {
-                if (Math.max(Math.abs(dx), Math.abs(dz)) != RING) continue;
+        for (int dx = -ring; dx <= ring; dx++)
+            for (int dz = -ring; dz <= ring; dz++) {
+                if (Math.max(Math.abs(dx), Math.abs(dz)) != ring) continue;
                 all++;
                 int h = heightAt.applyAsInt(x + dx, z + dz);
                 if (io.github.mojolowjo.entropybot.world.SurfaceHeight.known(h)) hs.add(h);

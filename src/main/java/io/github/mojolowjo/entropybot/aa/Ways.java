@@ -58,8 +58,8 @@ public final class Ways {
             // job-review-leftovers (2): the held cut cells read once from the need's records (a stalled cut holds its tree)
             List<String> blocked = new java.util.ArrayList<>();
             for (var r : f.of(need)) if (r.option() != null && f.blocked(need, r.option(), now)) blocked.add(r.option());
-            List<int[]> cuts = NeedChain.heldCuts(blocked);
-            w = w.without((item, sp) -> NeedChain.spotHeld(item, sp, k -> f.blocked(need, k, now), cuts));
+            var trunks = NeedChain.trunksHeld(NeedChain.heldCuts(blocked), w.seenAll());   // review (3): the held trees by their known logs
+            w = w.without((item, sp) -> NeedChain.spotHeld(item, sp, k -> f.blocked(need, k, now), trunks));
         }   // 0.39.z69 fix 1: an item key or one spot's
         NeedChain.Chain c = NeedChain.of(o, w);
         if (!c.ok()) return new Plan(o, c, c.why());

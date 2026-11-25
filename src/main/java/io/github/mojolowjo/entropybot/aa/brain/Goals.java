@@ -1659,6 +1659,24 @@ public final class Goals {
         return min;
     }
 
+    /**
+     * review sent back again (item 1): the order's own ask. What {@link #ownAside} takes off the bag ALWAYS rides in the ask
+     * (the runner's keptFromUse holds every member's own -d amount, so no inner get may use it, even when one member holds
+     * none); only the asked count drops, by {@link #askAside}, and never to zero or below. Pure.
+     */
+    static BatchWay.OwnAsk ownAsk(Map<String, Integer> bag, Map<String, Integer> held, List<String> ids, String key, boolean group, int n) {
+        var ownBag = new java.util.LinkedHashMap<>(bag);
+        ownAside(ownBag, new java.util.HashMap<>(held), ids, key);
+        Map<String, Integer> taken = new java.util.HashMap<>();
+        for (var e : bag.entrySet()) {
+            int d = (e.getValue() == null ? 0 : e.getValue()) - ownBag.getOrDefault(e.getKey(), 0);
+            if (d > 0) taken.put(e.getKey(), d);
+        }
+        int aside = askAside(taken, ids, key, group);
+        int askN = aside > 0 && aside < n ? n - aside : n;
+        return new BatchWay.OwnAsk(group ? key : ids.isEmpty() ? key : ids.get(0), ids, askN, group, taken);
+    }
+
     public static Map<String, Integer> keptFromOthers(Blackboard bb, Goal g) {
         return kept(bb, g, g == null ? null : BatchWay.open(bb, g));
     }
@@ -1788,21 +1806,9 @@ public final class Goals {
         // batch), kept per batch, bag and place (R3); the order's own chain only where no trip is derived (said) or for a group
         // job-review-leftovers (item 4): the order's own -d amount the bag holds is set aside here as the trip sets it aside
         // (one answer, ownAside), so the runner's keptFromUse never refuses what this chain priced
-        var ownBag = new java.util.LinkedHashMap<>(world.bag());
-        ownAside(ownBag, new java.util.HashMap<>(ownKeptHeld(bb, g, null)), g.r.ids(), g.r.key());
-        Map<String, Integer> taken = new java.util.HashMap<>();
-        for (var e : world.bag().entrySet()) {
-            int d = (e.getValue() == null ? 0 : e.getValue()) - ownBag.getOrDefault(e.getKey(), 0);
-            if (d > 0) taken.put(e.getKey(), d);
-        }
-        // review sent back: a group's n is per member, so the ask drops by the fewest set aside of any member
-        int aside = askAside(taken, g.r.ids(), g.r.key(), g.r.group());
-        boolean setAside = aside > 0 && aside < g.n;
-        final int askN = setAside ? g.n - aside : g.n;
-        if (!setAside) taken.clear();
         // review (worker path): the aside rides in the ask, so the planner worker (BatchWay.own, port.own) prices the same
         // world and count as the tick's own supplier: one answer whoever resolves
-        var ask = new BatchWay.OwnAsk(g.r.group() ? g.r.key() : g.r.ids().isEmpty() ? g.r.key() : g.r.ids().get(0), g.r.ids(), askN, g.r.group(), taken);
+        var ask = ownAsk(world.bag(), ownKeptHeld(bb, g, null), g.r.ids(), g.r.key(), g.r.group(), g.n);
         java.util.function.Supplier<io.github.mojolowjo.entropybot.aa.NeedChain.Chain> own = () -> {
             long t0 = laps.now();
             var c = ask.resolve(world);

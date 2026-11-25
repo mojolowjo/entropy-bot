@@ -138,6 +138,8 @@ class RefusedBreaksTest {
         String said = rb.take();
         assertNotNull(said);
         assertEquals(4, said.split("; ").length, said);   // two kept lines, one folded total, the live record
-        assertTrue(said.contains("more breaks at 7 more cells"), said);
+        // review sent back again (item 6): one cell, seven folded records - the count is of lines, not cells
+        assertTrue(said.contains("more breaks in 7 more refusal lines"), said);
+        assertFalse(said.contains("more cells"), said);
     }
 }

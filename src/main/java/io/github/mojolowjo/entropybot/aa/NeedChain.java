@@ -784,8 +784,8 @@ public final class NeedChain {
             List<String> h = new ArrayList<>(held);
             for (var e : keyWhy.entrySet()) h.add(e.getKey() + ": " + e.getValue());
             List<String[]> near = nearHolds(keyWhy.keySet());                                // z75 review 2: a short collect's position
-            List<int[]> cuts = heldCuts(keyWhy.keySet());                                    // job-review-leftovers (2): read once
-            World less = without((item, sp) -> spotHeld(item, sp, keyWhy::containsKey, cuts) || nearHeld(near, item, sp));     // 0.39.z69 fix 1: an item key or one spot's
+            var trunks = trunksHeld(heldCuts(keyWhy.keySet()), seenAll);                     // job-review-leftovers (3): the held trees, by their known logs
+            World less = without((item, sp) -> spotHeld(item, sp, keyWhy::containsKey, trunks) || nearHeld(near, item, sp));     // 0.39.z69 fix 1: an item key or one spot's
             // 0.39.z42: a dropped band (no path into it from here) is no band for the order: its explore goes overland
             Function<String, int[]> b = band == null ? null : word -> {
                 int[] r = band.apply(word);
@@ -5431,13 +5431,13 @@ public final class NeedChain {
     }
 
     /** 0.39.z69 fix 1: a spot is held by {@code held} under its item key (a failed Collect step) or its own spot key. */
-    public static boolean spotHeld(String item, Spot sp, java.util.function.Predicate<String> held, List<int[]> cuts) {
-        return held.test(sourceKey(item, sp)) || held.test(spotKey(item, sp)) || trunkHeld(item, sp, cuts);
+    public static boolean spotHeld(String item, Spot sp, java.util.function.Predicate<String> held, java.util.function.BiPredicate<String, Spot> trunks) {
+        return held.test(sourceKey(item, sp)) || held.test(spotKey(item, sp)) || (trunks != null && trunks.test(item, sp));
     }
 
     /**
      * job-review-leftovers (item 2): the cells of the held cut keys ("cut at x y z"), read once per world (not one lookup
-     * per log spot and height); {@link #trunkHeld} matches spots against them.
+     * per log spot and height); {@link #trunksHeld} floods the trees from them.
      */
     public static List<int[]> heldCuts(java.util.Collection<String> keys) {
         List<int[]> out = new ArrayList<>();
@@ -5458,23 +5458,49 @@ public final class NeedChain {
      * job-silent-end-fact (run 3 w025: the chop stalled six times, each hold was the one log the plan named, "cut at 276 64
      * 262", and the next plan took the next log up the same trunk, 276 65 262 and on, a new key each time): a cut that
      * stalled is a fact of its tree, not of one log. A log spot is held when a held cut key names a log of the same trunk
-     * (the same x z column within {@link #TRUNK_SPAN}), so the next plan prices another tree or another way. The hold's own
+     * (its connected known logs, {@link #trunksHeld}), so the next plan prices another tree or another way. The hold's own
      * key and reason stay the one the run wrote (one store, rule 23); it lifts as that key does. Pure.
      * job-review-leftovers (item 2): the trunk is the tree's, not one column: a 2x2 trunk (dark oak, mega spruce, jungle)
-     * stands on four columns, so a log within {@link #TRUNK_WIDE} in x and z of a held cut is of the same tree.
+     * stands on four columns, so the tree is the logs that touch, not one column.
      */
-    static boolean trunkHeld(String item, Spot sp, List<int[]> cuts) {
-        if (sp == null || cuts == null || cuts.isEmpty() || !tree(item, sp)) return false;
-        for (int[] c : cuts)
-            if (Math.abs(c[0] - sp.x()) <= TRUNK_WIDE && Math.abs(c[2] - sp.z()) <= TRUNK_WIDE && Math.abs(c[1] - sp.y()) <= TRUNK_SPAN) return true;
-        return false;
+    /**
+     * review sent back again (item 3): the tree is keyed by the logs, not by a distance. The held trees of {@code cuts} on
+     * the log spots the planner knows ({@code known}, by item word; no world read): from each held cut cell a flood over the
+     * known log spot cells that touch (26 neighbours, diagonals included: a 2x2 trunk and a branch are one tree), so two
+     * trees one column apart are two trees unless their logs touch. A spot is held when its cell is reached. Per item word,
+     * the flood is made once (cached). Null: no cuts. Pure but for the cache.
+     */
+    public static java.util.function.BiPredicate<String, Spot> trunksHeld(List<int[]> cuts, Function<String, List<Spot>> known) {
+        if (cuts == null || cuts.isEmpty()) return null;
+        Map<String, Set<Long>> trees = new java.util.concurrent.ConcurrentHashMap<>();
+        return (item, sp) -> {
+            if (sp == null || item == null || !tree(item, sp)) return false;
+            return trees.computeIfAbsent(item, it -> treeCells(cuts, known == null ? null : known.apply(it), it)).contains(cell(sp.x(), sp.y(), sp.z()));
+        };
     }
 
-    /** game fact: the widest vanilla trunk is 2x2, so a log one column off a held cut (diagonal included) is of that trunk. */
-    static final int TRUNK_WIDE = 1;
+    /** The cells reached from {@code cuts} over the log spots in {@code spots} that touch (26 neighbours). Pure. */
+    static Set<Long> treeCells(List<int[]> cuts, List<Spot> spots, String item) {
+        Set<Long> logs = new java.util.HashSet<>();
+        if (spots != null) for (Spot s : spots) if (s != null && tree(item, s)) logs.add(cell(s.x(), s.y(), s.z()));
+        Set<Long> seen = new java.util.HashSet<>();
+        java.util.ArrayDeque<int[]> q = new java.util.ArrayDeque<>();
+        for (int[] c : cuts) if (seen.add(cell(c[0], c[1], c[2]))) q.add(c);
+        while (!q.isEmpty()) {
+            int[] c = q.poll();
+            for (int dx = -1; dx <= 1; dx++)                                   // structural: the 26 neighbours of a cell
+                for (int dy = -1; dy <= 1; dy++)
+                    for (int dz = -1; dz <= 1; dz++) {
+                        long k = cell(c[0] + dx, c[1] + dy, c[2] + dz);
+                        if (logs.contains(k) && seen.add(k)) q.add(new int[]{c[0] + dx, c[1] + dy, c[2] + dz});
+                    }
+        }
+        return seen;
+    }
 
-    /** game fact: no vanilla trunk is 32 logs tall (a mega jungle tree's is under 32), so logs of one column this close are one tree. */
-    static final int TRUNK_SPAN = 32;
+    private static long cell(int x, int y, int z) {
+        return (((long) x & 0x3FFFFFF) << 38) | (((long) z & 0x3FFFFFF) << 12) | ((long) y & 0xFFF);   // structural: BlockPos-style packing
+    }
 
     /** A block the game tags as logs is a tree (Baritone's tree mining); a spot with no block known for a tag need: a tree when the need is logs only. */
     private static boolean tree(String item, Spot sp) {

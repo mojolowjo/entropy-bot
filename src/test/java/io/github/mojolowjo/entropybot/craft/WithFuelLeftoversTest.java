@@ -36,6 +36,27 @@ class WithFuelLeftoversTest {
         assertEquals(1, left.get("minecraft:coal"));
     }
 
+    /** review sent back again (8): a Craft step's inputs come off the running free bag (FurnacePlan.uses over the recipes). */
+    @Test
+    void aCraftsInputIsNotCountedAsFreeFuelForALaterSmelt() {
+        // 2 oak planks -> sticks x4 (times 2 = 4 planks used), then a smelt of 8 on coal swapped to planks: the bag holds 6
+        // planks, 4 go to the sticks, so 2 are free and the 6 needed for 8 smelts are not: the smelt keeps its coal
+        RecipeData sticks = RecipeData.shapeless("minecraft:stick", "minecraft:stick", 4,
+                List.of(List.of("minecraft:oak_planks"), List.of("minecraft:oak_planks")));
+        Crafter.Plan p = new Crafter.Plan(List.of(
+                new Crafter.Craft("minecraft:stick", "minecraft:stick", 8, 2, false),
+                new Crafter.Smelt(null, "minecraft:iron_ingot", 8, "minecraft:raw_iron", 8, "minecraft:coal", 1)), null);
+        List<String> said = new ArrayList<>();
+        Map<String, Integer> bag = Map.of("minecraft:oak_planks", 6, "minecraft:coal", 1);
+        Crafter.Plan out = CraftPlanner.withFuel(p, "oak_planks", bag, FUELS, 200, said::add, null, id -> id.equals("minecraft:stick") ? sticks : null);
+        assertEquals("minecraft:coal", ((Crafter.Smelt) out.steps().get(1)).fuel(), "the sticks' planks are not free: " + said);
+        assertTrue(said.get(0).contains("2 of 6") && said.get(0).contains("steps left out"), said.toString());
+        // no recipes: the craft's planks are counted free (said so), and the swap goes through on 6
+        List<String> said2 = new ArrayList<>();
+        Crafter.Plan blind = CraftPlanner.withFuel(p, "oak_planks", bag, FUELS, 200, said2::add, null, null);
+        assertEquals("minecraft:oak_planks", ((Crafter.Smelt) blind.steps().get(1)).fuel());
+    }
+
     @Test
     void noFuelTableLoadedIsSaidSo() {
         Crafter.Plan p = new Crafter.Plan(List.of(new Crafter.Smelt(null, "minecraft:iron_ingot", 8, "minecraft:raw_iron", 8, "minecraft:oak_planks", 6)), null);

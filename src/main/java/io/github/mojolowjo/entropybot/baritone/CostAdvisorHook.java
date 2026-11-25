@@ -295,24 +295,34 @@ public final class CostAdvisorHook {
         String dim = t != null ? t.dim() : dimIfNoToken;
         BreakPolicy.Snapshot s = t != null ? t.snapshot() : pr.snapshot();
         BreakPolicy.Where me = t != null ? t.me() : pr.where();
-        if (in == null || in == Intent.NONE) return refused(t, x, y, z, state, in, "break", "walking only", null);   // the route map's context
+        // review sent back again (5): asked for a place, the probe line says "place" (not a refused break) and every deny is
+        // counted once at the place site (placeCost counted the ask; no second ask here)
+        boolean forPlace = PolicyStats.SITE_ASTAR_PLACE.equals(site);
+        String verb = forPlace ? PLACE_NEEDS_BREAK : "break";
+        if (in == null || in == Intent.NONE) {
+            if (forPlace) pr.stats.deny(site, "walking only");
+            return refused(t, x, y, z, state, in, verb, "walking only", null);   // the route map's context
+        }
         // job-climb: a walk run with breaks off (the trail's pillar leg, PolicyRuntime.noBreaks) refuses every break for its run
         String nb = t != null ? t.noBreakBy() : pr.noBreakBy();
-        if (nb != null) return refused(t, x, y, z, state, in, "break", "no breaks", "a no-break run: " + nb);
+        if (nb != null) {
+            if (forPlace) pr.stats.deny(site, "a no-break run: " + nb);
+            return refused(t, x, y, z, state, in, verb, "no breaks", "a no-break run: " + nb);
+        }
         // STRUCTURE_BLOCKS (RULES 16): every intent's path refuses the cell BreakPolicy refuses for a structure block
         // (Baritone's blocksToDisallowBreaking stays empty: block types never refuse by themselves, this hook does per cell);
         // a null snapshot refuses here too ("no snapshot", BreakPolicy.pathStructure), never NaN or open
         BreakPolicy.Verdict sv = pr.structureVerdict(s, dim, at, x, y, z);
         if (!sv.allowed()) {
             pr.stats.deny(site, sv.reason());
-            return refused(t, x, y, z, state, in, "break", sv.rule(), sv.reason());
+            return refused(t, x, y, z, state, in, verb, sv.rule(), sv.reason());
         }
         // 0.39.z77 keepout (RULES 16): a keep-out / no-break cell is refused for every intent, MINE included (MINE never
         // asks pr.judge below); the snapshot is non-null here (pathStructure refused a null one)
         BreakPolicy.Verdict kv = BreakPolicy.pathProtect(s, dim, x, y, z);
         if (!kv.allowed()) {
             pr.stats.deny(site, kv.reason());
-            return refused(t, x, y, z, state, in, "break", kv.rule(), kv.reason());
+            return refused(t, x, y, z, state, in, verb, kv.rule(), kv.reason());
         }
         // lava distance (0.39.z40): a break that opens lava onto the bot (lava in the cell or at a face: the fork burrow's test)
         // is refused for every intent, unless the bot starts this calculation in lava (the reflex's dig-out leg)
@@ -320,14 +330,19 @@ public final class CostAdvisorHook {
         if (io.github.mojolowjo.entropybot.guard.LavaNear.opensLava(lava, x, y, z)
                 && !(t != null && t.at() != null && (lava.at(t.at()[0], t.at()[1], t.at()[2]) || lava.at(t.at()[0], t.at()[1] + 1, t.at()[2])))) {
             pr.stats.deny(site, "the break opens lava");
-            return refused(t, x, y, z, state, in, "break", "lava", "the break opens lava");
+            return refused(t, x, y, z, state, in, verb, "lava", "the break opens lava");
         }
-        if (dim == null) return in == Intent.TRAVEL ? refused(t, x, y, z, state, in, "break", "no dimension", "fail closed for travel") : Double.NaN;
+        if (dim == null) {
+            if (in != Intent.TRAVEL) return Double.NaN;
+            if (forPlace) pr.stats.deny(site, "no dimension, fail closed for travel");
+            return refused(t, x, y, z, state, in, verb, "no dimension", "fail closed for travel");
+        }
         double wet = wetMult(at, x, y, z);                                        // wetbreak: 1 dry, 5 beside water, 25 deep
         switch (in) {
             case TRAVEL -> {
-                BreakPolicy.Verdict v = pr.judge(site, BreakPolicy.Action.BREAK, in, dim, x, y, z, pr.facts(at, dim, x, y, z, false), me, s);
-                return v.allowed() ? v.multiplier() * wet : refused(t, x, y, z, state, in, "break", v.rule(), v.reason());
+                // review sent back again (5): for a place, placeCost asked already: the judge counts its deny only (no second ask)
+                BreakPolicy.Verdict v = pr.judge(site, !forPlace, BreakPolicy.Action.BREAK, in, dim, x, y, z, pr.facts(at, dim, x, y, z, false), me, s);
+                return v.allowed() ? v.multiplier() * wet : refused(t, x, y, z, state, in, verb, v.rule(), v.reason());
             }
             case MINE -> {
                 // phase 1: mining keeps Baritone's rules, except the owner's: no digging down from in the water
@@ -339,13 +354,13 @@ public final class CostAdvisorHook {
                     // aa-water (1f): the risk from this cell's own depth below the water surface and the air now
                     if (me == null || !me.inWater()) {
                         pr.stats.deny(site, "digging down from in the water");
-                        return refused(t, x, y, z, state, in, "break", "water", "digging down from in the water");
+                        return refused(t, x, y, z, state, in, verb, "water", "digging down from in the water");
                     }
                     int depth = 1 + PolicyRuntime.waterColumn(at, x, y + 1, z);
                     double m = io.github.mojolowjo.entropybot.guard.DrownRisk.breakMult(depth, me.air(), me.pickTier());
                     if (Double.isInfinite(m)) {
                         pr.stats.deny(site, "digging down from in the water");
-                        return refused(t, x, y, z, state, in, "break", "drown risk", "digging down from in the water");
+                        return refused(t, x, y, z, state, in, verb, "drown risk", "digging down from in the water");
                     }
                     return m;                                                // its own drowning price (no double count)
                 }
@@ -360,6 +375,9 @@ public final class CostAdvisorHook {
      * and {@link #breakMultiplier} (the one break decision) refuses that break. Air, a replaceable block or not read
      * (null): no break needed, false.
      */
+    /** The strip-probe action of a place refused because the block in its cell may not be broken. */
+    static final String PLACE_NEEDS_BREAK = "place (the cell's block may not be broken)";
+
     static boolean placeNeedsRefusedBreak(Object token, String dimIfNoToken, int x, int y, int z, BlockState current, PolicyRuntime.StateAt at) {
         if (current == null || current.isAir() || current.canBeReplaced()) return false;
         return breakMultiplier(token, dimIfNoToken, x, y, z, current, at, PolicyStats.SITE_ASTAR_PLACE) >= COST_INF;
@@ -402,7 +420,10 @@ public final class CostAdvisorHook {
         if (!PolicyRuntime.LIVE) return Double.NaN;
         Token t = token instanceof Token tk ? tk : null;
         Intent in = t != null ? t.intent() : pr.intentNow();
-        if (in == null || in == Intent.NONE) return refused(t, x, y, z, current, in, "place", "walking only", null);
+        if (in == null || in == Intent.NONE) {
+            pr.stats.deny(PolicyStats.SITE_ASTAR_PLACE, "walking only");     // review sent back again (5): asked, so counted
+            return refused(t, x, y, z, current, in, "place", "walking only", null);
+        }
         if (in == Intent.RESTORE) return Double.NaN;
         try {
             String dim = t != null ? t.dim() : dimIfNoToken;
@@ -416,10 +437,8 @@ public final class CostAdvisorHook {
             // job-review-leftovers (8, sent back): breakMultiplier said the refused cell and counted its deny at the place
             // site (not the break site: nothing is broken); only a no-break run's refusal counts nothing there, so it is
             // counted here: every refused place once
-            if (placeNeedsRefusedBreak(token, dimIfNoToken, x, y, z, current, at)) {
-                if ((t != null ? t.noBreakBy() : pr.noBreakBy()) != null) pr.stats.deny(PolicyStats.SITE_ASTAR_PLACE, "the place needs a refused break (a no-break run)");
-                return COST_INF;
-            }
+            // review sent back again (5): breakMultiplier counts every such deny once at the place site itself
+            if (placeNeedsRefusedBreak(token, dimIfNoToken, x, y, z, current, at)) return COST_INF;
             BreakPolicy.Verdict v = BreakPolicy.judge(s, new BreakPolicy.Ask(BreakPolicy.Action.PLACE, in, dim, x, y, z, pr.placeFacts(at, dim, x, y, z), me));
             // the click veto (Guard.vetoPolicyPlace) asks the same policy with the same intent, so a deny here is a deny there
             if (!v.allowed()) { pr.stats.deny(PolicyStats.SITE_ASTAR_PLACE, v.reason()); return refused(t, x, y, z, current, in, "place", v.rule(), v.reason()); }
