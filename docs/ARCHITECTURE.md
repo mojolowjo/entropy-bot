@@ -60,11 +60,13 @@ orders' first) and the same amount is collected again right after it (`obtain`),
 later step. `climbUp` adds "make a pickaxe first" (`cheapestPickaxe`) when there is no pickaxe and too few spare blocks.
 Each way's reason reaches the failure itself (read from the dropped lines `choose` wrote, so a reused D6 node says it too).
 The plan's size (job-plan-budget, worlds run 4: seven games out of heap while the planner resolved a trip): while
-`cheapestPickaxe` prices the ways of a pickaxe requirement of tier t (`Ctx.pickFloor`, in the D6 node key), a pickaxe need
-of tier t or better inside one of them fails at once with `pickInside` - any pickaxe it would find meets the outer need
-itself and is one of its own ways (was: every tier's whole tree priced again inside every other's, 6098 nodes for w084's
-shape, now about 100). A lend's collect again (`addLendWays`) is priced with `pickFloor` 0: it is a debt its way pays
-before it can finish, never the outer requirement's own way. The last line of defence: every way `choose` prices counts
+`cheapestPickaxe` prices one pickaxe of tier t (`Ctx.pickCap`, in the D6 node key), only pickaxes below t are ways inside
+it; one of tier t or better made to make it meets the outer need alone and is that need's own way (`pickInside`, said as
+the dropped way). Was: every tier's whole tree priced again inside every other's, 6098 nodes for w084's shape, now 1064.
+A lend's collect again (`addLendWays`) is a debt its way pays before it can finish: its pickaxe is priced with the tier
+being priced among its ways (cap t + 1). Review 2: the first cut (any pickaxe of the requirement's tier, so also stone <-
+wooden) changed 24 of the 100 worlds; with the cap the table matches c606aca8 priced without the `needChain.maxTrials` cut
+in 98 worlds (c606aca8's own table differs from that in 22: its 4000-way bound skips the later ways once one stands). The last line of defence: every way `choose` prices counts
 against Tuning `planner.maxWays` per resolve (`Ctx.ways`; a reused node adds its `Out.waysOff`, so the tick and the
 worker count alike); past it `TooLarge` is thrown out of the resolve, nothing of it is kept, and the request (`root`)
 fails "plan too large (N ways ...): the deepest chain a > b > c". Its `Read` holds every fact the run asked

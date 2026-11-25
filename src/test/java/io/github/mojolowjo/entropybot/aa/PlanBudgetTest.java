@@ -26,7 +26,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * block, w084's sources (trees on the surface, stone under 19 blocks of cover, the iron and diamond bands, a cave for
  * each). On c606aca8 the cobblestone order's resolve made 6098 nodes and torch 4 made 8525 (every pickaxe tier's whole
  * tree priced again inside every other's); with a pickaxe need inside a pickaxe's price left to that pickaxe's own way
- * (NeedChain.pickInside) the same answers take a few hundred. Each runs through the tick and the worker path (SyncPlanner:
+ * (NeedChain.pickInside; review 2: only pickaxes below the tier being priced, NeedChain.pickCap) the same answers take one to two thousand. Each runs through the tick and the worker path (SyncPlanner:
  * the snapshot, PlannerWorker.resolve, the port's check). Hand numbers: the test's own world.
  */
 class PlanBudgetTest {
@@ -38,6 +38,13 @@ class PlanBudgetTest {
         PlanNodes.forgetMine();
         BatchWay.clear();
     }
+
+    /**
+     * Review 2 (only lower tiers inside a pickaxe's own price, NeedChain.pickCap): the node bounds of the cases, each the
+     * measured count with room - w084 1064 (cobblestone) and 1866 (torch), nothing known 149, the lend 8843 (c606aca8: 6098,
+     * 8525, and past 20000 ways for the lend).
+     */
+    static final int NODES_W084 = 2500, NODES_NOTHING = 300, NODES_LEND = 12000;
 
     /** w084's feet (its y; x z the tests' own). */
     static final int[] FEET = {-181, 70, 27};
@@ -154,7 +161,8 @@ class PlanBudgetTest {
             assertEquals(tick.why(), worker.why(), "one answer whoever resolves");
             assertFalse(tick.ok(), "no pickaxe can be had from under ground with the walk up out: " + tick.why());
             assertTrue(tick.missing().startsWith(NeedChain.UNDER_GROUND), tick.missing());
-            assertTrue((Integer) r[2] <= 500 && (Integer) r[3] <= 500, o + ": nodes " + r[2] + " / " + r[3]);      // c606aca8: 6098 / 8525
+            System.out.println("PLAN BUDGET w084 " + o + ": nodes " + r[2] + " / " + r[3] + ", most ways " + NeedChain.mostWays(false));
+            assertTrue((Integer) r[2] <= NODES_W084 && (Integer) r[3] <= NODES_W084, o + ": nodes " + r[2] + " / " + r[3]);      // c606aca8: 6098 / 8525
             assertTrue(NeedChain.mostWays(false) < NeedChain.maxWays() / 10, "far under the budget: " + NeedChain.mostWays(false));
             assertTrue(tick.why().length() < 2000, "the answer's text: " + tick.why().length());
         }
@@ -168,12 +176,13 @@ class PlanBudgetTest {
         assertEquals(tick.why(), ((Chain) r[1]).why());
         assertFalse(tick.ok());
         assertTrue(tick.missing().contains("no climb either: no pickaxe and 0 spare blocks of 0 in the bag") && tick.missing().contains("make a pickaxe first"), tick.missing());
-        assertTrue((Integer) r[2] <= 100, "nodes " + r[2]);
+        System.out.println("PLAN BUDGET nothing known: nodes " + r[2]);
+        assertTrue((Integer) r[2] <= NODES_NOTHING, "nodes " + r[2]);
     }
 
     /**
      * On the surface with the same sources the pickaxe chain stands (a wooden pickaxe from the tree, as before); the iron and
-     * diamond pickaxes' ways are dropped with the reason - each needs a pickaxe that meets this need itself first.
+     * diamond pickaxes' ways inside the stone pickaxe's price are dropped with the reason - made to make it, either meets the need alone (review 2: a lower tier there is still priced).
      */
     @Test
     void onTheSurface_aPickaxeInsideAPickaxesPrice_isThatPickaxesOwnWay_said() throws Exception {
@@ -190,7 +199,7 @@ class PlanBudgetTest {
         NeedChain.Trace t = NeedChain.trace();
         Chain traced = NeedChain.traced(t, () -> NeedChain.resolve("cobblestone", 3, world(Map.of(), seen, 0)));
         assertEquals(tick.why(), traced.why(), "the same chain traced");
-        assertTrue(String.join("\n", t.lines(0)).contains(NeedChain.pickInside(2, 1)), "said in aa debug: " + String.join("\n", t.lines(0)));
+        assertTrue(String.join("\n", t.lines(0)).contains("way iron_pickaxe -> dropped: " + NeedChain.pickInside(3, 2)), "said in aa debug: " + String.join("\n", t.lines(0)));
     }
 
     /**
@@ -309,7 +318,7 @@ class PlanBudgetTest {
         // the lend way is offered and priced whole: its collect again's pickaxe is never cut as the outer one's own way
         assertTrue(tick.why().contains("climb with 30 kept cobblestone lent: under ground (30 blocks over the feet)"), tick.why());
         System.out.println("PLAN BUDGET lend: nodes " + r[2] + " / " + r[3] + ", most ways " + NeedChain.mostWays(false));
-        assertTrue((Integer) r[2] <= 5000 && NeedChain.mostWays(false) < NeedChain.maxWays() / 4, "nodes " + r[2] + ", ways " + NeedChain.mostWays(false));
+        assertTrue((Integer) r[2] <= NODES_LEND && NeedChain.mostWays(false) < NeedChain.maxWays() / 3, "nodes " + r[2] + ", ways " + NeedChain.mostWays(false));
         // aa debug's tree: the stone dig of the lend's collect again prices its pickaxe whole (c606aca8 plus the cut alone:
         // "way cobblestone 20 m -> dropped: a pickaxe of tier 1 is needed inside the price of a pickaxe of tier 1")
         NeedChain.Trace t = NeedChain.trace();
@@ -318,7 +327,7 @@ class PlanBudgetTest {
         String tree = String.join("\n", t.lines(0));
         assertFalse(tree.contains("way cobblestone 20 m -> dropped: " + NeedChain.pickInside(1, 1)), "the lend's collect again: its pickaxe never cut as the outer one's own way");
         assertTrue(tree.contains("way cobblestone 20 m -> dropped: no pickaxe of tier 1 can be had to dig"), "priced whole: every pickaxe's way tried from where the climb began");
-        assertTrue(tree.contains(NeedChain.pickInside(2, 1)), "the iron pickaxe's raw_iron is still cut (its tier-2 need is the requirement's own way)");
+        assertTrue(tree.contains("way iron_pickaxe -> dropped: " + NeedChain.pickInside(3, 2)), "inside the stone pickaxe's price the iron one is cut (it meets the outer need alone)");
     }
 
     /**
@@ -367,6 +376,41 @@ class PlanBudgetTest {
                 "the tree is cut for the pickaxe's planks (the 16 kept logs are not its wood): " + tick.steps());
         assertTrue(s.sync.drops.isEmpty(), "no planner fault: " + s.sync.drops);
         assertTrue(NeedChain.mostWays(false) < NeedChain.maxWays() / 10, "ways a resolve: " + NeedChain.mostWays(false));
+    }
+
+    /**
+     * Review 2 (point 3): part of one order's own amount already in the bag while its pickaxe is priced - cobblestone 32 -d
+     * with 10 of it held, no pickaxe, on the surface and 30 under ground (where the climb may lend the held blocks, its
+     * collect again priced with the pickaxe cap of the lend). The tick and the worker (SyncPlanner) price the same chain,
+     * no planner fault, far under the budget.
+     */
+    @Test
+    void partOfTheOrdersOwnAmountHeld_whileItsPickaxeIsPriced_tickAndWorkerAgree() {
+        for (int depth : new int[]{0, 30}) {
+            OrderLineSim s = new OrderLineSim();
+            if (depth > 0) {
+                s.under(depth);
+                s.path = (x, y, z, d) -> y == s.feet[1] + depth ? PathPrice.Answer.unreachable("no path") : FakePaths.byDistance().price(x, y, z, d);
+            }
+            s.seen.put("oak_log", List.of(new NeedChain.Spot(10, 64 + depth, 0, 10, "minecraft:oak_log", 6)));
+            s.seen.put("cobblestone", List.of(new NeedChain.Spot(5, 60, 5, 8, "minecraft:stone", 40)));
+            var cob = s.order("cobblestone", 32, "b1", true);
+            s.bag.put("cobblestone", 10);
+            s.plannerOnTheTick();
+            s.run(1, 1000);              // structural: one pass (the senses)
+            NeedChain.mostWays(true);
+            Chain tick = io.github.mojolowjo.entropybot.aa.brain.Goals.chain(s.bb, cob);
+            BatchWay.clear();
+            PlanNodes.forgetMine();
+            s.bb.fact(BatchWay.PLANNER_FACT, s.sync);
+            Chain worker = io.github.mojolowjo.entropybot.aa.brain.Goals.chain(s.bb, cob);
+            assertEquals(tick.why(), worker.why(), depth + " under: one answer whoever resolves");
+            assertEquals(tick.steps().size(), worker.steps().size(), depth + " under: the same steps");
+            if (depth == 0) assertTrue(tick.ok() && tick.why().contains("wooden_pickaxe"), tick.why());
+            assertTrue(s.sync.drops.isEmpty(), "no planner fault: " + s.sync.drops);
+            assertTrue(NeedChain.mostWays(false) < NeedChain.maxWays() / 10, depth + " under: ways a resolve " + NeedChain.mostWays(false));
+            assertFalse(tick.why().contains(NeedChain.TOO_LARGE), tick.why());
+        }
     }
 
     /**
@@ -421,6 +465,6 @@ class PlanBudgetTest {
             }
         }
         System.out.println("PLAN BUDGET modded: most ways a resolve " + most + " (planner.maxWays " + NeedChain.maxWays() + ")");
-        assertTrue(most < NeedChain.maxWays() / 4, "the modded pack's largest resolve: " + most);
+        assertTrue(most < NeedChain.maxWays() / 2, "the modded pack's largest resolve: " + most);       // review 2: 9856 (under ground, torch 4)
     }
 }

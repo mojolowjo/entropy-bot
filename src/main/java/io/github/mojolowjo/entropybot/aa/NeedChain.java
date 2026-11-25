@@ -1362,10 +1362,12 @@ public final class NeedChain {
         /**
          * job-plan-budget (worlds run 4: seven games out of heap, a cobblestone order priced through diamond_pickaxe <- iron_pickaxe
          * <- stone_pickaxe <- wooden_pickaxe, every tier's tree priced again inside every other's): the least tier of the
-         * pickaxe requirements whose ways {@link #cheapestPickaxe} is pricing now (0: none). A pickaxe of that tier or better
-         * needed inside one of them is that requirement's own way - the outer way holds it and costs more (pickInside).
+         * pickaxes whose own price {@link #cheapestPickaxe} is computing now (0: none). Inside it only pickaxes below that tier
+         * are ways: one of that tier or better, made to make this one, already meets the outer requirement alone and costs
+         * less (pickInside). Review 2 (rule 20: the old floor - the requirement's tier - also cut stone_pickaxe <- wooden_pickaxe
+         * for a tier-1 dig, a way that won in 9 worlds): a lower tier inside a higher one's price is priced as before.
          */
-        int pickFloor;
+        int pickCap;
         /** job-plan-budget: ways priced in this resolve, reused nodes' ways counted too (planner.maxWays; never restored). */
         int ways;
         /** job-plan-budget: the deepest need chain priced so far in this resolve (the budget's failure names it; never restored). */
@@ -2022,12 +2024,12 @@ public final class NeedChain {
                          boolean tableReady, boolean furnaceReady, boolean stuck, String unknown, String pickItem, int pickTier, boolean tableWalked,
                          boolean furnaceWalked, int pickWorn, boolean pickMade, boolean pickOut, boolean atRoom, String down, int downAt,
                          boolean tableDown, boolean furnaceDown, Map<String, Integer> upBag, List<String> path, int pathsWaiting, Map<String, Integer> aside,
-                         boolean hoisting, boolean bandPick, boolean climbPick, boolean lending, int pickFloor, Burn burned, String fail, String loopOn, Set<String> keptFuel) {}
+                         boolean hoisting, boolean bandPick, boolean climbPick, boolean lending, int pickCap, Burn burned, String fail, String loopOn, Set<String> keptFuel) {}
 
     /** A cheap hash of an entry state (its sizes and scalars; equal entries hash equal, a clash is settled by Deep.equal). */
     private static int hashOf(Entry e) {
         int steps = e.steps() instanceof List<?> l ? l.size() : (Integer) e.steps();
-        int h = java.util.Objects.hash(steps, e.pickItem(), e.pickTier(), e.pickWorn(), e.pickFloor(),
+        int h = java.util.Objects.hash(steps, e.pickItem(), e.pickTier(), e.pickWorn(), e.pickCap(),
                 e.down(), e.downAt(), e.path(), e.pathsWaiting(), e.fail(), e.loopOn(), e.unknown(), e.leafAt().size(), e.taken().size());
         int flags = (e.tableReady() ? 1 : 0) | (e.furnaceReady() ? 2 : 0) | (e.stuck() ? 4 : 0) | (e.tableWalked() ? 8 : 0) | (e.furnaceWalked() ? 16 : 0)    // structural: bits
                 | (e.pickMade() ? 32 : 0) | (e.pickOut() ? 64 : 0) | (e.atRoom() ? 128 : 0) | (e.tableDown() ? 256 : 0) | (e.furnaceDown() ? 512 : 0)       // structural: bits
@@ -2046,7 +2048,7 @@ public final class NeedChain {
         private final int pathsWaiting;
         private final Map<String, Integer> aside;
         private final boolean hoisting, bandPick, climbPick, lending;
-        private final int pickFloor;
+        private final int pickCap;
         private final Burn burned;
         private final String fail, loopOn;
         private final Set<String> kept;
@@ -2061,7 +2063,7 @@ public final class NeedChain {
             bandPick = c.bandPick;
             climbPick = c.climbPick;          // stage 4 review 3: a node priced inside a climb's pickaxe-first is not reused outside it
             lending = c.lending;              // review 4: a node priced inside a lend's collect again (no lend there) is not reused outside it
-            pickFloor = c.pickFloor;          // job-plan-budget: a node priced inside a pickaxe requirement's ways is not reused outside it
+            pickCap = c.pickCap;          // job-plan-budget: a node priced inside a pickaxe requirement's ways is not reused outside it
             burned = c.burned;
             fail = c.fail;
             loopOn = c.loopOn;
@@ -2074,7 +2076,7 @@ public final class NeedChain {
             if (e[i] == null) e[i] = new Entry(fullSteps ? s.steps() : (Object) s.steps().size(), s.leafAt(), s.taken(), awayRead ? s.away() : null,
                     s.tableReady(), s.furnaceReady(), s.stuck(), s.unknown(), s.pickItem(), s.pickTier(), s.tableWalked(), s.furnaceWalked(), s.pickWorn(),
                     s.pickMade(), s.pickOut(), s.atRoom(), s.down(), s.downAt(), s.tableDown(), s.furnaceDown(), s.upBag(), path, pathsWaiting, aside,
-                    hoisting, bandPick, climbPick, lending, pickFloor, burned, fail, loopOn, kept);
+                    hoisting, bandPick, climbPick, lending, pickCap, burned, fail, loopOn, kept);
             return e[i];
         }
 
@@ -6315,19 +6317,21 @@ public final class NeedChain {
             c.addS(sec);
             c.bag.merge(lend, -n, Integer::sum);
             boolean was = c.lending;
-            int floor0 = c.pickFloor;
+            int floor0 = c.pickCap;
             c.lending = true;
             // job-plan-budget review 1 (serious): the collect again is a debt this way pays before it can finish - inside a
             // pickaxe's price (the bot under ground with no pickaxe, the wooden pickaxe's logs on the surface) its pickaxe
-            // need is not the outer requirement's own way, since that way stands only once this debt is paid: it is priced
-            // whole (pickFloor 0; the recursion is bounded by c.lending, no lend inside it)
-            c.pickFloor = 0;
+            // need is priced, the pickaxe's own tier among its ways (the recursion is bounded by c.lending, no lend inside it).
+            // Review 2: a better tier than the one being priced is still cut there - made to pay this one's debt, it meets the
+            // outer need alone, its own way without this one on top (pickInside); cutting it took the lend case from 10873
+            // ways a resolve to the figure in PlanBudgetTest
+            if (floor0 > 0) c.pickCap = floor0 + 1;          // structural: "this tier or below" as a cap below the next tier
             String back;
             try {
                 back = obtain(c, lend, before);
             } finally {
                 c.lending = was;
-                c.pickFloor = floor0;
+                c.pickCap = floor0;
             }
             if (c.fail != null) return null;
             if (c.stuck) { c.fail = "the " + n + " lent " + shw(lend) + " have no known source to collect again (an explore)"; return null; }
@@ -8182,30 +8186,33 @@ public final class NeedChain {
      * would find meets that requirement itself, and it is one of that requirement's own ways, priced there without this
      * way's other costs on top. Pure.
      */
-    static String pickInside(int tier, int floor) {
-        return "a pickaxe of tier " + tier + " is needed inside the price of a pickaxe of tier " + floor + ": that pickaxe meets the need itself"
-                + " (its own way, cheaper without this one's other costs)";
+    static String pickInside(int tier, int cap) {
+        return "a pickaxe of tier " + tier + " is needed inside the price of a pickaxe of tier " + cap + ": one of tier " + cap
+                + " or better made first meets the outer need alone (its own way, cheaper without this one on top)";
     }
 
     private static String cheapestPickaxe(Ctx c, int tier) {
-        if (c.pickFloor > 0 && c.pickFloor <= tier) { c.fail = pickInside(tier, c.pickFloor); return null; }
+        // job-plan-budget review 2: inside a pickaxe's own price only lower tiers are ways (pickCap)
+        if (c.pickCap > 0 && c.pickCap <= tier) { c.fail = pickInside(tier, c.pickCap); return null; }
         List<Alt> alts = new ArrayList<>();
         for (String pid : new TreeSet<>(ItemWorth.itemsIn("pickaxes"))) {
             int t = MiningTiers.toolTier(pid, "pickaxe");
             if (t < tier || ItemWorth.recipes(pid, ItemWorth.CRAFT).isEmpty()) continue;
-            Alt a = new Alt(sh(pid), () -> obtain(c, pid, 1));
+            int cap = c.pickCap;
+            if (cap > 0 && t >= cap) { c.note(() -> "way " + sh(pid) + " -> dropped: " + pickInside(t, cap)); continue; }
+            Alt a = new Alt(sh(pid), () -> {
+                int cap0 = c.pickCap;
+                c.pickCap = t;                               // inside this pickaxe's price: only pickaxes below its tier
+                try {
+                    return obtain(c, pid, 1);
+                } finally {
+                    c.pickCap = cap0;
+                }
+            });
             a.id = pid; a.tier = t; a.work = rawWork(pid, new ArrayList<>());
             alts.add(a);
         }
-        // job-plan-budget: inside these ways a pickaxe need of this tier or better is this requirement's own way (pickInside)
-        int floor0 = c.pickFloor;
-        c.pickFloor = tier;
-        Trial win;
-        try {
-            win = choose(c, alts, null);
-        } finally {
-            c.pickFloor = floor0;
-        }
+        Trial win = choose(c, alts, null);
         if (win == null) {
             // 0.39.z77 choose: any wait choose returns stays a wait (rule 15), never "no pickaxe"
             if (c.fail == null || !answerPending(c.fail)) c.fail = "no pickaxe of tier " + tier + " can be had to dig" + (alts.isEmpty() ? ": none in the game data can be crafted" : "");
