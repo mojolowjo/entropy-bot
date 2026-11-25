@@ -58,7 +58,8 @@ public final class Goals {
 
         /**
          * short-wake (pilot w057, w061, 2026-11-25): this order's stop was weighed with nothing it waits on able to change,
-         * and its line's deposit was owed without the rest of it (LineDeposits.sweep). A wake then takes only this order
+         * and its line's deposit was owed without the rest of it (LineDeposits.sweep), or its end joined the rest of its line
+         * still due (LineDeposits.lineEnds, its own items or none). A wake then takes only this order
          * out of the due deposit, the rest stays due (LineDeposits.reopen); its amount follows with a deposit of its own.
          * Cleared wherever {@link #depositWeighed} is set again.
          */

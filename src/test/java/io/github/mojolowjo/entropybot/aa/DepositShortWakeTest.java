@@ -57,21 +57,27 @@ class DepositShortWakeTest {
      * The w057 line, cut to the sim's items: cobblestone 32 met at once (in the bag), oak_log 16 runs, 2 in the bag, and
      * stops on the honest loop at the surface; nothing it waits on can change, so the line's deposit is owed short.
      */
-    static Goals.Goal[] owedShort(OrderLineSim s, String batch) {
+    static Goals.Goal[] owedShort(OrderLineSim s, String batch) { return owedShort(s, batch, 2); }
+
+    /** As {@link #owedShort(OrderLineSim, String)}, the oak_log stopping with {@code n} in the bag (w061's torch: 0). */
+    static Goals.Goal[] owedShort(OrderLineSim s, String batch, int n) {
         Goals.Goal cob = batch == null ? null : s.order("cobblestone", 32, batch, true);
         Goals.Goal log = s.order("oak_log", 16, batch, true);
         if (cob != null) s.bag.put("cobblestone", 32);
-        parkShort(s, log);
+        parkShort(s, log, n);
         return new Goals.Goal[]{cob, log};
     }
 
     /** {@code log} runs and stops on the honest loop with 2 in the bag; the pass then owes the line short. */
-    static void parkShort(OrderLineSim s, Goals.Goal log) {
+    static void parkShort(OrderLineSim s, Goals.Goal log) { parkShort(s, log, 2); }
+
+    /** {@code log} runs and stops on the honest loop with {@code n} in the bag (0: none); the pass then owes the line short. */
+    static void parkShort(OrderLineSim s, Goals.Goal log, int n) {
         for (int i = 0; i < 60 && (log.parked == null || !log.depositWeighed); i++) {
             s.run(1, 5000);
             String r = s.running();
             if (log.id().equals(r)) {
-                s.bag.put("oak_log", 2);
+                if (n > 0) s.bag.put("oak_log", n); else s.bag.remove("oak_log");
                 log.loopAttempt = Z70StepCheckTest.cobbleTry();          // the run ends on the honest loop
                 s.failRun(OrderLineScenariosTest.JBM_STAND_END);
             } else if (r != null && r.equals("goal." + Goals.DEPOSIT_KEY)) {
@@ -143,6 +149,47 @@ class DepositShortWakeTest {
         assertEquals(Map.of("minecraft:cobblestone", 32, "minecraft:oak_log", 16), chest(), "each amount whole, once: " + puts);
     }
 
+    /**
+     * w061 as it was (torch 0 of 4: nothing of the stopped order in the bag), and the review's circle: the deposit's walk
+     * wakes it, it stops again with nothing in the bag while nothing runs (the deposit goal's run ended), and wakes again
+     * (the deposit's walk once more). The re-stop joins the still-due rest of its line, so the second wake takes only itself
+     * out: the rest stays due through every round and goes; nothing is taken back.
+     */
+    @Test
+    void w061_noneInTheBag_theDepositsWalkWakesIt_itStopsAgainWithNone_wakesAgain_theRestStillGoes() {
+        OrderLineSim s = OrderLineScenariosTest.stoneAndTree();
+        Goals.Goal[] o = owedShort(s, "b1", 0);
+        assertTrue(s.said.stream().anyMatch(l -> l.contains("short: oak_log 0 of 16")), s.said.toString());
+        assertEquals(Map.of("minecraft:cobblestone", 32), s.deposits.owed(), "owed short with none of it: " + s.said);
+        assertTrue(o[1].depositOwedShort, s.said.toString());
+        for (int round = 0; round < 3; round++) {
+            assertNotNull(s.depositGoal(), "round " + round + ": the deposit goal: " + s.said);
+            s.feet[0] += 54;                                  // the deposit's walk moved the bot (w061 09:17:02.795)
+            s.run(1, 5000);
+            assertNull(o[1].parked, "round " + round + ": oak_log woke: " + s.port.log);
+            assertEquals(Map.of("minecraft:cobblestone", 32), s.deposits.owed(), "round " + round + ": the rest stays owed: " + s.said);
+            assertNotNull(s.depositGoal(), "round " + round + ": the deposit goal is not ended by its own walk: " + s.said);
+            assertEquals(16, o[1].deposit, "round " + round + ": its amount whole");
+            if (round == 2) break;
+            parkShort(s, o[1], 0);                            // stops again with none in the bag
+            assertTrue(o[1].depositOwedShort, "round " + round + ": the re-stop joined the still-due rest: " + s.said);
+            assertEquals(Map.of("minecraft:cobblestone", 32), s.deposits.owed(), "round " + round + ": " + s.said);
+            assertTrue(s.said.stream().anyMatch(l -> l.contains("nothing of its own deposit items in the bag; the rest of the line still due goes (cobblestone 32)")), s.said.toString());
+        }
+        assertTrue(s.said.stream().noneMatch(l -> l.contains("taken back")), "nothing taken back: " + s.said);
+        assertTrue(s.said.stream().noneMatch(l -> l.contains("no deposit") && l.contains("oak_log")), "never a false 'no deposit' (rule 7): " + s.said);
+        assertEquals(0, s.takenBack.size(), "nothing taken back: " + s.takenBack);
+        put(s);
+        s.run(1, 5000);
+        assertNull(s.depositGoal(), "the rest went: " + s.said);
+        s.bag.put("oak_log", 16);
+        s.run(3, 5000);
+        assertTrue(s.ordersLeft().isEmpty(), "met: " + s.said);
+        assertEquals(Map.of("minecraft:oak_log", 16), s.deposits.owed(), "its own deposit, whole: " + s.said);
+        put(s);
+        assertEquals(Map.of("minecraft:cobblestone", 32, "minecraft:oak_log", 16), chest(), "each amount whole, once: " + puts);
+    }
+
     /** (2) the woken order ends while the rest of its line is still due: its deposit joins the rest (merged, never put over). */
     @Test
     void theWokenOrderEndsBeforeTheRestWent_itsDepositJoinsTheRest() {
@@ -207,18 +254,26 @@ class DepositShortWakeTest {
 
     /** (5) the same order stops short and wakes three times: the rest stays due each time, its own amount is never doubled. */
     @Test
-    void theSameOrderParksAndWakesSeveralTimes_theRestStaysDue_itsAmountOnce() {
+    void theSameOrderParksAndWakesSeveralTimes_theRestStaysDue_itsAmountOnce() { rounds(2); }
+
+    /** (5) as above, every stop with none of it in the bag (w061's torch 0 of 4). */
+    @Test
+    void theSameOrderParksAndWakesSeveralTimes_noneInTheBag_theRestStaysDue() { rounds(0); }
+
+    void rounds(int n) {
         OrderLineSim s = OrderLineScenariosTest.stoneAndTree();
-        Goals.Goal[] o = owedShort(s, "b1");
+        Goals.Goal[] o = owedShort(s, "b1", n);
+        Map<String, Integer> owedShort = new TreeMap<>(Map.of("minecraft:cobblestone", 32));
+        if (n > 0) owedShort.put("minecraft:oak_log", n);
         for (int round = 0; round < 3; round++) {
-            assertEquals(Map.of("minecraft:cobblestone", 32, "minecraft:oak_log", 2), s.deposits.owed(), "round " + round + ": owed short, once each: " + s.said);
+            assertEquals(owedShort, s.deposits.owed(), "round " + round + ": owed short, once each: " + s.said);
             assertTrue(o[1].depositOwedShort, "round " + round);
             s.feet[0] += 20;                                   // a move wakes it (failures.moved 16)
             s.run(1, 5000);
             assertNull(o[1].parked, "round " + round + ": woke: " + s.port.log);
             assertEquals(Map.of("minecraft:cobblestone", 32), s.deposits.owed(), "round " + round + ": the rest stays due: " + s.said);
             assertEquals(16, o[1].deposit, "round " + round + ": its amount whole");
-            if (round < 2) parkShort(s, o[1]);
+            if (round < 2) parkShort(s, o[1], n);
         }
         put(s);
         s.bag.put("oak_log", 16);

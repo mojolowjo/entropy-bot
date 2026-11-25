@@ -28,14 +28,17 @@ class SimShortWakeTest {
      * The line, the chest 30 blocks off, the spruce_log order stopped with 3 in the bag (as SimGameTest's hold-bound case:
      * the stop as the game's park leaves it, a PLACE park on the start cell, its look-around and climb try taken).
      */
-    static SimGame lineOwedShort() {
+    static SimGame lineOwedShort() { return lineOwedShort(3); }
+
+    /** As {@link #lineOwedShort()}, the spruce_log stopped with {@code logs} in the bag (w061's torch: 0). */
+    static SimGame lineOwedShort(int logs) {
         SimWorld w = SimWorld.flat(63, "minecraft:grass_block", 40);
         for (int i = 0; i < 4; i++) w.column(10 + 2 * i, 64, 3, 6, "minecraft:spruce_log");
         w.set(2, 64, -30, "minecraft:chest");
         SimGame g = new SimGame(w, new int[]{0, 64, 0});
         g.mainAt = "2 64 -30";
         g.give("minecraft:cobblestone", 32);
-        g.give("minecraft:spruce_log", 3);
+        if (logs > 0) g.give("minecraft:spruce_log", logs);
         g.order("cobblestone", 32, "b1", true);
         var log = g.order("spruce_log", 16, "b1", true);
         // the trees in sight are known to the park (a wake needs a new one); the try that stopped it was at another tree
@@ -68,6 +71,23 @@ class SimShortWakeTest {
     }
 
     /**
+     * w061 as it was in the simulator (torch 0 of 4: none of the stopped order in the bag): the deposit's walk wakes it; the
+     * cobblestone reaches the chest, the spruce_log follows whole, nothing is taken back.
+     */
+    @Test
+    void w061_noneInTheBag_theDepositsWalkWakesTheShortOrder_theRestGoes_itsOwnFollowsWhole() {
+        SimGame g = lineOwedShort(0);
+        String end = g.play(900);
+        String t = g.timelineText();
+        assertTrue(t.contains("short: spruce_log 0 of 16"), "owed short: " + t);
+        assertTrue(t.contains("runs again: moved"), "the deposit's walk woke it: " + t);
+        assertFalse(t.contains("taken back"), "nothing taken back: " + t);
+        assertEquals("done", end, t);
+        assertEquals(32, g.chest.get("minecraft:cobblestone"), g.chest + "\n" + t);
+        assertEquals(16, g.chest.get("minecraft:spruce_log"), "its amount whole, once: " + g.chest + "\n" + t);
+    }
+
+    /**
      * (1), (2) in the simulator (w057's wake: a new source seen after the line was owed short, before the put started): a
      * tree grows into sight one pass after the deposit goal was added. Only the spruce_log leaves the due deposit; the put
      * planned with its 3 is refused (the owed changed) and planned again with the cobblestone alone; the spruce_log's own
@@ -82,7 +102,6 @@ class SimShortWakeTest {
         g.world.column(-6, 64, 6, 6, "minecraft:spruce_log");     // a tree comes into sight
         String end = g.play(900);
         String t = g.timelineText();
-        System.out.println(t);
         assertTrue(t.contains("spruce_log woke: the line's deposit owed without it stays due (cobblestone 32); its spruce_log 3 in the bag stay its own; its whole amount (16) follows"), t);
         assertFalse(t.contains("taken back"), "nothing taken back: " + t);
         // (1) the put planned with its 3 does not start (the game's StepHands check, mirrored in SimSteps); the next carries the rest
