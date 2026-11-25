@@ -179,6 +179,39 @@ public final class Goals {
      */
     public static boolean canWake(Goal g) { return g.parked != null && (g.loopPark != null || g.park != null); }
 
+    /**
+     * hold-bound (owner 2026-11-24, plan step 2; worlds run 3 T2 w055, w070, w073, T1 w006, w018: "the line's deposit waits
+     * for it - it can still wake", then nothing to the end): {@link #canWake} says a park keeps facts it waits on, not that
+     * any of them can change. Pure: what can still change one of the facts {@code g}'s park waits on, as words; null:
+     * nothing (the line's deposit is owed). Read per park kind from what moves those facts: every park waits on the feet
+     * (distance), the bag, a held way lifting (by distance) or a new source seen, and none of them waits on time (a wait on
+     * an answer is no park: {@link #retryWaits}, bounded by goals.waitEndedMaxS). Those facts change while
+     * {@code busy} (a run or another job moves the bot), while another order is open and not parked (it runs, or waits on
+     * an answer that starts it), and by the two moves {@link #parkedTick} takes with every order parked: under ground the
+     * one more try on the climb way (not taken yet), on the surface the one look-around leg of a PLACE park (not taken yet).
+     */
+    public static String stillChanges(List<Goal> goals, Goal g, boolean underGround, boolean busy, boolean worldClimb) {
+        if (g == null || g.parked == null || !canWake(g)) return null;
+        if (busy) return "a run or another job moves the bot now";
+        if (goals != null)
+            for (Goal o : goals) if (o != g && o.parked == null) return "order " + o.r.key() + " is open and not stopped";
+        if (underGround && climbTryDue(g, worldClimb))
+            return "its one more try on the climb way, taken with every order stopped under ground";
+        if (!underGround && lookAroundDue(g))
+            return "its one look-around leg, taken after goals.lookAroundAfterS with every order stopped";
+        return null;
+    }
+
+    /** The one more try on the climb way is still to come for {@code g} (read by {@link #parkedTick} and {@link #stillChanges}); {@code byWorld}: a world fact of a failed climb holds for it. */
+    static boolean climbTryDue(Goal g, boolean byWorld) {
+        return !g.climbRetried && (g.loopPark != null || g.park != null || climbHeld(g) || byWorld);
+    }
+
+    /** The one look-around leg is still to come for {@code g} (read by {@link #parkedTick} and {@link #stillChanges}). */
+    static boolean lookAroundDue(Goal g) {
+        return !g.looked && g.strip == null && g.park != null && g.park.kind() == ParkKind.PLACE;
+    }
+
     /** {@link #wake(Goal)}; {@code worldClimb}: another order's failed climb holds here for it (a world fact, run EJ). */
     static String wake(Goal g, boolean worldClimb) {
         if (g.loopPark != null)
@@ -234,8 +267,7 @@ public final class Goals {
         for (Goal g : goals) if (worldClimb(bb, g)) byWorld.add(g);
         if (underGround && allParked(goals) != null) {
             for (Goal g : goals) {
-                boolean movesOnly = g.loopPark != null || g.park != null;
-                if (g.climbRetried || !(movesOnly || climbHeld(g) || byWorld.contains(g))) continue;
+                if (!climbTryDue(g, byWorld.contains(g))) continue;
                 g.climbRetried = true;
                 g.sources.forget(g.id(), io.github.mojolowjo.entropybot.aa.NeedChain.CLIMB_KEY);
                 WorldFacts.of(bb).forget(io.github.mojolowjo.entropybot.aa.NeedChain.CLIMB_KEY);   // the one more try: for every order
@@ -267,7 +299,7 @@ public final class Goals {
         if (busy) { bb.fact(ALL_PARKED_SINCE, nowMs); since = nowMs; }
         if (!underGround && nowMs - since >= (long) (Tuning.get("goals.lookAroundAfterS") * 1000)) {       // structural: s -> ms
             for (Goal g : goals) {
-                if (g.looked || g.strip != null || g.park == null || g.park.kind() != ParkKind.PLACE) continue;
+                if (!lookAroundDue(g)) continue;
                 g.looked = true;
                 g.lookAround = true;
                 g.wakeSaid = null;
@@ -1792,6 +1824,20 @@ public final class Goals {
         for (Goal g : out) g.met = true;         // 0.39.z77 met: a carried run's later end is logged under the batch, never a stop
         for (Goal g : out) finish(bb, g);        // 0.39.z61 (ruling 1 option c): its items stay safe from pillaring
         return out;
+    }
+
+    /**
+     * lost-after-done (tester-2 w064; LineDeposits#lostAfterDone): a met order is among the goals again - not met, off the
+     * finished list (its items are no longer there to keep), its "have" read from the bag like any open order's. The same
+     * key already among the goals (a new aa want of it) wins: false, nothing changed.
+     */
+    public static boolean reopen(Blackboard bb, Goal g) {
+        if (find(bb, g.r.key()) != null) return false;
+        g.met = false;
+        g.playbookRun = false;
+        finished(bb).removeIf(x -> x.key.equals(g.r.key()));
+        of(bb).add(g);
+        return true;
     }
 
     /** One aa goals line: "iron 2/8 high: score 90 - mine iron 6 dig | ...". */
