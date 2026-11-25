@@ -68,6 +68,10 @@ final class SimSteps {
     private static Result deposit(SimGame g, int[] c, Step.Deposit step) {
         if (SimWorld.dist(c, g.feet) > PUT_REACH + 0.5)        // structural: a cell's half
             return Result.fail(0, "deposit: the chest at " + c[0] + " " + c[1] + " " + c[2] + " is " + Math.round(SimWorld.dist(c, g.feet)) + " blocks from the feet");
+        // short-wake: as the game's StepHands (stage 4 review) - the step's items were fixed at the plan; when what is owed
+        // changed since (a wake took an order out of the due deposit), nothing is put, said, and the goal plans again
+        String differs = g.deposits.putDiffers(step.only());
+        if (differs != null) return Result.ok(0, "ok: no put - " + differs);
         var owed = g.deposits.owed();
         // review 6: the game's path - PutWatch.started (putStarted), the count at the clicks (moved), the step's end
         // (StepHands: putMoved + putLegEnded) and the task's end (AaRuntime: PutWatch.ended); one sim task per put

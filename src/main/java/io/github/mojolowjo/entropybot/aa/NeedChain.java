@@ -888,6 +888,51 @@ public final class NeedChain {
     public static double exploreReturn() { return Tuning.get("needChain.exploreReturn"); }
     static int maxTrials() { return Tuning.i("needChain.maxTrials"); }
 
+    /** job-plan-budget: the ways one resolve may price, reused nodes' ways counted (Tuning planner.maxWays). */
+    public static int maxWays() { return Tuning.i("planner.maxWays"); }
+
+    /** job-plan-budget: the start of the failure a resolve past {@link #maxWays} ends with (the tests' and the log's hook). */
+    public static final String TOO_LARGE = "plan too large (";
+
+    /**
+     * job-plan-budget (worlds run 4: seven games out of heap, 3 GB, while the bot stood waiting on the planner; needChain.maxTrials
+     * ends the pricing only once a way stands, so a tree where none stands grew until the heap was gone): the resolve past
+     * {@link #maxWays} ways - thrown out of the resolve, caught at its request ({@link #root}), which fails with these words
+     * (rule 7: said, never an out-of-heap). No node of it is kept (compute and root keep nothing a throw passed).
+     */
+    static final class TooLarge extends RuntimeException {
+        final int ways;
+        final String deepest;
+
+        TooLarge(int ways, String deepest) {
+            super(TOO_LARGE + ways + " ways, planner.maxWays " + maxWays() + "): the deepest chain " + (deepest.isEmpty() ? "(none)" : deepest), null, false, false);
+            this.ways = ways;
+            this.deepest = deepest;
+        }
+    }
+
+    /** job-plan-budget: the largest number of ways one resolve priced since the start (tests: the 100-world table's figure). */
+    static final java.util.concurrent.atomic.AtomicInteger MOST_WAYS = new java.util.concurrent.atomic.AtomicInteger();
+
+    /** job-plan-budget, tests: {@link #MOST_WAYS} read and set back to 0. */
+    public static int mostWays(boolean reset) { return reset ? MOST_WAYS.getAndSet(0) : MOST_WAYS.get(); }
+
+    /**
+     * job-plan-budget: {@code n} more ways priced in this resolve (a way's trial, or a reused node's ways); the deepest need
+     * chain kept; past {@link #maxWays} the resolve ends ({@link TooLarge}).
+     */
+    private static void counted(Ctx c, int n) {
+        c.ways += n;
+        if (c.path.size() > c.deepestN) {
+            c.deepestN = c.path.size();
+            List<String> p = new ArrayList<>(c.path.size());
+            for (String s : c.path) p.add(shw(s));
+            c.deepest = String.join(" > ", p);
+        }
+        MOST_WAYS.accumulateAndGet(c.ways, Math::max);
+        if (c.ways > maxWays()) throw new TooLarge(c.ways, c.deepest);
+    }
+
     /** Game fact: the player's bare hit is 1 damage (Attributes.ATTACK_DAMAGE base), 4 full-strength hits a second (ATTACK_SPEED base). */
     private static final double HAND_DAMAGE = 1; // game fact: the player base attack damage attribute is 1
     private static final double HIT_S = 0.25; // game fact: the player base attack speed attribute is 4 hits a second
@@ -1314,6 +1359,20 @@ public final class NeedChain {
         boolean bandPick;     // 0.39.z69 item 1: a band walk's pickaxe-first is being priced (no second one inside it)
         boolean lending;      // pickaxe price review 3 item 6: a lend's collect again is being priced (no second lend inside it)
         boolean climbPick;    // deposit-goal stage 4 review 3: a climb's "make a pickaxe first" is being priced (no second one inside it)
+        /**
+         * job-plan-budget (worlds run 4: seven games out of heap, a cobblestone order priced through diamond_pickaxe <- iron_pickaxe
+         * <- stone_pickaxe <- wooden_pickaxe, every tier's tree priced again inside every other's): the least tier of the
+         * pickaxes whose own price {@link #cheapestPickaxe} is computing now (0: none). Inside it only pickaxes below that tier
+         * are ways: one of that tier or better, made to make this one, already meets the outer requirement alone and costs
+         * less (pickInside). Review 2 (rule 20: the old floor - the requirement's tier - also cut stone_pickaxe <- wooden_pickaxe
+         * for a tier-1 dig, a way that won in 9 worlds): a lower tier inside a higher one's price is priced as before.
+         */
+        int pickCap;
+        /** job-plan-budget: ways priced in this resolve, reused nodes' ways counted too (planner.maxWays; never restored). */
+        int ways;
+        /** job-plan-budget: the deepest need chain priced so far in this resolve (the budget's failure names it; never restored). */
+        String deepest = "";
+        int deepestN;
         /**
          * 0.39.z61 (D1 J2): a craft / smelt step (this very object) -> what the simulated bag took for it, by the recipe slot's
          * need word. Keyed by identity: a dropped way's steps simply never reach the chain (no restore needed).
@@ -1965,12 +2024,12 @@ public final class NeedChain {
                          boolean tableReady, boolean furnaceReady, boolean stuck, String unknown, String pickItem, int pickTier, boolean tableWalked,
                          boolean furnaceWalked, int pickWorn, boolean pickMade, boolean pickOut, boolean atRoom, String down, int downAt,
                          boolean tableDown, boolean furnaceDown, Map<String, Integer> upBag, List<String> path, int pathsWaiting, Map<String, Integer> aside,
-                         boolean hoisting, boolean bandPick, boolean climbPick, boolean lending, Burn burned, String fail, String loopOn, Set<String> keptFuel) {}
+                         boolean hoisting, boolean bandPick, boolean climbPick, boolean lending, int pickCap, Burn burned, String fail, String loopOn, Set<String> keptFuel) {}
 
     /** A cheap hash of an entry state (its sizes and scalars; equal entries hash equal, a clash is settled by Deep.equal). */
     private static int hashOf(Entry e) {
         int steps = e.steps() instanceof List<?> l ? l.size() : (Integer) e.steps();
-        int h = java.util.Objects.hash(steps, e.pickItem(), e.pickTier(), e.pickWorn(),
+        int h = java.util.Objects.hash(steps, e.pickItem(), e.pickTier(), e.pickWorn(), e.pickCap(),
                 e.down(), e.downAt(), e.path(), e.pathsWaiting(), e.fail(), e.loopOn(), e.unknown(), e.leafAt().size(), e.taken().size());
         int flags = (e.tableReady() ? 1 : 0) | (e.furnaceReady() ? 2 : 0) | (e.stuck() ? 4 : 0) | (e.tableWalked() ? 8 : 0) | (e.furnaceWalked() ? 16 : 0)    // structural: bits
                 | (e.pickMade() ? 32 : 0) | (e.pickOut() ? 64 : 0) | (e.atRoom() ? 128 : 0) | (e.tableDown() ? 256 : 0) | (e.furnaceDown() ? 512 : 0)       // structural: bits
@@ -1989,6 +2048,7 @@ public final class NeedChain {
         private final int pathsWaiting;
         private final Map<String, Integer> aside;
         private final boolean hoisting, bandPick, climbPick, lending;
+        private final int pickCap;
         private final Burn burned;
         private final String fail, loopOn;
         private final Set<String> kept;
@@ -2003,6 +2063,7 @@ public final class NeedChain {
             bandPick = c.bandPick;
             climbPick = c.climbPick;          // stage 4 review 3: a node priced inside a climb's pickaxe-first is not reused outside it
             lending = c.lending;              // review 4: a node priced inside a lend's collect again (no lend there) is not reused outside it
+            pickCap = c.pickCap;          // job-plan-budget: a node priced inside a pickaxe requirement's ways is not reused outside it
             burned = c.burned;
             fail = c.fail;
             loopOn = c.loopOn;
@@ -2015,7 +2076,7 @@ public final class NeedChain {
             if (e[i] == null) e[i] = new Entry(fullSteps ? s.steps() : (Object) s.steps().size(), s.leafAt(), s.taken(), awayRead ? s.away() : null,
                     s.tableReady(), s.furnaceReady(), s.stuck(), s.unknown(), s.pickItem(), s.pickTier(), s.tableWalked(), s.furnaceWalked(), s.pickWorn(),
                     s.pickMade(), s.pickOut(), s.atRoom(), s.down(), s.downAt(), s.tableDown(), s.furnaceDown(), s.upBag(), path, pathsWaiting, aside,
-                    hoisting, bandPick, climbPick, lending, burned, fail, loopOn, kept);
+                    hoisting, bandPick, climbPick, lending, pickCap, burned, fail, loopOn, kept);
             return e[i];
         }
 
@@ -2054,7 +2115,7 @@ public final class NeedChain {
      */
     private record Out(Object value, Ctx.Snap after, String fail, String loopOn, int pathsWaiting, Burn burned, Map<String, Integer> aside,
                        boolean hoisting, boolean bandPick, List<Map.Entry<String, Integer>> bagOut, int made, Map<String, Walked> walkOut,
-                       List<Object[]> unreach, List<String> waited, int trialsOff, int[] stepMap, List<Step> newSteps,
+                       List<Object[]> unreach, List<String> waited, int trialsOff, int waysOff, int[] stepMap, List<Step> newSteps,
                        Map<Integer, Map<String, Integer>> entryUses, Map<Integer, Map<String, Integer>> newUses, Map<Integer, Object> newMarks,
                        String altId, Burn altBurned, int rankDelta, double ownS, List<String> droppedAdd, List<String> sparesAdd, boolean awayWritten) {}
 
@@ -2102,7 +2163,7 @@ public final class NeedChain {
         Map<String, Walked> walkOut = new LinkedHashMap<>();
         for (String k : f.walkWrites) walkOut.put(k, c.walks.get(k));
         return new Out(value, after, c.fail, c.loopOn, c.pathsWaiting, c.burned, new LinkedHashMap<>(c.aside), c.hoisting, c.bandPick, bagOut, made, walkOut,
-                List.copyOf(f.unreach), List.copyOf(c.waited.subList(f.waitedAt, c.waited.size())), c.trials - f.entryTrials, map, news, entryUses, newUses, marks,
+                List.copyOf(f.unreach), List.copyOf(c.waited.subList(f.waitedAt, c.waited.size())), c.trials - f.entryTrials, c.ways - f.entryWays, map, news, entryUses, newUses, marks,
                 alt == null ? null : alt.id, alt == null ? null : alt.burned, alt == null || alt.rk == null ? 0 : alt.rk.asked - rankAt,
                 c.seconds - entry.seconds(), List.copyOf(c.dropped.subList(Math.min(entry.dropped().size(), c.dropped.size()), c.dropped.size())),
                 List.copyOf(c.spares.subList(Math.min(entry.spares().size(), c.spares.size()), c.spares.size())), f.awayWritten);
@@ -2196,6 +2257,7 @@ public final class NeedChain {
         PlanNodes.Frame f = c.run.open(n);
         f.old = old;
         f.entryTrials = c.trials;
+        f.entryWays = c.ways;
         f.entryBag = s.bag();
         f.waitedAt = c.waited.size();
         f.droppedAt = c.dropped.size();
@@ -2320,6 +2382,7 @@ public final class NeedChain {
         }
         PlanNodes.reusedInto(n, f, trials, written, made, o.walkOut().keySet());
         for (PlanNodes.Effect e : n.effects) c.run.effect(e);
+        counted(c, o.waysOff());           // job-plan-budget: a reused node's ways count as its resolve's (the same bound either way)
         return o.value();
     }
 
@@ -2356,7 +2419,7 @@ public final class NeedChain {
         Map<String, String> unreach0 = new LinkedHashMap<>(c.unreachable);
         List<String> waited0 = new ArrayList<>(c.waited);
         Ctx.Snap snap0 = c.snap();
-        int trials0 = c.trials, pw0 = c.pathsWaiting;
+        int trials0 = c.trials, pw0 = c.pathsWaiting, ways0 = c.ways;
         String fail0 = c.fail, loop0 = c.loopOn;
         Burn burned0 = c.burned;
         Map<String, Integer> aside0 = new LinkedHashMap<>(c.aside);
@@ -2377,7 +2440,7 @@ public final class NeedChain {
         c.walks.clear(); c.walks.putAll(walks0);
         c.unreachable.clear(); c.unreachable.putAll(unreach0);
         c.waited.clear(); c.waited.addAll(waited0);
-        c.trials = trials0; c.pathsWaiting = pw0; c.fail = fail0; c.loopOn = loop0; c.burned = burned0;
+        c.trials = trials0; c.pathsWaiting = pw0; c.fail = fail0; c.loopOn = loop0; c.burned = burned0; c.ways = ways0;
         c.aside.clear(); c.aside.putAll(aside0);
         c.hoisting = hoist0; c.bandPick = band0;
         if (alt != null) { alt.id = id0; alt.burned = ab0; if (alt.rk != null) alt.rk.asked = rank0; }
@@ -2403,8 +2466,39 @@ public final class NeedChain {
      * {@code w} - the stored result handed out as fresh copies ({@code fresh}) - else resolved by {@code body}, its kept
      * children reused where their facts hold. {@link PlanNodes#old}, a trace (aa debug), or no World: {@code body} as before D6.
      */
+    private static <T> T root(String kind, Object args, World w, Function<Ctx, T> body, java.util.function.UnaryOperator<T> fresh, Function<String, T> tooLarge) {
+        String req = kind + " " + args;
+        try {
+            T out = rootIn(kind, args, w, body, fresh);
+            TOO_LARGE_SAID.remove(req);              // review 1 item 5: resolved within the bound, a later "too large" is said again
+            return out;
+        } catch (TooLarge e) {
+            // job-plan-budget (rule 7): the resolve past planner.maxWays fails with its count and its deepest chain. Review 1
+            // item 5: said once while the request stays too large (the count is nearly always planner.maxWays + 1, so it is the
+            // deepest chain that tells one failure from another: said again when it changes, and again after the request
+            // resolved within the bound once), in the aa log's own form (the testers' per-run lines are the "aa: " ones)
+            String why = e.getMessage();
+            if (!e.deepest.equals(TOO_LARGE_SAID.put(req, e.deepest))) {
+                if (TOO_LARGE_SAID.size() > TOO_LARGE_SAID_MAX) { TOO_LARGE_SAID.clear(); TOO_LARGE_SAID.put(req, e.deepest); }
+                com.mojang.logging.LogUtils.getLogger().warn("[entropybot] aa: planner: " + req + ": " + why);
+            }
+            return tooLarge.apply(why);
+        }
+    }
+
+    /** job-plan-budget: the too-large failures said and not yet resolved within the bound (request -> its deepest chain). */
+    private static final Map<String, String> TOO_LARGE_SAID = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /** structural: a memory bound on {@link #TOO_LARGE_SAID} (cleared past it; a failure may then be said once more). */
+    private static final int TOO_LARGE_SAID_MAX = 256;
+
+    /** job-plan-budget: the failed chain of a resolve past planner.maxWays ({@code name}: the asked word), no step in it. */
+    static Chain tooLargeChain(String name, String why) {
+        return new Chain(List.of(), 0, name + ": " + why, false, why, List.of(), Map.of(), List.of(), "", List.of());
+    }
+
     @SuppressWarnings("unchecked")
-    private static <T> T root(String kind, Object args, World w, Function<Ctx, T> body, java.util.function.UnaryOperator<T> fresh) {
+    private static <T> T rootIn(String kind, Object args, World w, Function<Ctx, T> body, java.util.function.UnaryOperator<T> fresh) {
         if (PlanNodes.isOld() || TRACE.get() != null || w == null) return body.apply(new Ctx(w));
         PlanNodes p = PlanNodes.mine();
         p.epoch(epoch(w));
@@ -2436,6 +2530,18 @@ public final class NeedChain {
         T out;
         try {
             out = body.apply(new Ctx(w, run));
+        } catch (TooLarge e) {
+            // job-plan-budget: no node of it is kept (not the root). Review 1 (serious: the record held the root frame's own facts
+            // only - the child frames' facts stay theirs when they close - so on the worker a kept "plan too large" outlived a
+            // source seen or a walk priced deep in the cut tree): the record is every fact the run asked (Run.now: each read
+            // and each kept node's check), so the port checks the failure on all of them and a change asks again. Review 1
+            // item 4: the effects the cut tree met go with it as on the tick, where Run.effect ran each as it was met (the
+            // same path requests either way)
+            PlanNodes.Stats st = new PlanNodes.Stats(f.size, run.computed, run.reusedN, run.dirty);
+            p.last(st);
+            LAST.set(new Read(new LinkedHashMap<>(run.now), new LinkedHashMap<>(f.bagReads), new LinkedHashMap<>(f.scans), f.whole ? bag0 : null,
+                    run.defer ? List.copyOf(run.deferred) : List.of(), st, PlanNodes.FactNodes.NONE));
+            throw e;
         } finally {
             run.top = null;
         }
@@ -2572,7 +2678,7 @@ public final class NeedChain {
      * ("#minecraft:planks", or an id the game has no item for but a tag of: "planks"): any member (TAG_NEEDS).
      */
     public static Chain resolve(String what, int n, World w) {
-        return root("resolve", java.util.Arrays.asList(what, n), w, c -> resolveIn(c, what, n), NeedChain::fresh);    // 0.39.z78 D6: a request node
+        return root("resolve", java.util.Arrays.asList(what, n), w, c -> resolveIn(c, what, n), NeedChain::fresh, why -> tooLargeChain(shw(what), why));    // 0.39.z78 D6: a request node
     }
 
     private static Chain resolveIn(Ctx c, String what, int n) {
@@ -2613,7 +2719,7 @@ public final class NeedChain {
     public static Chain resolveAny(String label, List<String> items, int n, World w, ToDoubleFunction<String> energy) {
         // 0.39.z78 D6: a request node (the energy is the game's data by the caller's function, its class the key)
         return root("any", java.util.Arrays.asList(label, items == null ? null : List.copyOf(items), n, energy == null ? null : energy.getClass().getName()), w,
-                c -> resolveAnyIn(c, label, items, n, energy), NeedChain::fresh);
+                c -> resolveAnyIn(c, label, items, n, energy), NeedChain::fresh, why -> tooLargeChain(label, why));
     }
 
     private static Chain resolveAnyIn(Ctx c, String label, List<String> items, int n, ToDoubleFunction<String> energy) {
@@ -2635,7 +2741,7 @@ public final class NeedChain {
      * member stands without one. When every member ends in an explore the chain is the first one's, ending in that explore.
      */
     public static Chain resolveAll(String group, List<String> items, int n, World w) {
-        return root("all", java.util.Arrays.asList(group, items == null ? null : List.copyOf(items), n), w, c -> resolveAllIn(c, group, items, n), NeedChain::fresh);   // 0.39.z78 D6
+        return root("all", java.util.Arrays.asList(group, items == null ? null : List.copyOf(items), n), w, c -> resolveAllIn(c, group, items, n), NeedChain::fresh, why -> tooLargeChain(group, why));   // 0.39.z78 D6
     }
 
     private static Chain resolveAllIn(Ctx c, String group, List<String> items, int n) {
@@ -2671,7 +2777,7 @@ public final class NeedChain {
 
     /** The cheapest pickaxe of at least {@code tier} (the game's pickaxes tag) as a chain of its own: what a dig of a block that asks for that tier pulls in. */
     public static Chain resolveTool(int tier, World w) {
-        return root("tool", List.of(tier), w, c -> resolveToolIn(c, tier), NeedChain::fresh);        // 0.39.z78 D6: a request node
+        return root("tool", List.of(tier), w, c -> resolveToolIn(c, tier), NeedChain::fresh, why -> tooLargeChain("a pickaxe of tier " + tier, why));        // 0.39.z78 D6: a request node
     }
 
     private static Chain resolveToolIn(Ctx c, int tier) {
@@ -2697,7 +2803,7 @@ public final class NeedChain {
     public static Chain deposit(Map<String, Integer> owedIds, io.github.mojolowjo.entropybot.aa.brain.MainChest.Answer chest, World w) {
         Map<String, Integer> owed = new TreeMap<>();
         if (owedIds != null) for (var e : owedIds.entrySet()) if (e.getValue() != null && e.getValue() > 0) owed.merge(id(e.getKey()), e.getValue(), Integer::sum);
-        return root("deposit", java.util.Arrays.asList(owed, chest), w, c -> depositIn(c, owed, chest), NeedChain::fresh);
+        return root("deposit", java.util.Arrays.asList(owed, chest), w, c -> depositIn(c, owed, chest), NeedChain::fresh, why -> tooLargeChain("deposit", why));
     }
 
     /** deposit-goal stage 2: the words of a chest walk not offered from under ground (rule 22). */
@@ -2843,7 +2949,8 @@ public final class NeedChain {
     }
 
     public static Legs resolvePlaybookLegs(Playbook pb, World w) {
-        return root("playbook", java.util.Arrays.asList(pb), w, c -> playbookLegsIn(c, pb), NeedChain::fresh);      // 0.39.z78 D6: a request node
+        return root("playbook", java.util.Arrays.asList(pb), w, c -> playbookLegsIn(c, pb), NeedChain::fresh,
+                why -> new Legs(tooLargeChain("playbook", why), Map.of()));      // 0.39.z78 D6: a request node
     }
 
     private static Legs playbookLegsIn(Ctx c, Playbook pb) {
@@ -3380,7 +3487,8 @@ public final class NeedChain {
 
     /** 0.39.z77 J2: {@link #resolve} of an item with the simulated bag it leaves (item id -> count; a way's own tokens left out). */
     public static Priced resolveWithBag(String what, int n, World w) {
-        return root("with bag", java.util.Arrays.asList(what, n), w, c -> withBagIn(c, what, n), pr -> new Priced(fresh(pr.chain()), pr.bagAfter()));   // 0.39.z78 D6
+        return root("with bag", java.util.Arrays.asList(what, n), w, c -> withBagIn(c, what, n), pr -> new Priced(fresh(pr.chain()), pr.bagAfter()),
+                why -> new Priced(tooLargeChain(shw(what), why), Map.of()));   // 0.39.z78 D6
     }
 
     private static Priced withBagIn(Ctx c, String what, int n) {
@@ -3539,6 +3647,7 @@ public final class NeedChain {
         try {
             for (int i = 0; i < alts.size(); i++) {
                 if (c.overBound() && trials.stream().anyMatch(t -> t.fail() == null && !t.stuck())) { skipped = i; break; }
+                counted(c, 1);                                   // job-plan-budget: planner.maxWays, past it the resolve fails (said)
                 Ctx.Snap s0 = c.snap();
                 double base = c.seconds;
                 double w0 = c.partWalk, d0 = c.partDig;          // job-est: the way's parts for debug.wayProbe
@@ -6208,12 +6317,21 @@ public final class NeedChain {
             c.addS(sec);
             c.bag.merge(lend, -n, Integer::sum);
             boolean was = c.lending;
+            int floor0 = c.pickCap;
             c.lending = true;
+            // job-plan-budget review 1 (serious): the collect again is a debt this way pays before it can finish - inside a
+            // pickaxe's price (the bot under ground with no pickaxe, the wooden pickaxe's logs on the surface) its pickaxe
+            // need is priced, the pickaxe's own tier among its ways (the recursion is bounded by c.lending, no lend inside it).
+            // Review 2: a better tier than the one being priced is still cut there - made to pay this one's debt, it meets the
+            // outer need alone, its own way without this one on top (pickInside); cutting it took the lend case from 10873
+            // ways a resolve to the figure in PlanBudgetTest
+            if (floor0 > 0) c.pickCap = floor0 + 1;          // structural: "this tier or below" as a cap below the next tier
             String back;
             try {
                 back = obtain(c, lend, before);
             } finally {
                 c.lending = was;
+                c.pickCap = floor0;
             }
             if (c.fail != null) return null;
             if (c.stuck) { c.fail = "the " + n + " lent " + shw(lend) + " have no known source to collect again (an explore)"; return null; }
@@ -8061,12 +8179,36 @@ public final class NeedChain {
         }
     }
 
+    /**
+     * job-plan-budget (worlds run 4, w084:3109 and w052:1700: "diamond_pickaxe <- 3 diamond <- ... with iron_pickaxe <- ... after
+     * stone_pickaxe <- ... with wooden_pickaxe", 4000 ways a chain and past it): the reason a pickaxe of {@code tier} or better
+     * is not priced inside the ways of a pickaxe requirement of tier {@code floor} <= {@code tier} - any pickaxe this one
+     * would find meets that requirement itself, and it is one of that requirement's own ways, priced there without this
+     * way's other costs on top. Pure.
+     */
+    static String pickInside(int tier, int cap) {
+        return "a pickaxe of tier " + tier + " is needed inside the price of a pickaxe of tier " + cap + ": one of tier " + cap
+                + " or better made first meets the outer need alone (its own way, cheaper without this one on top)";
+    }
+
     private static String cheapestPickaxe(Ctx c, int tier) {
+        // job-plan-budget review 2: inside a pickaxe's own price only lower tiers are ways (pickCap)
+        if (c.pickCap > 0 && c.pickCap <= tier) { c.fail = pickInside(tier, c.pickCap); return null; }
         List<Alt> alts = new ArrayList<>();
         for (String pid : new TreeSet<>(ItemWorth.itemsIn("pickaxes"))) {
             int t = MiningTiers.toolTier(pid, "pickaxe");
             if (t < tier || ItemWorth.recipes(pid, ItemWorth.CRAFT).isEmpty()) continue;
-            Alt a = new Alt(sh(pid), () -> obtain(c, pid, 1));
+            int cap = c.pickCap;
+            if (cap > 0 && t >= cap) { c.note(() -> "way " + sh(pid) + " -> dropped: " + pickInside(t, cap)); continue; }
+            Alt a = new Alt(sh(pid), () -> {
+                int cap0 = c.pickCap;
+                c.pickCap = t;                               // inside this pickaxe's price: only pickaxes below its tier
+                try {
+                    return obtain(c, pid, 1);
+                } finally {
+                    c.pickCap = cap0;
+                }
+            });
             a.id = pid; a.tier = t; a.work = rawWork(pid, new ArrayList<>());
             alts.add(a);
         }

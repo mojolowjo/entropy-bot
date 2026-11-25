@@ -60,7 +60,8 @@ class SimWorldsTest {
         assertTrue(files.size() >= 100, "100 world files: " + files.size());
         Map<String, Integer> ends = new TreeMap<>();
         StringBuilder table = new StringBuilder();
-        int whole = 0, threw = 0, drops = 0;
+        int whole = 0, threw = 0, drops = 0, tooLarge = 0, mostWays = 0;
+        String mostAt = "-";
         StringBuilder dropLines = new StringBuilder();
         long t0 = System.currentTimeMillis();
         for (Path f : files) {
@@ -70,6 +71,7 @@ class SimWorldsTest {
             double secs = 0;
             Map<String, Integer> chest = Map.of();
             List<String> planned = List.of();
+            io.github.mojolowjo.entropybot.aa.NeedChain.mostWays(true);      // job-plan-budget: this game's largest resolve
             try {
                 SimGame g = SimGame.of(Scenario.read(f));
                 planned = g.planner.drops;
@@ -87,6 +89,7 @@ class SimWorldsTest {
                 secs = g.seconds();
                 chest = g.chest;
                 dep = g.depositColumn();            // deposit-goal stage 3: the way the deposit took, its runs (re-plans)
+                if (g.timelineText().contains(io.github.mojolowjo.entropybot.aa.NeedChain.TOO_LARGE)) tooLarge++;   // job-plan-budget: the bound never met here
                 if (chest.getOrDefault("minecraft:cobblestone", 0) == 32 && chest.getOrDefault("minecraft:torch", 0) == 4 && chest.getOrDefault("minecraft:" + log, 0) == 16) whole++;
             } catch (IllegalArgumentException e) {
                 // the tests' item data does not know this wood (mangrove): the simulator's gap, said, not a fault
@@ -95,6 +98,8 @@ class SimWorldsTest {
                 threw++;
                 end = "THREW " + e + " at " + io.github.mojolowjo.entropybot.Quiet.where(e);
             }
+            int mw = io.github.mojolowjo.entropybot.aa.NeedChain.mostWays(false);
+            if (mw > mostWays) { mostWays = mw; mostAt = name; }
             String kind = end.replaceAll("[-\\d]+", "N");
             if (kind.length() > 90) kind = kind.substring(0, 90);
             ends.merge(kind, 1, Integer::sum);
@@ -111,8 +116,10 @@ class SimWorldsTest {
         StringBuilder sum = new StringBuilder();
         ends.entrySet().stream().sorted((a, b) -> b.getValue() - a.getValue()).forEach(e -> sum.append(String.format("%3d  %s%n", e.getValue(), e.getKey())));
         System.out.println("WORLDS\n" + table + "ENDS\n" + sum + "whole line in the chest: " + whole + " of " + files.size() + "; threw " + threw
-                + "; planner drops " + drops + "; computed in " + (System.currentTimeMillis() - t0) / 1000 + " s" + (drops == 0 ? "" : "\nDROPS\n" + dropLines));
+                + "; planner drops " + drops + "; computed in " + (System.currentTimeMillis() - t0) / 1000 + " s" + (drops == 0 ? "" : "\nDROPS\n" + dropLines)
+                + "\nPLANNER most ways a resolve " + mostWays + " (" + mostAt + "), planner.maxWays " + io.github.mojolowjo.entropybot.aa.NeedChain.maxWays() + "; plans too large " + tooLarge);
         assertEquals(0, threw, "a game threw (a fault in the simulator or the mod, never an end):\n" + table);
+        assertEquals(0, tooLarge, "job-plan-budget: a resolve met planner.maxWays in the 100 worlds (the bound is the last line of defence, never a plan's end here)");
         assertEquals(0, drops, "the planner dropped answers in worlds that stood still while it thought (the game waits planner.dropsBeforeTake worker rounds for each):\n" + dropLines);
         assertTrue(whole >= WHOLE_FLOOR, "the whole line reached the chest in " + whole + " of " + files.size() + " games, under the floor of " + WHOLE_FLOOR
                 + " (the last runs: 67):\n" + table);
