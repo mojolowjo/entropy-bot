@@ -60,7 +60,8 @@ class SimWorldsTest {
         assertTrue(files.size() >= 100, "100 world files: " + files.size());
         Map<String, Integer> ends = new TreeMap<>();
         StringBuilder table = new StringBuilder();
-        int whole = 0, threw = 0;
+        int whole = 0, threw = 0, drops = 0;
+        StringBuilder dropLines = new StringBuilder();
         long t0 = System.currentTimeMillis();
         for (Path f : files) {
             clear();
@@ -68,8 +69,10 @@ class SimWorldsTest {
             String end, wood = null;
             double secs = 0;
             Map<String, Integer> chest = Map.of();
+            List<String> planned = List.of();
             try {
                 SimGame g = SimGame.of(Scenario.read(f));
+                planned = g.planner.drops;
                 wood = wood(g);
                 // the main chest two blocks from the feet, on the feet's level (the testers' staging, shortened)
                 int[] c = {g.feet[0] + 2, g.feet[1], g.feet[2]};
@@ -94,14 +97,22 @@ class SimWorldsTest {
             String kind = end.replaceAll("[-\\d]+", "N");
             if (kind.length() > 90) kind = kind.substring(0, 90);
             ends.merge(kind, 1, Integer::sum);
-            table.append(String.format(java.util.Locale.ROOT, "%s wood %-12s %6.0f s  %s | chest %s%n", name, wood == null ? "none seen" : wood.replace("minecraft:", ""), secs,
-                    end.length() > 130 ? end.substring(0, 130) : end, chest));
+            // job-own-aside-worker review: the planner's drops (SyncPlanner takes an answer on its first drop, where the game
+            // waits planner.dropsBeforeTake worker rounds) are a planner fault in a world that stands still while it thinks -
+            // a column on the game's line (only when there are any, so the earlier tables compare) and a count held below
+            if (!planned.isEmpty()) {
+                drops += planned.size();
+                dropLines.append(name).append(": ").append(planned.get(0)).append('\n');
+            }
+            table.append(String.format(java.util.Locale.ROOT, "%s wood %-12s %6.0f s  %s | chest %s%s%n", name, wood == null ? "none seen" : wood.replace("minecraft:", ""), secs,
+                    end.length() > 130 ? end.substring(0, 130) : end, chest, planned.isEmpty() ? "" : " | planner drops " + planned.size()));
         }
         StringBuilder sum = new StringBuilder();
         ends.entrySet().stream().sorted((a, b) -> b.getValue() - a.getValue()).forEach(e -> sum.append(String.format("%3d  %s%n", e.getValue(), e.getKey())));
         System.out.println("WORLDS\n" + table + "ENDS\n" + sum + "whole line in the chest: " + whole + " of " + files.size() + "; threw " + threw
-                + "; computed in " + (System.currentTimeMillis() - t0) / 1000 + " s");
+                + "; planner drops " + drops + "; computed in " + (System.currentTimeMillis() - t0) / 1000 + " s" + (drops == 0 ? "" : "\nDROPS\n" + dropLines));
         assertEquals(0, threw, "a game threw (a fault in the simulator or the mod, never an end):\n" + table);
+        assertEquals(0, drops, "the planner dropped answers in worlds that stood still while it thought (the game waits planner.dropsBeforeTake worker rounds for each):\n" + dropLines);
         assertTrue(whole >= WHOLE_FLOOR, "the whole line reached the chest in " + whole + " of " + files.size() + " games, under the floor of " + WHOLE_FLOOR
                 + " (the last runs: 67):\n" + table);
     }

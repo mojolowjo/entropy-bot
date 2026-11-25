@@ -99,17 +99,46 @@ public final class BatchWay {
          * (bag key to count, Goals.ownAside: the order's own held -d amount) is taken off {@code w}'s bag first, so the worker
          * and the tick price the same world and {@code n} is already the rest.
          */
-        public NeedChain.Chain resolve(NeedChain.World w) {
+        public NeedChain.Chain resolve(NeedChain.World w) { return resolve(w, w == null ? null : NeedChain.liveBag(w)); }
+
+        /**
+         * job-own-aside-worker review (key order): {@link #resolve(NeedChain.World)} with {@code liveOrder} the bag of
+         * {@code w} in the live World's order (the tick: NeedChain.liveBag of the live World; the worker: its snapshot's
+         * bag). The resolve starts from {@link #bagLess} of it, never from the bag of {@link #pricedOn}'s World made again
+         * (Map.copyOf re-orders it): the first fuel or pickaxe a scan finds is the same whoever resolves.
+         */
+        public NeedChain.Chain resolve(NeedChain.World w, Map<String, Integer> liveOrder) {
             NeedChain.World on = pricedOn(w);
-            return group ? NeedChain.resolveAll(what, ids, n, on) : NeedChain.resolve(what, n, on);
+            java.util.function.Supplier<NeedChain.Chain> run = () -> group ? NeedChain.resolveAll(what, ids, n, on) : NeedChain.resolve(what, n, on);
+            if (aside.isEmpty() || liveOrder == null) return run.get();
+            return NeedChain.startingFrom(bagLess(liveOrder), run);
         }
 
         /** The world {@link #resolve} prices on: {@code w} with {@code aside} off its bag. */
         public NeedChain.World pricedOn(NeedChain.World w) {
             if (aside.isEmpty() || w == null) return w;
-            Map<String, Integer> bag = new java.util.LinkedHashMap<>(w.bag());
-            for (var e : aside.entrySet()) bag.computeIfPresent(e.getKey(), (k, v) -> Math.max(0, v - e.getValue()));
-            return w.withBag(bag);
+            return w.withBag(lowered(w.bag()));
+        }
+
+        /**
+         * job-own-aside-worker (worlds run 4, w003/w007/w010/w055/w057/w058/w063: the worker started the resolve from the
+         * snapshot's whole live bag, so the held amount counted twice - the ask was the rest, the bag still showed it all, the
+         * order parked "oak_log is in the bag"): the bag a resolve of this ask starts from on the planner worker
+         * (NeedChain.offThread's bag): {@code bag} (the snapshot's live bag, in its order) with {@code aside} off, the words
+         * held at 0 left out as NeedChain.liveBag leaves them out. The same lowering as {@link #pricedOn}: one answer whoever
+         * resolves.
+         */
+        public java.util.LinkedHashMap<String, Integer> bagLess(Map<String, Integer> bag) {
+            java.util.LinkedHashMap<String, Integer> out = lowered(bag);
+            out.values().removeIf(v -> v == null || v <= 0);
+            return out;
+        }
+
+        /** {@code bag} with {@code aside} off each word, clamped at 0, in its order. */
+        private java.util.LinkedHashMap<String, Integer> lowered(Map<String, Integer> bag) {
+            java.util.LinkedHashMap<String, Integer> out = new java.util.LinkedHashMap<>(bag);
+            for (var e : aside.entrySet()) out.computeIfPresent(e.getKey(), (k, v) -> Math.max(0, v - e.getValue()));
+            return out;
         }
     }
 

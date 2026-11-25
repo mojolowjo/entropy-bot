@@ -1625,6 +1625,21 @@ public final class NeedChain {
         }
     }
 
+    /**
+     * job-own-aside-worker review (key order): {@code run} with {@code bag} as the bag every resolve in it starts from (as
+     * {@link #offThread} gives the worker its snapshot's), nothing else changed - the client tick's own ask, whose World
+     * with the held -d amount off is made again and so loses the live order (Map.copyOf) the worker keeps.
+     */
+    public static <T> T startingFrom(LinkedHashMap<String, Integer> bag, Supplier<T> run) {
+        LinkedHashMap<String, Integer> wasBag = BAG.get();
+        BAG.set(bag);
+        try {
+            return run.get();
+        } finally {
+            if (wasBag == null) BAG.remove(); else BAG.set(wasBag);
+        }
+    }
+
     /** 0.39.z78 D6: a fact's answer on {@code w} now (the snapshot's copy, the check of a result; {@code x} null: the live extras). */
     public static Object ask(World w, Extras x, PlanNodes.Fact f) { return Facts.ask(w, x == null ? Extras.LIVE : x, f); }
 
@@ -1646,15 +1661,28 @@ public final class NeedChain {
         public static final Read NONE = new Read(Map.of(), Map.of(), Map.of(), null, List.of(), PlanNodes.Stats.NONE, PlanNodes.FactNodes.NONE);
 
         /** The nodes of the resolve's tree a fact that now answers otherwise ({@code live}: the answers asked now) makes dirty; the bag: its root. */
-        public int dirty(Map<PlanNodes.Fact, Object> live, World w) {
+        public int dirty(Map<PlanNodes.Fact, Object> live, World w) { return dirty(live, liveBag(w)); }
+
+        /**
+         * job-own-aside-worker review: {@link #dirty(Map, World)} against {@code start}, the bag the resolve would start from
+         * now in the live order (an own chain's: the live bag less its held -d amount, BatchWay.OwnAsk#bagLess).
+         */
+        public int dirty(Map<PlanNodes.Fact, Object> live, Map<String, Integer> start) {
             Set<PlanNodes.Fact> changed = new java.util.HashSet<>();
             for (var e : facts.entrySet()) if (live.containsKey(e.getKey()) && !Deep.equal(PlanNodes.unboxed(e.getValue()), live.get(e.getKey()))) changed.add(e.getKey());
             int n = nodes.dirty(changed);
-            return n == 0 && bagChanged(w) != null ? 1 : n;
+            return n == 0 && bagChanged(start) != null ? 1 : n;
         }
 
         /** The first bag word that differs on {@code w}'s bag now ("bag minecraft:coal"), null: none. */
-        public String bagChanged(World w) { return NeedChain.bagChanged(liveBag(w), bag, scans, wholeBag); }
+        public String bagChanged(World w) { return bagChanged(liveBag(w)); }
+
+        /**
+         * job-own-aside-worker review (key order: a World made again re-orders its bag, and the scans and the whole bag are
+         * compared in order): the first bag word that differs on {@code start}, the bag the resolve would start from now in
+         * the live order; null: none.
+         */
+        public String bagChanged(Map<String, Integer> start) { return NeedChain.bagChanged(start, bag, scans, wholeBag); }
 
         /** Runs the kept effects (the strip yield facts, the ranked-out walks) on the client tick, {@code path} the live provider. */
         public void runEffects(PathPrice path) { for (PlanNodes.Effect e : effects) e.run(path); }
@@ -5643,9 +5671,12 @@ public final class NeedChain {
             if (c.fail != null) return null;
             if (c.stuck) return "dig " + shw(gives) + " seen " + Math.round(first.dist()) + " m (after " + pre + ")";      // the pickaxe's own source is still to find: the chain ends at that explore
         }
-        if (pre == null && tier >= 1) {
-            pre = wornPickaxe(c, word, gives, lack, order, log, tier);
+        // job-own-aside-worker (worlds run 4, w006): the pickaxe just made for this tier is checked too - its uses are known
+        // (a new one's), so a take, cover and climb past them get the replacement priced here, before going down
+        if (tier >= 1) {
+            String worn = wornPickaxe(c, word, gives, lack, order, log, tier);
             if (c.fail != null) return null;
+            if (worn != null) pre = pre == null ? worn : pre + ", then " + worn;
             if (c.stuck) return "dig " + shw(gives) + " seen " + Math.round(first.dist()) + " m (after " + pre + ")";
         }
         // 0.39.z37 (S39): a tool made first out of the asked item's own stock (the pickaxe takes 3 of the bag's cobblestone)
@@ -6274,7 +6305,10 @@ public final class NeedChain {
      * new pickaxe's phrase, null: none inserted.
      */
     private static String wornPickaxe(Ctx c, String word, String gives, int lack, List<Spot> order, boolean log, int tier) {
-        if (log || c.pickItem == null || c.pickMade) return null;
+        // job-own-aside-worker (worlds run 4, w006: "69 pickaxe uses needed, 11 left, no replacement under ground" on every
+        // covered spot, the first plan 64 s): a pickaxe made in this chain is counted too - its uses are known (heldUses: its
+        // MAX_DAMAGE, less this chain's wear), so the replacement is priced before going down as for the held one
+        if (log || c.pickItem == null) return null;
         String tool = c.pickItem;
         // review 3 item 5: the one reader - the held one's uses and the bag's other pickaxes', less this chain's wear
         // review 4 (serious): the uses of the pickaxes that dig the take's tier (a wooden spare never covers an iron take)
