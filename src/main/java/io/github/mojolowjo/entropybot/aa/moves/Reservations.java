@@ -77,7 +77,49 @@ public record Reservations(List<Reserves.Reserve<String>> list, String unknown, 
             }
         }
         if (orders != null) out.addAll(orders);
+        if (from >= 0 && from < steps.size() && steps.get(from) instanceof Step.Climb k && k.lend() > 0) notes.add(lend(out, k));
         return new Reservations(out, unknown.isEmpty() ? null : String.join("; ", unknown), notes.isEmpty() ? null : String.join("; ", notes));
+    }
+
+    /**
+     * pickaxe price (c): the running climb's lend - the reserves naming {@code k.lendItem()} lowered by {@code k.lend()} in all,
+     * the orders' first (a -d amount kept for a deposit), then the steps' in their order; a whole reserve (rule 15: not loaded)
+     * is never lent from. The plan collects the lent blocks again right after the climb, so the next step's table is whole
+     * again. Returns the note's words (what was lent from whom, or what could not be: said, rule 7).
+     */
+    static String lend(List<Reserves.Reserve<String>> out, Step.Climb k) {
+        String item = StepNeeds.full(k.lendItem());
+        int left = k.lend();
+        List<String> said = new ArrayList<>();
+        for (int pass = 0; pass < 2 && left > 0; pass++) {      // structural: pass 0 the orders, pass 1 the steps
+            for (int i = 0; i < out.size() && left > 0; i++) {
+                var r = out.get(i);
+                if ((r.kind == Reserves.Kind.ORDER) != (pass == 0) || !lendsFrom(r, item)) continue;
+                int take = Math.min(left, r.units);
+                out.set(i, new Reserves.Reserve<>(r.word, r.members, r.weight, r.units - take, r.kind, r.step, r.owner));
+                left -= take;
+                said.add(take + " of " + forText(r));
+            }
+        }
+        return "climb lends " + k.lend() + " " + StepNeeds.sh(item) + ": " + (said.isEmpty() ? "no reserve of it to lend from" : String.join(", ", said))
+                + (left > 0 && !said.isEmpty() ? " (" + left + " not reserved)" : "");
+    }
+
+    /**
+     * pickaxe price review 3 item 3 (one answer for the planner and the climb): a reserve a climb may lend {@code item} (full
+     * id) from - a counted, unweighted reserve naming it; a whole reserve (rule 15: not loaded) or a weighted one (fuel) never.
+     */
+    public static boolean lendsFrom(Reserves.Reserve<String> r, String item) {
+        return r != null && !r.whole() && (r.weight == null || r.weight.isEmpty()) && r.members.contains(item) && r.units > 0;
+    }
+
+    /** pickaxe price review 3 item 3: the units of {@code item} (any id form) the reserves {@code rs} would lend a climb ({@link #lendsFrom}). Pure. */
+    public static int lendable(List<Reserves.Reserve<String>> rs, String item) {
+        if (rs == null || item == null) return 0;
+        String id = StepNeeds.full(item);
+        int n = 0;
+        for (var r : rs) if (lendsFrom(r, id)) n += r.units;
+        return n;
     }
 
     /** Only the orders' reserves: the table while the run re-plans (release before repair, D1 3.4). */

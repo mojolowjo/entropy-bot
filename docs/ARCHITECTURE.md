@@ -41,6 +41,24 @@ spot's collect that digs down prices its way back up against the FORECAST bag af
 `Reserves.spareThrowaway` on the simulated bag, the chain's own asked item an ORDER reserve too) - a pillar of spare blocks,
 a staircase, or extra blocks first - and a `Step.Climb` follows (`wayBackUp`); the climb-up way (`climbUp`) counts spare
 blocks the same way. Tuning `forecast.*`.
+Pickaxe price (plan step 6, run 3 w070): both are ways for `choose` (`Alt`s), never a fixed order. A way that digs with
+the pickaxe (staircase: `stairWear`, `forecast.stairBreaksPerLevel` a level not pillared by spare blocks; extra blocks) counts its
+breaks against `pickUsesLeft(c, tier)` (`pickUsesBefore`: `heldUses` when the held one digs the tier + `bagPickUses` of that
+tier, less `pickWorn`) in `pickWear`: a take at its block's tier, a staircase at tier 1. Under ground (`wayBackUp`, the
+covered collect's take) no replacement is made in the middle of the dig: past the uses the way drops with the reason; the
+replacement is priced BEFORE the walk down by `wornPickaxe`, which counts the cover (`coverWearOf`; no mining data: said,
+not priced), the take and the climb's wear (`climbWear`: the extra blocks, always offered, or the staircase; a lend is not
+counted, its collect again may fail) against the take tier's `pickUsesLeft`; its replacements are ways for `choose`: the
+held one kept with spares (`spareTools`), or a new pickaxe of each kind whose new uses cover the wear; one that needs an
+explore first is none (the worn one is used, said). A spot whose take or way up has no way is left out (`leaveSpot`)
+and the next spot tried. `climbUp` (the bot is under ground already) prices
+it there through `spareTools`. Kept blocks may be lent to a pillar (`addLendWays`: one way per item `lendItems` gives,
+only what `Reservations.lendable` / `lendsFrom` - the climb's own test - lends, never a whole or weighted reserve, never
+the chain's own asked item, never inside another lend's collect again, `Ctx.lending`): the
+`Step.Climb(lendItem, lend)` lowers the reserves on that item for its own step only (`Reservations.build` / `lend`, the
+orders' first) and the same amount is collected again right after it (`obtain`), so a -d amount is whole again before any
+later step. `climbUp` adds "make a pickaxe first" (`cheapestPickaxe`) when there is no pickaxe and too few spare blocks.
+Each way's reason reaches the failure itself (read from the dropped lines `choose` wrote, so a reused D6 node says it too).
 
 ### Path memory (D11)
 The fork keeps priced paths (`PathMemory`) and re-joins a kept path the feet left by one short search (build 1); the mod

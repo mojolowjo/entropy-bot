@@ -329,7 +329,13 @@ public sealed interface Step {
     }
 
     /** Climb out of the hole I am in (the climb verb: Baritone's way up). */
-    record Climb() implements Step {
+    record Climb(String lendItem, int lend) implements Step {
+        /**
+         * pickaxe price (c): {@code lend} of the kept {@code lendItem} (full id) this climb may place - the reserves on that
+         * item are lowered by it for this step only ({@link Reservations#build}); the plan collects them again right after.
+         */
+        public Climb { lend = lendItem == null ? 0 : Math.max(0, lend); }
+        public Climb() { this(null, 0); }
         public String text() { return "climb"; }
     }
 
