@@ -45,6 +45,7 @@ public record StepId(String kind, String target) {
             case Step.Shelter k -> new StepId("shelter", "");
             case Step.Wait w -> new StepId("wait", String.valueOf(w.seconds()));
             case Step.Climb k -> new StepId("climb", "");
+            case Step.Borrow b -> new StepId("borrow", b.item() + " " + b.n());         // job-kept-crafts
             case Step.Scan k -> new StepId("scan", k.base() ? "base" : "");
             case Step.FindCave f -> new StepId("findCave", String.valueOf(f.minutes()));
             case Step.Explore e -> new StepId("explore", e.minutes() + " until " + e.until());

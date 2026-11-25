@@ -339,6 +339,19 @@ public sealed interface Step {
         public String text() { return "climb"; }
     }
 
+    /**
+     * job-kept-crafts (worlds run 4, w068: 16 birch_log kept for the line's deposit, the cobblestone order's pickaxe priced
+     * from a tree 66 m off and planks at y -12): {@code n} of {@code item} (full id) kept for a -d order's deposit are
+     * borrowed by this run's crafts from here on - the runner's hold on that item is lowered by {@code n}
+     * (AaRuntime.lend, Goals.keptForRun's cap) and the met order is open again for them (LineDeposits: the bag holds less
+     * than its amount), so the line collects them again before its deposit. Takes no time and no walk; puts nothing in
+     * the bag (the borrowed units are in it already: they only stop being held).
+     */
+    record Borrow(String item, int n) implements Step {
+        public Borrow { n = Math.max(0, n); }
+        public String text() { return "borrow " + n + " kept " + StepNeeds.sh(item) + " (collected again before the deposit)"; }
+    }
+
     /** Read the chest just placed or reached (a storage action); {@code base}: the base's chests. */
     record Scan(boolean base) implements Step {
         public Scan() { this(false); }

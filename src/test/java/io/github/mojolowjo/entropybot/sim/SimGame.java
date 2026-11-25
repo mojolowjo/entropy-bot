@@ -444,6 +444,8 @@ final class SimGame {
         runDesire = t.replan() == null ? null : t.replan().desire();
         if (("goal." + Goals.DEPOSIT_KEY).equals(runDesire)) depositRuns++;
         runStartBag = new HashMap<>(bag);                // as AaRuntime.runTyped's typedStartBag: the bag at the run's start
+        lentUse.clear();                                 // job-kept-crafts: as AaRuntime's, emptied at the task's first start
+        lentCount.clear();
         var steps = new io.github.mojolowjo.entropybot.aa.moves.Steps(new Hands());
         steps.start(t.chain(), t.steps(), t.uses(), clock.now() / TICK_MS, t.replan() == null ? null : t.replan().planner());
         for (int n = 0; steps.running() && end == null; n++) {
@@ -515,7 +517,8 @@ final class SimGame {
 
         /** As the game's hands (StepHands.freeBag over AaRuntime.keptFromOthers): the bag less the other orders' -d amounts. */
         @Override public io.github.mojolowjo.entropybot.aa.moves.StepNeeds.Bag freeBag() {
-            return io.github.mojolowjo.entropybot.aa.moves.StepNeeds.less(bag(), Goals.keptForRun(bb, runDesire, runDesire != null));
+            // job-kept-crafts: as AaRuntime.keptFromOthers - the run's start bag and its borrows
+            return io.github.mojolowjo.entropybot.aa.moves.StepNeeds.less(bag(), Goals.keptForRun(bb, runDesire, runDesire != null, false, runStartBag, lentCount));
         }
 
         @Override public io.github.mojolowjo.entropybot.aa.moves.StepNeeds.Bag bag() {
@@ -560,13 +563,33 @@ final class SimGame {
      */
     Map<String, Integer> useItems() {
         Map<String, Integer> free = new HashMap<>(bag);
-        var kept = runDesire == null ? Goals.kept(bb, null, null) : Goals.keptForRun(bb, runDesire, true, true, runStartBag);
+        var kept = runDesire == null ? Goals.kept(bb, null, null) : Goals.keptForRun(bb, runDesire, true, true, runStartBag, lentUse);
         for (var e : kept.entrySet()) {
             String id = e.getKey().contains(":") ? e.getKey() : "minecraft:" + e.getKey();
             free.computeIfPresent(id, (k, v) -> Math.max(0, v - e.getValue()));
         }
         return free;
     }
+
+    /** job-kept-crafts: the run's borrows (as AaRuntime's lentUse / lentCount: item path -> the most the run still holds). */
+    final Map<String, Integer> lentUse = new HashMap<>(), lentCount = new HashMap<>();
+
+    /** job-kept-crafts: as AaRuntime.lend - a Step.Borrow ran: the run's hold on {@code item} lowered by {@code n}; "ok: ..." or "error: ...". */
+    String lend(String item, int n) {
+        String path = Thing.path(item);
+        if (runDesire == null) return "error: borrow " + n + " " + path + ": no order's run";
+        sense();
+        int use = Goals.keptForRun(bb, runDesire, true, true, runStartBag, lentUse).getOrDefault(path, 0);
+        int count = Goals.keptForRun(bb, runDesire, true, false, runStartBag, lentCount).getOrDefault(path, 0);
+        if (use < n) return "error: borrow " + n + " " + path + ": the run holds " + use + " of it for the deposits, fewer than the borrow";
+        lentUse.merge(path, use - n, Math::min);
+        lentCount.merge(path, Math.max(0, count - n), Math::min);
+        borrows++;
+        return "ok: borrowed " + n + " kept " + path + ": the run's hold on it " + use + " -> " + (use - n);
+    }
+
+    /** job-kept-crafts: the borrows that ran in this game. */
+    int borrows;
 
     void give(String item, int n) { bag.merge(item, n, Integer::sum); }
 

@@ -1653,6 +1653,40 @@ public final class Goals {
      * Null: not known (a run started without one), the order's own -d amounts are held whole, said once (rule 7).
      */
     public static Map<String, Integer> keptForRun(Blackboard bb, String desireId, boolean orderRun, boolean consume, Map<String, Integer> startBag) {
+        return keptForRun(bb, desireId, orderRun, consume, startBag, null);
+    }
+
+    /**
+     * job-kept-crafts: as above, {@code lent} (item path -> the most the run may still hold of it; null or empty: none) the
+     * run's borrows - a Step.Borrow that ran lowered the hold on its item by its n (AaRuntime.lend, the one store), so the
+     * crafts the planner priced from the borrowed units run (the met order whose amount it was is open again for them:
+     * LineDeposits, the bag holds less than its amount). Every answer for an order's run is capped by it.
+     *
+     * <p>job-kept-crafts (worlds run 4, w044 line 1221: torch parked on "needs 1 of logs_that_burn; the bag will hold 0" -
+     * its chain cut a tree for one log, and the parked oak_log -d order, 7 of 16 in the bag, took all 6 cut logs into its
+     * hold): with the run's start bag known, what an order's run holds for the OTHER orders is never more than it held for
+     * them at the run's start - the planner prices from the bag at its start (Goals.keptOff takes those amounts off), so a
+     * log the run's own cut brings in is the run's, as priced; the other order gathers its own rest later. The run's own
+     * -d amounts were already held this way (ownKeptHeld).
+     */
+    public static Map<String, Integer> keptForRun(Blackboard bb, String desireId, boolean orderRun, boolean consume, Map<String, Integer> startBag,
+                                                  Map<String, Integer> lent) {
+        Map<String, Integer> out = keptForRun0(bb, desireId, orderRun, consume, startBag);
+        if (!orderRun || desireId == null || lent == null || lent.isEmpty()) return out;
+        boolean depositRun = false;
+        if (bb.fact(FACT) instanceof List<?>) for (Goal g : of(bb)) if (g.depositGoal && g.id().equals(desireId)) depositRun = true;
+        if (depositRun) return out;                     // the deposit goal's run borrows nothing (it puts the owed amounts away)
+        Map<String, Integer> capped = new java.util.HashMap<>(out);
+        for (var e : lent.entrySet()) {
+            String p = Thing.path(e.getKey());
+            Integer h = capped.get(p);
+            if (h != null && e.getValue() != null && h > Math.max(0, e.getValue())) capped.put(p, Math.max(0, e.getValue()));
+        }
+        capped.values().removeIf(n -> n <= 0);
+        return capped;
+    }
+
+    private static Map<String, Integer> keptForRun0(Blackboard bb, String desireId, boolean orderRun, boolean consume, Map<String, Integer> startBag) {
         if (!orderRun) return Map.of();
         // deposit-goal (stage 3): the deposit goal's run uses up no kept amount (a pickaxe craft never eats owed items); its
         // steps count the owed amounts as theirs (the put's free bag holds them)
@@ -1662,8 +1696,26 @@ public final class Goals {
             for (Goal g : of(bb)) if (g.id().equals(desireId)) return keptFromUse(bb, g, startBag);
         if (consume) return kept(bb, null, null);
         if (desireId != null && bb.fact(FACT) instanceof List<?>)
-            for (Goal g : of(bb)) if (g.id().equals(desireId)) return keptFromOthers(bb, g);
+            for (Goal g : of(bb)) if (g.id().equals(desireId)) return othersAtMostAtStart(bb, g, keptFromOthers(bb, g), startBag);
         return kept(bb, null, null);
+    }
+
+    /**
+     * job-kept-crafts (w044): {@code now} (what the bag holds for the orders other than {@code g} and its trip) capped, item
+     * by item, by what it held for them at the run's start ({@code startBag}, full ids or paths; null: not known - {@code now}
+     * as it is, the hold whole). By item path.
+     */
+    static Map<String, Integer> othersAtMostAtStart(Blackboard bb, Goal g, Map<String, Integer> now, Map<String, Integer> startBag) {
+        if (startBag == null || now.isEmpty() || !(bb.fact(LineDeposits.FACT) instanceof LineDeposits ld)) return now;
+        Map<String, Integer> byPath = new java.util.HashMap<>();
+        for (var e : startBag.entrySet()) if (e.getValue() != null) byPath.merge(Thing.path(e.getKey()), e.getValue(), Integer::sum);
+        Map<String, Integer> atStart = ld.kept(byPath, of(bb), g, BatchWay.open(bb, g));
+        Map<String, Integer> out = new java.util.HashMap<>();
+        for (var e : now.entrySet()) {
+            int n = Math.min(e.getValue(), atStart.getOrDefault(e.getKey(), 0));
+            if (n > 0) out.put(e.getKey(), n);
+        }
+        return out;
     }
 
     static final String OWN_WHOLE_SAID_FACT = "aa.keptOwnWholeSaid";
@@ -1675,7 +1727,7 @@ public final class Goals {
      * order's by {@link #ownAside}), so the runner never refuses what the planner priced.
      */
     private static Map<String, Integer> keptFromUse(Blackboard bb, Goal g, Map<String, Integer> startBag) {
-        Map<String, Integer> out = new java.util.HashMap<>(keptFromOthers(bb, g));
+        Map<String, Integer> out = new java.util.HashMap<>(othersAtMostAtStart(bb, g, keptFromOthers(bb, g), startBag));
         if (startBag == null && bb.port != null && !g.id().equals(bb.fact(OWN_WHOLE_SAID_FACT))) {
             bb.fact(OWN_WHOLE_SAID_FACT, g.id());
             bb.port.log(g.r.key() + ": the bag at the run's start is not known; its own -d amounts are held whole from its crafts and smelts");
@@ -1808,11 +1860,19 @@ public final class Goals {
                 : plannerReserves(g, finished(bb), bb.in.bag, keptPer(bb), notOff);
         if (kept.isEmpty()) return w.withReserves(reserves);
         Map<String, Integer> bag = new java.util.LinkedHashMap<>(w.bag());
+        Map<String, Integer> off = new java.util.LinkedHashMap<>();
         for (var e : bag.entrySet()) {
             int k = kept.getOrDefault(Thing.path(e.getKey()), 0);
-            if (k > 0) e.setValue(Math.max(0, e.getValue() - k));
+            if (k <= 0) continue;
+            int left = Math.max(0, e.getValue() - k);
+            if (e.getValue() - left > 0) off.put(e.getKey(), e.getValue() - left);
+            e.setValue(left);
         }
-        return w.withBag(bag).withReserves(reserves);
+        // job-kept-crafts (worlds run 4, w068 / w053 / w098: the tools priced from a tree 66 m off or planks in a mineshaft with
+        // the line's logs in the bag): what is taken off here may be BORROWED by a way that prices collecting it again before
+        // the line's deposit (NeedChain's borrow way; the runner lowers its hold by the Step.Borrow). The deposit goal borrows
+        // nothing: it puts the owed amounts away
+        return w.withBag(bag).withReserves(reserves).withLend(g != null && g.depositGoal ? Map.of() : off);
     }
 
     /**
