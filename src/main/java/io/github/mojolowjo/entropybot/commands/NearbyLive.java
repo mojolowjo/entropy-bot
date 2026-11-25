@@ -129,6 +129,20 @@ final class NearbyLive {
         return k.source().spot();
     }
 
+    /**
+     * job-hold-sight (worlds run 4 w044 07:41:09.917-07:41:12.953: a parked order woke on a source this renewal found 3 s
+     * after the line's deposit had gone, the bot standing): the moment as of which the source answers in use were read -
+     * the oldest answer among the block sets asked within nearby.cacheMs (a set nobody asks any more is no answer in use);
+     * {@code now}: none in use. Each set in use is read again once its answer is nearby.cacheMs old, so this moment follows
+     * the clock while the bot stands (Inputs.sightAtMs).
+     */
+    long readSince(long now) {
+        long min = now;
+        long fresh = Tuning.l("nearby.cacheMs");
+        for (Cached k : sets.values()) if (now - k.askedAt < fresh) min = Math.min(min, k.at());
+        return min;
+    }
+
     private static double dist(int[] a, int[] b) {
         double dx = a[0] - b[0], dy = a[1] - b[1], dz = a[2] - b[2];
         return Math.sqrt(dx * dx + dy * dy + dz * dz);

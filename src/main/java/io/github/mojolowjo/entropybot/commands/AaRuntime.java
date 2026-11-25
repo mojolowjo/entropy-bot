@@ -611,25 +611,31 @@ public final class AaRuntime implements JobPort {
      * metres. Null: none in the loaded columns. Loader notes: vanilla Level#getHeight (MOTION_BLOCKING, through Jobs.surfaceNoLeaves: the client has no NO_LEAVES map), canSeeSky.
      */
     private static int[] skyCell(net.minecraft.world.level.Level lv, int[] me, double[] best) {
-        int[] sky = null;
         net.minecraft.core.BlockPos.MutableBlockPos m = new net.minecraft.core.BlockPos.MutableBlockPos();
+        List<int[]> cells = new ArrayList<>();
         for (int x = me[0] - skyR(); x <= me[0] + skyR(); x++)
             for (int z = me[2] - skyR(); z <= me[2] + skyR(); z++) {
                 m.set(x, 0, z);
                 if (!lv.isLoaded(m)) continue;
                 int y = Jobs.surfaceNoLeaves(lv, x, z);       // 0.39.z76 send-back 2: the client has no MOTION_BLOCKING_NO_LEAVES (read -64)
                 if (!io.github.mojolowjo.entropybot.world.SurfaceHeight.known(y)) continue;     // z76 surface: not known is no cell (rule 15)
-                double d = Math.sqrt(Jobs.distSq(me, new int[]{x, y, z}));
                 m.set(x, y, z);
-                if (d >= best[0] || !lv.canSeeSky(m) || !openCell(lv, x, y, z) || !openCell(lv, x, y + 1, z)) continue;     // review: no roof (the Nether)
-                if (Jobs.holeDepth(lv, x, y, z) > 0) continue;                    // run EH: a cell in a hole is no surface to walk up to
+                if (!lv.canSeeSky(m) || !openCell(lv, x, y, z) || !openCell(lv, x, y + 1, z)) continue;     // review: no roof (the Nether)
                 m.set(x, y - 1, z);
                 var below = lv.getBlockState(m);
                 if (below.getCollisionShape(lv, m).isEmpty() || !below.getFluidState().isEmpty()) continue;
-                best[0] = d;
-                sky = new int[]{x, y, z};
+                cells.add(new int[]{x, y, z});
             }
-        return sky;
+        // job-hold-sight (worlds run 4 w027): the nearest cell that is the surface by the one reader - nothing below the
+        // ground round it (Jobs.belowSurface: a sky-lit shaft bottom, a notch dug beside it too, is no surface); tested
+        // nearest first, so the ring read is made for the few cells that come before the answer
+        cells.sort(java.util.Comparator.comparingLong(c -> Jobs.distSq(me, c)));
+        for (int[] c : cells) {
+            if (Jobs.belowSurface(lv, c[0], c[1], c[2]) > 0) continue;
+            best[0] = Math.sqrt(Jobs.distSq(me, c));
+            return c;
+        }
+        return null;
     }
 
     /**
@@ -2257,6 +2263,10 @@ public final class AaRuntime implements JobPort {
         int[] me = Jobs.here(p);
         in.underDepth = Jobs.belowSurface(mc.level, me[0], me[1], me[2]);   // 0.39.z78 J6b EH review (rule 23): the one "below the surface" reader
         in.pos = me;
+        // job-hold-sight (worlds run 4 w044): when the known sources were read over what is loaded - the nearby scan's oldest
+        // answer in use and the chunk pass's last moment with no arrived chunk unread (Goals.stillChanges reads it)
+        long nowMs = io.github.mojolowjo.entropybot.aa.brain.GameClock.ms();
+        in.sightAtMs = Math.min(c.nearby.readSince(nowMs), io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE.arrivalsReadAt());
         // AA_STEP3 A1: the world spawn for the death cost's walk back (client Level.getSharedSpawnPos, the level data)
         var sp = mc.level.getSharedSpawnPos();
         in.spawnPos = sp == null ? null : new int[]{sp.getX(), sp.getY(), sp.getZ()};
@@ -3121,6 +3131,15 @@ public final class AaRuntime implements JobPort {
         if (c.stepRun.steps.monitorJudges()) return NoProgress.MONITORED;      // 0.39.z78 run EJ (rule 23 (2)): the monitor is the one reader
         if (c.stepRun.steps.noProgress(text)) return NoProgress.REPLANNED;
         return c.stepRun.steps.running() ? NoProgress.NOT_MINE : NoProgress.ENDED;     // still running: paused (the watch as before)
+    }
+
+    /**
+     * job-hold-sight (worlds run 4 w054): the running typed step of this task's run for the no-progress watch - its kind, its
+     * words, its own limit (Steps.watch); null: not this task's typed run, or no step runs.
+     */
+    @Override public StepWatch stepWatch(long taskId) {
+        if (taskId != current || !ownTyped() || !c.stepRun.steps.running()) return null;
+        return c.stepRun.steps.watch();
     }
 
     /**

@@ -42,6 +42,22 @@ class ChopEndTest {
     }
 
     /**
+     * job-hold-sight (worlds run 4 w037: "cut at 30 70 -7: unreachable (Baritone: no path to any target)" from 25 33 -13,
+     * 27 under ground): a cut with none got and the feet under ground is the place's fact ("cut from" the feet), never the
+     * tree's; on the surface the tree's as before.
+     */
+    @Test
+    void w037_aCutWithNoneGotFromUnderGroundIsThePlacesFact() {
+        io.github.mojolowjo.entropybot.aa.moves.FactChange.clear();
+        ChopEnd.of("cut 5 mangrove_log", 0, 5, "no path to any target", "minecraft:mangrove_log", "at 30 70 -7", -1, new int[]{25, 33, -13});
+        var f = io.github.mojolowjo.entropybot.aa.moves.FactChange.take();
+        assertEquals("source cut from 25 33 -13", f.key());
+        assertEquals("cut from 25 33 -13", io.github.mojolowjo.entropybot.aa.moves.FactChange.ownSourceKey(f));
+        ChopEnd.zeroGot(0, "minecraft:mangrove_log", "at 30 70 -7", "no path to any target", null);
+        assertEquals("source minecraft:mangrove_log at 30 70 -7", io.github.mojolowjo.entropybot.aa.moves.FactChange.take().key(), "on the surface: the tree's");
+    }
+
+    /**
      * 0.39.z66 item 2 (run X 08:41:01): "collect 3 iron_ore: have 19 valid items (cluster 9 blocks: picked up 9) (got 0 of
      * 3)" - Baritone counted 9 drops (raw_iron), the step's item none: the source's fact in the true words, never
      * "unreachable"; drops not known (-1) or none over the item: as before.

@@ -824,14 +824,23 @@ public final class Jobs {
         return io.github.mojolowjo.entropybot.world.SurfaceHeight.belowSurface(rockOverHead(lv, x, y, z), holeDepth(lv, x, y, z));
     }
 
-    /** Run EH: SurfaceHeight.holeDepth at x y z from the 8 neighbouring columns' leaf-free surfaces. */
+    /**
+     * Run EH: the hole round the feet at x y z from the leaf-free surfaces round them. job-hold-sight (worlds run 4 w027: a
+     * shaft with a notch dug beside it read 0): SurfaceHeight.pitDepth over the ring's columns, the one hole reader.
+     */
     public static int holeDepth(net.minecraft.world.level.Level lv, int x, int y, int z) {
-        int[] n = new int[8];
-        int i = 0;
-        for (int dx = -1; dx <= 1; dx++)
-            for (int dz = -1; dz <= 1; dz++)
-                if (dx != 0 || dz != 0) n[i++] = surfaceNoLeaves(lv, x + dx, z + dz);
-        return io.github.mojolowjo.entropybot.world.SurfaceHeight.holeDepth(y, n);
+        // the ground under any tree (a trunk beside the feet is no wall of a hole)
+        return io.github.mojolowjo.entropybot.world.SurfaceHeight.pitDepth(new int[]{x, y, z}, (cx, cz) -> io.github.mojolowjo.entropybot.world.SurfaceHeightLive.ground(lv, cx, cz));
+    }
+
+    /**
+     * job-hold-sight: the feet at x y z stand under ground - the planner's own test (NeedChain.Surface.under) on the one
+     * "below the surface" reader ({@link #belowSurface}: the rock over the head or the hole round the feet).
+     */
+    public static boolean underGround(net.minecraft.world.level.Level lv, int x, int y, int z) {
+        int rock = rockOverHead(lv, x, y, z), hole = holeDepth(lv, x, y, z);
+        int depth = io.github.mojolowjo.entropybot.world.SurfaceHeight.belowSurface(rock, hole);
+        return new io.github.mojolowjo.entropybot.aa.NeedChain.Surface(depth, x, y, z, 0, hole > 0 && hole >= rock).under();
     }
 
     public static int rockOverHeadKnown(net.minecraft.world.level.Level lv, int x, int y, int z) {

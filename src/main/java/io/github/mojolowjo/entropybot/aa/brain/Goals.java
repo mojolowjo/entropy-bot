@@ -160,6 +160,12 @@ public final class Goals {
         /** 0.39.z77 climb: the one more try on the climb way (every order parked under ground) was taken; once per order. */
         public boolean climbRetried;
 
+        /**
+         * job-hold-sight: when (the board clock's ms) the order parked, or its park's facts were read again (a wake priced
+         * again that stays stopped); the sight fact ({@code Inputs.sightAtMs}) is compared with it by {@link Goals#stillChanges}.
+         */
+        public long parkedAtMs;
+
         /** wait-not-park: what the order waited on when a run of it ended ({@link Goals#runFailed}); null: nothing. Cleared when it lands. */
         public String waitEnded;
         /** wait-not-park: when (the board clock's ms) the wait in {@link #waitEnded} was first noted; the bound goals.waitEndedMaxS counts from it. */
@@ -207,16 +213,42 @@ public final class Goals {
      * one more try on the climb way (not taken yet), on the surface the one look-around leg of a PLACE park (not taken yet).
      */
     public static String stillChanges(List<Goal> goals, Goal g, boolean underGround, boolean busy, boolean worldClimb) {
+        return stillChanges(goals, g, underGround, busy, worldClimb, Long.MAX_VALUE);
+    }
+
+    /**
+     * job-hold-sight (worlds run 4 w044 07:41:09.917, w027 06:01:33.061: the hold ended with every order stopped, and 3 s
+     * later a parked order woke on "a new source seen" with the bot where it stood - the nearby scan's renewal, nearby.cacheMs,
+     * had not read the loaded area since the stop): {@link #stillChanges(List, Goal, boolean, boolean, boolean)} where
+     * {@code sightAtMs} is the moment the known sources were read over what is loaded (Inputs.sightAtMs). A parked order
+     * that waits on a new source seen ({@link #waitsOnSight}) and parked after that moment can still wake while the bot
+     * stands: the hold lasts until the scan has read again (a fact, no timer). Every order of the line counts (another
+     * order's wake moves the bot). The run 3 circle stays closed: the scan renews by itself while the bot stands, so the
+     * moment passes the park and the hold ends.
+     */
+    public static String stillChanges(List<Goal> goals, Goal g, boolean underGround, boolean busy, boolean worldClimb, long sightAtMs) {
         if (g == null || g.parked == null || !canWake(g)) return null;
         if (busy) return "a run or another job moves the bot now";
         if (goals != null)
             // deposit-goal: the deposit goal is no order; its run moves the bot and is counted by {@code busy}
             for (Goal o : goals) if (o != g && o.parked == null && !o.depositGoal) return "order " + o.r.key() + " is open and not stopped";
+        if (goals != null)
+            for (Goal o : goals)
+                if (o.parked != null && !o.depositGoal && canWake(o) && waitsOnSight(o) && sightAtMs < o.parkedAtMs)
+                    return "order " + o.r.key() + " waits on a new source seen and the sources are not read again since it stopped (the nearby scan renews them by nearby.cacheMs; arrived chunks are read first)";
         if (underGround && climbTryDue(g, worldClimb))
             return "its one more try on the climb way, taken with every order stopped under ground";
         if (!underGround && lookAroundDue(g))
             return "its one look-around leg, taken after goals.lookAroundAfterS with every order stopped";
         return null;
+    }
+
+    /**
+     * job-hold-sight (pure): the park of {@code g} waits on a new source seen - its source cells were read at the park (not
+     * known then: no such wake, rule 15), as {@link #retryLoopParks} compares them.
+     */
+    static boolean waitsOnSight(Goal g) {
+        return (g.loopPark != null && g.loopPark.sources() != null) || (g.park != null && g.park.sources() != null);
     }
 
     /** The one more try on the climb way is still to come for {@code g} (read by {@link #parkedTick} and {@link #stillChanges}); {@code byWorld}: a world fact of a failed climb holds for it. */
@@ -558,6 +590,7 @@ public final class Goals {
                 if (seenNow != null) known.addAll(seenNow);
                 g.loopPark = null;
                 g.park = Park.of(Failures.Cause.of(g.parked) == Failures.Cause.NO_ITEM ? ParkKind.BAG : ParkKind.PLACE, bb, known, heldKeys(bb, g));
+                g.parkedAtMs = bb.clock == null ? 0 : bb.clock.now();      // job-hold-sight: the park's facts read again now
                 // every re-price is said in the log (rule 7; it follows a real change, so never per tick); the whisper only
                 // when the reason is a new one
                 String stay = "order " + g.r.key() + " priced again (" + change + "): no way from here either (" + why + "); it stays stopped - " + g.park.wakeWords();
@@ -1142,6 +1175,7 @@ public final class Goals {
     public static boolean park(Blackboard bb, Goal g, String why) {
         if (g.parked != null) return false;
         g.parked = why == null || why.isBlank() ? "no reason given" : why;
+        g.parkedAtMs = bb.clock == null ? 0 : bb.clock.now();          // job-hold-sight: the sight fact is compared with it
         // 0.39.z70 (R1 = c): the run parked on an honest loop: its facts are kept, one more try comes when one of them changes
         var a = g.loopAttempt;
         g.loopAttempt = null;

@@ -124,6 +124,39 @@ class RunJobTest {
         assertEquals(1, port.incidents.size());
     }
 
+    /**
+     * job-hold-sight (worlds run 4 w054: "outer watch fired after 180 s in EXPLORE" 12 times during cuts, every second one
+     * re-planning a cut the step monitor saw working): the watch reads the running step - its kind in the words, and for a
+     * step judged by the monitor its own limit (steps.stepMaxS from its start), not the task's no-progress limit.
+     */
+    @Test
+    void theWatchReadsTheRunningStep_itsKindAndItsOwnLimit() {
+        long[] start = {clock.now()};
+        port.onStepWatch = id -> new JobPort.StepWatch("ChopTree", "cut 3 oak_log at 22 74 -69", 70_000, clock.now() - start[0]);
+        job.tick(bb);
+        clock.advance(41_000);
+        assertEquals(Status.RUNNING, job.tick(bb), "a judged cut runs to its own limit: no fire at the task's 40 s");
+        assertTrue(port.log.stream().noneMatch(l -> l.startsWith("outer watch fired")), port.log.toString());
+        clock.advance(30_000);
+        assertEquals(Status.FAILURE, job.tick(bb), "past the step's own limit (70 s here, under the task's 100 s timeout) with no progress");
+        assertTrue(port.log.stream().anyMatch(l -> l.startsWith("outer watch fired after 71 s in step ChopTree (cut 3 oak_log at 22 74 -69) of TORCHES, its limit 70 s")), port.log.toString());
+    }
+
+    /** job-hold-sight: a step the monitor does not judge keeps the task's limit, said with the step's kind; a new step's clock is its own. */
+    @Test
+    void anUnjudgedStep_theTasksLimit_theStepsWords() {
+        long[] start = {clock.now()};
+        port.onStepWatch = id -> new JobPort.StepWatch("Craft", "craft stick 4", -1, clock.now() - start[0]);
+        job.tick(bb);
+        clock.advance(30_000);
+        start[0] = clock.now();                              // the next step started (no progress counted)
+        clock.advance(30_000);
+        assertEquals(Status.RUNNING, job.tick(bb), "60 s without progress, but the running step is 30 s old");
+        clock.advance(11_000);
+        assertEquals(Status.FAILURE, job.tick(bb));
+        assertTrue(port.log.stream().anyMatch(l -> l.startsWith("outer watch fired after 41 s in step Craft (craft stick 4) of TORCHES, its limit 40 s")), port.log.toString());
+    }
+
     @Test
     void goneIsLost() {
         job.tick(bb);

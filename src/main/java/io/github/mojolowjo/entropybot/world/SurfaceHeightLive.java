@@ -29,6 +29,20 @@ public final class SurfaceHeightLive {
         });
     }
 
+    /**
+     * job-hold-sight: the ground over x z under any tree - {@link #noLeaves} with the logs walked past too (the game's
+     * {@code BlockTags.LOGS}): a trunk beside the feet is no wall of a hole (SurfaceHeight.pitDepth reads this). NOT_KNOWN:
+     * not known (rule 15).
+     */
+    public static int ground(LevelReader level, int x, int z) {
+        BlockPos.MutableBlockPos m = new BlockPos.MutableBlockPos(x, 0, z);
+        return SurfaceHeight.noLeaves(level.hasChunk(x >> 4, z >> 4), level.getHeight(Heightmap.Types.MOTION_BLOCKING, x, z), level.getMinBuildHeight(), y -> {
+            m.setY(y);
+            var st = level.getBlockState(m);
+            return st.is(BlockTags.LEAVES) || st.is(BlockTags.LOGS) || !st.blocksMotion();
+        });
+    }
+
     /** The first cell over the column's top blocking block (leaves count), NOT_KNOWN when not loaded or no data (rule 15). */
     public static int top(LevelReader level, int x, int z) {
         if (!level.hasChunk(x >> 4, z >> 4)) return SurfaceHeight.NOT_KNOWN;

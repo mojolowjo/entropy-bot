@@ -31,13 +31,21 @@ final class ChopEnd {
      * fact says so (the order re-plans without it, rule 7), never "unreachable".
      */
     static Car.Status of(String what, int got, int want, String end, String source, String at, int drops) {
+        return of(what, got, want, end, source, at, drops, null);
+    }
+
+    /**
+     * job-hold-sight (worlds run 4 w037, w039): {@code underFeet} - the feet when a cut ends with the bot under ground
+     * (null: on the surface, or not a cut): a cut that got nothing from there is the place's fact ({@link #zeroGot}).
+     */
+    static Car.Status of(String what, int got, int want, String end, String source, String at, int drops, int[] underFeet) {
         if (got >= want) return Car.Status.done("ok: " + what + ": got " + got + " (" + end + ")");
         if (drops > got) {
             String why = otherDrops(what, got, want, drops, end);
             if (source != null) io.github.mojolowjo.entropybot.aa.moves.FactChange.otherDrops(source, at, why);
             return Car.Status.failed(why);
         }
-        zeroGot(got, source, at, end);
+        zeroGot(got, source, at, end, underFeet);
         return Car.Status.failed(what + ": " + end + " (got " + got + " of " + want + ")");
     }
 
@@ -48,7 +56,15 @@ final class ChopEnd {
     }
 
     /** 0.39.z36: any collect end with 0 got, whatever the process: the source fact (null source: not a block source, nothing said). */
-    static void zeroGot(int got, String source, String at, String end) {
-        if (got <= 0 && source != null) io.github.mojolowjo.entropybot.aa.moves.FactChange.unreachable(source, at, end);
+    static void zeroGot(int got, String source, String at, String end) { zeroGot(got, source, at, end, null); }
+
+    /**
+     * job-hold-sight: with {@code underFeet} (a cut ended with the feet under ground) none got is "no way from here"
+     * (FactChange.cutFrom, keyed by the feet), never the tree's "unreachable": the tree is not held for the order.
+     */
+    static void zeroGot(int got, String source, String at, String end, int[] underFeet) {
+        if (got > 0 || source == null) return;
+        if (underFeet != null && underFeet.length >= 3) io.github.mojolowjo.entropybot.aa.moves.FactChange.cutFrom(underFeet, end);   // structural: x y z
+        else io.github.mojolowjo.entropybot.aa.moves.FactChange.unreachable(source, at, end);
     }
 }

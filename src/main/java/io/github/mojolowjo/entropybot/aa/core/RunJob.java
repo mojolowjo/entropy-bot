@@ -109,14 +109,21 @@ public final class RunJob extends Node {
             bb.tracer.counts.fails++;
             return end(bb, Status.FAILURE, "timeout");
         }
-        if (now - lastProgressAt > running.noProgressMs()) {
-            long s = (now - lastProgressAt) / 1000;  // structural: milliseconds per second
+        // job-hold-sight (worlds run 4 w054: "after 180 s in EXPLORE" during cuts, 12 times): the watch reads the running typed
+        // step - its kind in the words, its own limit (a judged step runs to steps.stepMaxS) and its own start
+        JobPort.StepWatch sw = bb.port.stepWatch(taskId);
+        long quiet = now - lastProgressAt;
+        if (sw != null) quiet = Math.min(quiet, sw.ageMs());
+        long limit = sw == null || sw.limitMs() < 0 ? running.noProgressMs() : sw.limitMs();
+        String in = sw == null ? String.valueOf(running.kind()) : "step " + sw.kind() + " (" + sw.step() + ") of " + running.kind() + ", its limit " + limit / 1000 + " s";  // structural: milliseconds per second
+        if (quiet > limit) {
+            long s = quiet / 1000;  // structural: milliseconds per second
             // 0.39.z71 (D2 3.2): with monitor.stallS below this watch it fires only when the step monitor is off or broken: said
-            bb.port.log("outer watch fired after " + s + " s in " + running.kind() + ": the step monitor said nothing");
+            bb.port.log("outer watch fired after " + s + " s in " + in + ": the step monitor said nothing");
             // 0.39.z46: an order's run re-plans on it (the step's target as the source fact) instead of parking
             JobPort.NoProgress np = bb.port.noProgress(taskId, io.github.mojolowjo.entropybot.aa.moves.FactChange.STALL_NO_PROGRESS + " " + s + " s");   // FK fix review: the stall word
             if (np == JobPort.NoProgress.REPLANNED) {
-                bb.port.log("no progress " + s + "s in " + running.kind() + ": re-planned on the step's source fact");
+                bb.port.log("no progress " + s + "s in " + in + ": re-planned on the step's source fact");
                 lastProgressAt = now;
                 lastProgress = bb.port.progress(taskId);
                 return Status.RUNNING;
@@ -124,13 +131,13 @@ public final class RunJob extends Node {
             // 0.39.z70 (D2 3.1, run O P5): the typed run already ended (or ended in the watch's re-plan): no cancel, no
             // "no progress" end - the next poll reads the run's own end and its reason
             if (np == JobPort.NoProgress.MONITORED) {       // 0.39.z78 run EJ (rule 23 (2)): the step monitor is the one reader
-                bb.port.log("watch " + s + "s in " + running.kind() + ": left to the step monitor, which judges the running step (monitor.stallS)");
+                bb.port.log("watch " + s + "s in " + in + ": left to the step monitor, which judges the running step (monitor.stallS)");
                 lastProgressAt = now;
                 lastProgress = bb.port.progress(taskId);
                 return Status.RUNNING;
             }
             if (np == JobPort.NoProgress.ENDED) {
-                bb.port.log("watch " + s + "s in " + running.kind() + ": the typed run has ended; its own end is read next");
+                bb.port.log("watch " + s + "s in " + in + ": the typed run has ended; its own end is read next");
                 lastProgressAt = now;
                 return Status.RUNNING;
             }

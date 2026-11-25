@@ -415,7 +415,7 @@ public final class PlannerPort implements BatchWay.Planner {
 
     /** The explore leaf's own under-ground test (NeedChain: run EH's ruling - a hole round the feet is below the surface at any depth). */
     static boolean surfaceUnder(NeedChain.Surface s) {
-        return s.depth() >= io.github.mojolowjo.entropybot.aa.AaLadder.surfaceDepth() || s.hole() && s.depth() > 0;
+        return s.under();       // job-hold-sight (rule 23 (2)): the one test, Surface.under
     }
 
     /** Item 25: the result's steps walk to a surface cell (a ToSurface step) - then the surface fact's cell matters to it. */

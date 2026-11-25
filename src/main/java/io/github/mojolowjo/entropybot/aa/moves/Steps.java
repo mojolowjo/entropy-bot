@@ -809,6 +809,22 @@ public final class Steps {
         return phase == Phase.RUNNING && !paused && idx >= 0 && idx < steps.size() && steps.get(idx) instanceof Step.AwaitPaths;
     }
 
+    /**
+     * job-hold-sight (worlds run 4 w054: the outer watch said "180 s in EXPLORE" during cuts and ended every second one): the
+     * running step as the watch reads it - its kind (the step's own type), its words, its limit (a step the monitor judges or
+     * one standing on its own bound: steps.stepMaxS, the limit this runner ends it at; any other: -1, the task's own no-progress limit as the watch's
+     * own) and its age, in ms of game ticks. Null: no step runs. Reads no monitor state (the hand-off bound starts only when
+     * the watch fires, {@link #monitorJudges}).
+     */
+    public io.github.mojolowjo.entropybot.aa.core.JobPort.StepWatch watch() {
+        if (phase != Phase.RUNNING || idx < 0 || idx >= steps.size()) return null;
+        Step s = steps.get(idx);
+        boolean own = standsOnItsOwnBound() || (!paused && monitorOn);
+        long tickMs = 50;                                    // game fact: 20 game ticks per second
+        return new io.github.mojolowjo.entropybot.aa.core.JobPort.StepWatch(s.getClass().getSimpleName(), s.text(),
+                own ? stepTicks() * tickMs : -1, Math.max(0, now - stepStart) * tickMs);
+    }
+
     public boolean monitorJudges() {
         if (!(phase == Phase.RUNNING && !paused && idx >= 0 && idx < steps.size() && monitorOn && monitor.judged())) return false;
         if (monitoredSince < 0) monitoredSince = now;
