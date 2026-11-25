@@ -75,6 +75,25 @@ public final class ChunkPass {
     private final ConcurrentLinkedQueue<SummaryFiles.Loaded> fromFiles = new ConcurrentLinkedQueue<>();
     private final ConcurrentLinkedQueue<String> failedWrites = new ConcurrentLinkedQueue<>();
     private ExecutorService worker;
+    /**
+     * job-hold-sight: the last moment (the game clock's ms) the pass had no arrived chunk left to read (a first load or a
+     * resend; a missed patch's rescan is not counted) - chunks still loading are read after it (Inputs.sightAtMs).
+     * {@link Long#MAX_VALUE}: no tick yet (no pass behind the sources to wait on).
+     */
+    private volatile long arrivalsReadAt = Long.MAX_VALUE;
+
+    /** job-hold-sight: {@link #arrivalsReadAt}. */
+    public long arrivalsReadAt() { return arrivalsReadAt; }
+
+    /**
+     * job-hold-sight send-back (pure; JUnit: HoldSightTest): {@link #arrivalsReadAt} after a failed tick - no pass to wait
+     * on ({@link Long#MAX_VALUE}, as before the first tick), {@code said} run when it was still a moment (the first failed
+     * tick of a streak; rule 7). The next tick that gets past the read loop stamps it again.
+     */
+    public static long arrivalsAfterError(long was, Runnable said) {
+        if (was != Long.MAX_VALUE) said.run();
+        return Long.MAX_VALUE;
+    }
     private String dim;
     private long startMs, lastAuditMs, auditCursor, nearCursor;
 
@@ -227,6 +246,7 @@ public final class ChunkPass {
     /** Once a client tick (from Core). Never throws. */
     public void tick(long tick) {
         long t0 = System.nanoTime();
+        boolean pastReads = false;          // job-hold-sight send-back: the read loop got through this tick
         try {
             Minecraft mc = Minecraft.getInstance();
             ClientLevel level = mc.level;
@@ -251,6 +271,9 @@ public final class ChunkPass {
                 }
                 readOne(level, next.get(i), now);
             }
+            // job-hold-sight: no arrived chunk left to read - the sources in what is loaded are as read as the pass makes them
+            pastReads = true;
+            if (schedule.pendingArrivals() == 0) arrivalsReadAt = game;
             // job-planner-stick, review round 3: the rim re-reads of chunks whose neighbour arrived, in what is left of the budget
             for (long k : rimWaits.take(PER_TICK)) {
                 if (System.nanoTime() - t0 > Limits.SENSE_BUDGET_NS) { rimWaits.again(k); continue; }
@@ -277,6 +300,10 @@ public final class ChunkPass {
             }
         } catch (Throwable t) {
             error("tick", t);
+            // job-hold-sight send-back (the reviewer: a tick that throws before the stamp every time froze arrivalsReadAt,
+            // and every park waiting on a sight held the deposit for ever - the run 3 circle): a tick that failed is no
+            // reader to wait on - the hold waits on the nearby scan alone until a tick gets through again, said once
+            if (!pastReads) arrivalsReadAt = arrivalsAfterError(arrivalsReadAt, () -> LOG.warn("[entropybot] sense: the chunk pass's tick failed ({}); the deposit's hold no longer waits on its arrived chunks until a tick gets through", t.toString()));
         } finally {
             timeTick(System.nanoTime() - t0);
         }

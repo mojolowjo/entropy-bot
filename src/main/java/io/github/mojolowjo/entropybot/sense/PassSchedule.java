@@ -87,6 +87,19 @@ public final class PassSchedule {
 
     public int pending() { return due.size(); }
 
+    /**
+     * job-hold-sight: the chunks due for a read because they arrived (a first load or a resend from the server); a missed
+     * patch or a failed read's rescan is not counted (no new chunk came).
+     */
+    public int pendingArrivals() {
+        int n = 0;
+        for (Long k : due.keySet()) {
+            Why w = why.get(k);
+            if (w == null || w == Why.LOAD || w == Why.RESEND) n++;
+        }
+        return n;
+    }
+
     public int loadedCount() { return loaded.size(); }
 
     public List<Long> loadedKeys() { return new ArrayList<>(loaded); }

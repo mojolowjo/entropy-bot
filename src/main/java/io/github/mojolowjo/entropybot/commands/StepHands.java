@@ -585,6 +585,16 @@ public final class StepHands implements Steps.Hands {
         reset();
     }
 
+    /**
+     * job-hold-sight (worlds run 4 w037, w039): the feet when they stand under ground (Jobs.underGround, the planner's own
+     * test), null: on the surface, or no level. A cut that got nothing from there is the place's fact (ChopEnd).
+     */
+    private static int[] feetUnder(LocalPlayer p) {
+        if (p == null || p.level() == null) return null;
+        int[] me = Jobs.here(p);
+        return Jobs.underGround(p.level(), me[0], me[1], me[2]) ? me : null;
+    }
+
     /** A collect / chop ended: the policy intent back to travel (the fork process put its own settings back). */
     private void endMining() {
         mining = false;
@@ -2410,7 +2420,7 @@ public final class StepHands implements Steps.Hands {
                 if (!b.getChopProcess().isActive()) {          // it ended at its start (none in range): its own reason
                     endMining();
                     String end = endOf(b.getChopProcess().lastEnd());
-                    ChopEnd.zeroGot(0, mineSource, mineFrom, end);   // 0.39.z36 (S42): none got: the source fact, the order re-plans
+                    ChopEnd.zeroGot(0, mineSource, mineFrom, end, component ? null : feetUnder(p));   // 0.39.z36 (S42): none got: the source fact, the order re-plans; job-hold-sight: from under ground the place's
                     return "error: " + what + ": " + end;
                 }
             } else if (veining) {
@@ -2518,8 +2528,9 @@ public final class StepHands implements Steps.Hands {
             // chop: the whole tree is the job; the process ends itself (the count is checked between trees) with its reason
             if (b == null) return Car.Status.failed("baritone not loaded");
             if (b.getChopProcess().isActive() || Core.INSTANCE.reflexes.hold()) return Car.Status.running(miningWhat + ": " + got + " of " + want + " (Baritone's chop)");
+            boolean tree = !component;           // read before endMining clears the hand's state
             endMining();
-            return ChopEnd.of(miningWhat, got, want, endOf(b.getChopProcess().lastEnd()), mineSource, mineFrom, dropsGot(p));
+            return ChopEnd.of(miningWhat, got, want, endOf(b.getChopProcess().lastEnd()), mineSource, mineFrom, dropsGot(p), tree && got <= 0 ? feetUnder(p) : null);
         }
         if (veining) return veinStatus(p, b, got);
         if (got >= want) {

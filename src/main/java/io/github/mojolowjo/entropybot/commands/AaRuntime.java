@@ -611,25 +611,31 @@ public final class AaRuntime implements JobPort {
      * metres. Null: none in the loaded columns. Loader notes: vanilla Level#getHeight (MOTION_BLOCKING, through Jobs.surfaceNoLeaves: the client has no NO_LEAVES map), canSeeSky.
      */
     private static int[] skyCell(net.minecraft.world.level.Level lv, int[] me, double[] best) {
-        int[] sky = null;
         net.minecraft.core.BlockPos.MutableBlockPos m = new net.minecraft.core.BlockPos.MutableBlockPos();
+        List<int[]> cells = new ArrayList<>();
         for (int x = me[0] - skyR(); x <= me[0] + skyR(); x++)
             for (int z = me[2] - skyR(); z <= me[2] + skyR(); z++) {
                 m.set(x, 0, z);
                 if (!lv.isLoaded(m)) continue;
-                int y = Jobs.surfaceNoLeaves(lv, x, z);       // 0.39.z76 send-back 2: the client has no MOTION_BLOCKING_NO_LEAVES (read -64)
+                int y = Jobs.ground(lv, x, z);       // 0.39.z76 send-back 2: the client has no MOTION_BLOCKING_NO_LEAVES (read -64); job-hold-sight review 3: the one column reader of the surface fact
                 if (!io.github.mojolowjo.entropybot.world.SurfaceHeight.known(y)) continue;     // z76 surface: not known is no cell (rule 15)
-                double d = Math.sqrt(Jobs.distSq(me, new int[]{x, y, z}));
                 m.set(x, y, z);
-                if (d >= best[0] || !lv.canSeeSky(m) || !openCell(lv, x, y, z) || !openCell(lv, x, y + 1, z)) continue;     // review: no roof (the Nether)
-                if (Jobs.holeDepth(lv, x, y, z) > 0) continue;                    // run EH: a cell in a hole is no surface to walk up to
+                if (!lv.canSeeSky(m) || !openCell(lv, x, y, z) || !openCell(lv, x, y + 1, z)) continue;     // review: no roof (the Nether)
                 m.set(x, y - 1, z);
                 var below = lv.getBlockState(m);
                 if (below.getCollisionShape(lv, m).isEmpty() || !below.getFluidState().isEmpty()) continue;
-                best[0] = d;
-                sky = new int[]{x, y, z};
+                cells.add(new int[]{x, y, z});
             }
-        return sky;
+        // job-hold-sight (worlds run 4 w027): the nearest cell that is the surface by the one reader - nothing below the
+        // ground round it (Jobs.belowSurface: a sky-lit shaft bottom, a notch dug beside it too, is no surface); tested
+        // nearest first, so the ring read is made for the few cells that come before the answer
+        cells.sort(java.util.Comparator.comparingLong(c -> Jobs.distSq(me, c)));
+        for (int[] c : cells) {
+            if (Jobs.belowSurface(lv, c[0], c[1], c[2]) > 0) continue;
+            best[0] = Math.sqrt(Jobs.distSq(me, c));
+            return c;
+        }
+        return null;
     }
 
     /**
@@ -637,7 +643,7 @@ public final class AaRuntime implements JobPort {
      * heightmap counts a fluid as ground); not loaded or not known: false (the ring's own test says not known).
      */
     private static boolean fluidTop(net.minecraft.world.level.Level lv, int x, int z) {
-        int y = Jobs.surfaceNoLeaves(lv, x, z);
+        int y = Jobs.ground(lv, x, z);                  // job-hold-sight review 3: the one column reader (Jobs.ground)
         if (!io.github.mojolowjo.entropybot.world.SurfaceHeight.known(y)) return false;
         var m = new net.minecraft.core.BlockPos.MutableBlockPos(x, y, z);
         if (!lv.isLoaded(m)) return false;
@@ -678,7 +684,7 @@ public final class AaRuntime implements JobPort {
         var s = surfaceAt0(mc.level, me);
         if (s == null) return null;
         var lv = mc.level;
-        int top = Jobs.surfaceNoLeaves(lv, me[0], me[2]);
+        int top = Jobs.ground(lv, me[0], me[2]);       // job-hold-sight review 3: the one column reader
         if (!io.github.mojolowjo.entropybot.world.SurfaceHeight.known(top)) return s;
         var m = new net.minecraft.core.BlockPos.MutableBlockPos();
         int floor = io.github.mojolowjo.entropybot.aa.NeedChain.floorIn(y -> {
@@ -697,7 +703,7 @@ public final class AaRuntime implements JobPort {
         // run EI (the manager's fix): no rock over the head - the surface leg's target is the ring's highest standable
         // surface cell, nearest (SurfaceHeight.ringTarget): on flat ground the feet's own cell (no leg), in a pit the rim
         if (rock == 0) {
-            java.util.function.IntBinaryOperator ground = (x, z) -> Jobs.surfaceNoLeaves(lv, x, z);
+            java.util.function.IntBinaryOperator ground = (x, z) -> Jobs.ground(lv, x, z);     // job-hold-sight review 3 (rule 23 (2)): the hole's own column reader
             int[] t = io.github.mojolowjo.entropybot.world.SurfaceHeight.ringTarget(me, ground, (x, y, z) -> standableSky(lv, x, y, z));
             // 857599bc review: a leg only where a no-break walk cannot go (the ring's top more than 1 over the feet's surface)
             // run EM: a column whose top is a fluid is no step (the no-break walk cannot climb out of water onto the rim)
@@ -712,7 +718,7 @@ public final class AaRuntime implements JobPort {
         if (sky != null) return new io.github.mojolowjo.entropybot.aa.NeedChain.Surface(depth, sky[0], sky[1], sky[2], best[0], inHole);
         // 0.39.z76 send-back 2 (runs AK, AL, AO: every "surface at x -64 z: unreachable" - the walk up aimed at the bottom of the
         // world, so no surface explore ever walked up first): the client keeps only MOTION_BLOCKING / WORLD_SURFACE (Jobs.surfaceNoLeaves)
-        int top = Jobs.surfaceNoLeaves(lv, me[0], me[2]);
+        int top = Jobs.ground(lv, me[0], me[2]);       // job-hold-sight review 3: the one column reader
         if (!io.github.mojolowjo.entropybot.world.SurfaceHeight.known(top)) return null;     // z76 surface (rule 15): not known, never y -64
         return new io.github.mojolowjo.entropybot.aa.NeedChain.Surface(depth, me[0], top, me[2], Math.abs(top - me[1]), inHole);
     }
@@ -2257,6 +2263,10 @@ public final class AaRuntime implements JobPort {
         int[] me = Jobs.here(p);
         in.underDepth = Jobs.belowSurface(mc.level, me[0], me[1], me[2]);   // 0.39.z78 J6b EH review (rule 23): the one "below the surface" reader
         in.pos = me;
+        // job-hold-sight (worlds run 4 w044): when the known sources were read over what is loaded - the nearby scan's oldest
+        // answer in use and the chunk pass's last moment with no arrived chunk unread (Goals.stillChanges reads it)
+        long nowMs = io.github.mojolowjo.entropybot.aa.brain.GameClock.ms();
+        in.sightAtMs = io.github.mojolowjo.entropybot.aa.core.Inputs.sightAt(c.nearby.readSince(nowMs), io.github.mojolowjo.entropybot.sense.ChunkPass.INSTANCE.arrivalsReadAt());
         // AA_STEP3 A1: the world spawn for the death cost's walk back (client Level.getSharedSpawnPos, the level data)
         var sp = mc.level.getSharedSpawnPos();
         in.spawnPos = sp == null ? null : new int[]{sp.getX(), sp.getY(), sp.getZ()};

@@ -485,6 +485,14 @@ public final class NeedChain {
 
         public Surface(int depth, int x, int y, int z, double dist) { this(depth, x, y, z, dist, false); }
 
+        /**
+         * job-hold-sight (rule 23 (2): the explore's, the deposit's and the planner port's copies of this test made one):
+         * the feet are under ground - aaLadder.surfaceDepth or more below the surface, or in a hole round the feet at any
+         * depth over a step (run EH: a sky-open shaft, SurfaceHeight.pitDepth). The one "not on the surface" answer the
+         * orders and the deposit read.
+         */
+        public boolean under() { return depth >= AaLadder.surfaceDepth() || hole && depth > 0; }
+
         /** Run EM: the feet (no leg needed), with the ring's top kept for a boxed-in explore's way out ({@code top}, {@code topDist}). */
         public static Surface noLeg(int depth, int[] feet, boolean hole, int[] top, double topDist) { return new Surface(depth, feet[0], feet[1], feet[2], 0, hole, top == null ? null : top.clone(), topDist); }
     }
@@ -2852,7 +2860,7 @@ public final class NeedChain {
             }
         }
         Surface over = c.w.where().surface().get();
-        boolean under = over != null && (over.depth() >= AaLadder.surfaceDepth() || over.hole() && over.depth() > 0);   // the explore's test (rule 22)
+        boolean under = over != null && over.under();   // the explore's test (rule 22), one reader (Surface.under)
         String overWhy = over == null ? "the surface over the bot is not known (its column is not loaded; rule 15: not known is never on the surface)" : null;
         String key = stationKey(x, y, z);
         String held = heldExact(c, key);
@@ -5959,6 +5967,7 @@ public final class NeedChain {
         if (known.isEmpty()) { c.fail = "the yield of " + shw(gives) + " from " + shw(blockOf(gives, first)) + " is not known (no loot entry; rule 15)"; return null; }
         String spotFail = null;         // review 3 item 2: the last spot left out because its dig down had no way (said)
         int remainingAtStart = remaining;
+        int[][] upFrom = {null};        // job-hold-sight: the surface cell the way up before a cut leaves the bot at (once a way)
         for (Spot sp : known) {
             if (remaining <= 0) break;
             int[] tg = takeOf(c, gives, sp, remaining, log);
@@ -5992,12 +6001,17 @@ public final class NeedChain {
                 // walk beyond the mine's sight out - the ways compete without it and the explore leaf takes the way out
                 // (the walk up, the climb, the leased explore); lifted once the bot stands failures.moved from the cell
                 String boxedNow = sp.dist() <= Step.Collect.MINE_SIGHT ? null : boxedHere(c);
+                // job-hold-sight (worlds run 4 w037, w039): a cut that got nothing from under ground here is a fact of this
+                // place - the cut is priced with the way up first (the walk up, else the climb) and the walk from there
+                String cutFrom = log && boxedNow == null ? cutFromHere(c) : null;
                 Walked wk;
                 if (boxedNow != null) {
                     wk = new Walked(Double.NaN, "", "boxed in here (" + boxedNow + "): no walk to a source from this cell until the way out", PathPrice.Kind.NONE);
                     walkNote(c, sp.x(), walkY, sp.z(), sp.dist(), wk.fail(), wk);
                     c.fail = wk.fail();
-                } else wk = walk(c, sp.x(), walkY, sp.z(), sp.dist());
+                } else if (cutFrom != null && (wk = upThenCut(c, sp, cutFrom, upFrom)) != null) {
+                    walkNote(c, sp.x(), walkY, sp.z(), sp.dist(), wk.fail() == null ? "from the surface after the way up" : wk.fail(), wk);
+                } else wk = walk(c, sp.x(), walkY, sp.z(), sp.dist());     // send-back item 1: on the surface the fact says nothing: the plain walk
                 if (c.fail != null) {                       // 0.39.z41: no price for this walk
                     if (wk.kind() == PathPrice.Kind.UNREACHABLE) c.unreach(spotKey(word, sp), wk.fail());   // the z33 source fact; z69 fix 1: that spot only
                     if (sp == first) return null;           // the way's own spot: the way cannot be picked
@@ -7693,7 +7707,7 @@ public final class NeedChain {
         // had (held for the order, no path, not known): no explore from here either, said (rule 7)
         Surface over = c.down != null ? null : c.w.where().surface().get();
         // run EH (the owner's ruling): a hole round the feet (a sky-open shaft) is below the surface too, at any depth over a step
-        boolean under = over != null && (over.depth() >= AaLadder.surfaceDepth() || over.hole() && over.depth() > 0);
+        boolean under = over != null && over.under();
         if (under && !(where != null && where.surface())) {
             // 0.39.z77 round fix 5 (run BG: the walk up "done" next to the feet, the explore failed "under ground" from the same
             // cell 317 times): an explore from here already failed under ground - a walk up that leaves the bot here is no walk
@@ -7956,6 +7970,67 @@ public final class NeedChain {
 
     /** Run EH (2): a boxed-in explore within failures.moved of the feet (its held fact), null: none. */
     static String boxedHere(Ctx c) { return heldNear(c, BOXED_IN); }
+
+    /**
+     * job-hold-sight (worlds run 4 w037, w039: surface trees planned from y 33, -13, -1; 10 and 20 "no path to any target",
+     * each tree then held by the trunk hold, 9 and 22 trees one after another): the key of a cut that got nothing from under
+     * ground ("cut from x y z", the feet) - the fact is "no way from here", not a fact about the tree. Held by distance as the
+     * other walk facts (heldNear, failures.moved; the world fact by WorldFacts' band), so the next plan prices the walk up
+     * (or the climb) before the cut ({@link #cutFromHere}), and no tree is held for it.
+     */
+    public static final String CUT_FROM = "cut from ";
+
+    public static String cutFromKey(int[] feet) { return CUT_FROM + feet[0] + " " + feet[1] + " " + feet[2]; }
+
+    /** job-hold-sight: a cut that got nothing from under ground within failures.moved of the feet (its held fact), null: none. */
+    static String cutFromHere(Ctx c) { return heldNear(c, CUT_FROM); }
+
+    /**
+     * job-hold-sight: the walk of a cut whose walk from here failed under ground ({@code held}: that fact) - the way up first
+     * (the priced walk up, {@link #surfaceWalk}; held or no path: the climb, {@link #climbUp}), taken once per way
+     * ({@code upFrom[0]}: the surface cell it leaves the bot at), then the walk from that cell to the tree by Baritone's
+     * estimate from there (ranked, at least the straight metres; no estimate: the straight metres, said). The surface over
+     * the bot not known: no cut priced from here (rule 15, said). Null: the feet are on the surface - the fact is "no way
+     * from under ground there" and says nothing about a walk from the surface, so the caller prices the plain walk
+     * (send-back item 1: the bot walked up within failures.moved of the failed cell, a shallow dig or a ravine's rim; every
+     * tree refused there left the order nothing priced). A failure sets {@code c.fail} (the walk up still computing: the
+     * way waits, rule 18).
+     */
+    private static Walked upThenCut(Ctx c, Spot sp, String held, int[][] upFrom) {
+        String upLine = null;
+        if (upFrom[0] == null) {
+            Surface over = c.w.where() == null || c.w.where().surface() == null ? null : c.w.where().surface().get();
+            if (over == null) {
+                c.fail = "the cut's walk from here failed (" + held + "): the surface over the bot is not known, so no way up is priced (rule 15)";
+                return new Walked(Double.NaN, "", c.fail, PathPrice.Kind.NONE);
+            }
+            if (!over.under()) {
+                c.note(() -> "cut: " + held + " is a fact of under ground; the feet are on the surface now: the plain walk");
+                return null;
+            }
+            String up = surfaceWalk(c);
+            if (up == null && c.fail != null) return new Walked(Double.NaN, "", c.fail, PathPrice.Kind.NONE);     // its path is not known yet: the way waits
+            if (up == null) up = climbUp(c, over);
+            if (up == null) {
+                if (c.fail == null) c.fail = "no way up from here for the cut (" + held + ")";
+                return new Walked(Double.NaN, "", c.fail, PathPrice.Kind.NONE);
+            }
+            upFrom[0] = new int[]{over.x(), over.y(), over.z()};
+            upLine = up;
+            final String u = up;
+            c.note(() -> "cut: the cut's walk from here failed under ground (" + held + "): " + u + ", then the walk to the tree from the surface");
+        }
+        int[] from = upFrom[0];
+        double straight = dist3(from, new int[]{sp.x(), sp.y(), sp.z()});
+        double est = c.w.path() == null ? Double.NaN : c.w.path().estimateFrom(from, sp.x(), sp.y(), sp.z());
+        String at = from[0] + " " + from[1] + " " + from[2];
+        Walked w;
+        if (Double.isNaN(est)) {
+            double sec = io.github.mojolowjo.entropybot.aa.brain.Unit.seconds(straight);
+            w = new Walked(sec, "walk ~" + s(sec) + " (" + RANKED + ", not priced: no estimate from the surface at " + at + ", the straight " + Math.round(straight) + " m)", null, PathPrice.Kind.ESTIMATED);
+        } else w = estimateFloor(new Walked(est, "walk ~" + s(est) + " (" + RANKED + ", not priced: Baritone's estimate from the surface at " + at + ")", null, PathPrice.Kind.ESTIMATED), straight);
+        return upLine == null ? w : new Walked(w.seconds(), upLine + ", then " + w.note(), null, w.kind());
+    }
 
     /** 0.39.z77 round fix 2: the held stands within failures.moved of the feet ("stood at x y z: why"), null: none. */
     static String stoodHere(Ctx c) { return heldNear(c, STOOD_AT); }

@@ -131,19 +131,26 @@ final class SimWorld {
         return io.github.mojolowjo.entropybot.world.SurfaceHeight.NOT_KNOWN;
     }
 
-    /** How far the feet stand below the ground round them: the game's own hole test (SurfaceHeight.holeDepth) on the 8 columns round. */
+    /** How far the feet stand below the ground round them: the game's own hole reader (SurfaceHeight.pitDepth, as Jobs.holeDepth) on the columns round. */
     int holeDepth(int x, int y, int z) {
-        int[] n = new int[8];
-        int i = 0;
-        for (int dx = -1; dx <= 1; dx++) for (int dz = -1; dz <= 1; dz++) if (dx != 0 || dz != 0) n[i++] = surfaceY(x + dx, z + dz);
-        return io.github.mojolowjo.entropybot.world.SurfaceHeight.holeDepth(y, n);
+        return io.github.mojolowjo.entropybot.world.SurfaceHeight.pitDepth(new int[]{x, y, z}, this::groundY);
+    }
+
+    /** The ground under any tree (SurfaceHeightLive.ground): {@link #surfaceY} with the logs walked past too. */
+    int groundY(int x, int z) {
+        for (int yy = box[4]; yy >= box[1]; yy--) {
+            String b = at(x, yy, z);
+            if (b.equals(AIR) || ItemWorth.hasTag(b, "minecraft:leaves") || ItemWorth.isIn(b, "minecraft:logs")) continue;
+            return b.equals(Scenario.NOT_LOADED) ? io.github.mojolowjo.entropybot.world.SurfaceHeight.NOT_KNOWN : yy + 1;
+        }
+        return io.github.mojolowjo.entropybot.world.SurfaceHeight.NOT_KNOWN;
     }
 
     /** The game's one "below the surface" answer (SurfaceHeight.belowSurface): the rock over the head or the hole round the feet. */
     int below(int x, int y, int z) { return io.github.mojolowjo.entropybot.world.SurfaceHeight.belowSurface(over(x, y, z), holeDepth(x, y, z)); }
 
     /** The game's surface leg target (SurfaceHeight.ringTarget): the highest standable surface within its ring of the feet; null: none. */
-    int[] ringTop(int[] feet) { return io.github.mojolowjo.entropybot.world.SurfaceHeight.ringTarget(feet, this::surfaceY, this::standable); }
+    int[] ringTop(int[] feet) { return io.github.mojolowjo.entropybot.world.SurfaceHeight.ringTarget(feet, this::groundY, this::standable); }   // job-hold-sight review 3: the game's one column reader (Jobs.ground)
 
     /** The blocks over the head at a feet cell, up to the box's top: 0 = under open sky. */
     int over(int x, int y, int z) {
@@ -161,7 +168,7 @@ final class SimWorld {
                 if (open(x, yy, z)) continue;
                 if (ItemWorth.isIn(at(x, yy, z), "minecraft:logs")) break;          // a tree's top is no ground
                 int[] c = {x, yy + 1, z};
-                if (standable(x, yy + 1, z) && below(x, yy + 1, z) == 0 && (best == null || dist(c, feet) < dist(best, feet))) best = c;
+                if (standable(x, yy + 1, z) && (best == null || dist(c, feet) < dist(best, feet)) && below(x, yy + 1, z) == 0) best = c;     // the ring read last (job-hold-sight: it reads 53 columns)
                 break;
             }
         }
