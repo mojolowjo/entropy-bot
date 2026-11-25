@@ -541,6 +541,8 @@ public final class StepHands implements Steps.Hands {
             if (fishing != null) fishing.end();
             if (vein != null) vein.stop();
             if (deposit != null) {
+                // review 4 (point 2): a cancel between the clicks and the count still hands over what went in
+                if (c.aaRuntime != null) c.aaRuntime.putMoved(deposit.putItems());
                 LocalPlayer dp = Minecraft.getInstance().player;
                 if (dp != null && Gui.open(dp)) Gui.close(dp);
                 io.github.mojolowjo.entropybot.aa.moves.JobHands.get().stop(why);

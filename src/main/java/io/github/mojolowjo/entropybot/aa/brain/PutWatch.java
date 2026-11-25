@@ -40,11 +40,30 @@ public final class PutWatch {
      * else it belongs to {@code current}, the task running now (a re-plan or a resume inside it).
      */
     public void started(long current, boolean starting) {
+        // review 4 (point 3): the same task starting the put again (an escape resume, an in-run re-plan that splices a new
+        // Deposit) keeps what its earlier legs moved; the leg's own count starts afresh
+        boolean again = on && !pending && !starting && task == current;
+        if (again) earlier = sum(earlier, moved);
+        else earlier = Map.of();
         on = true;
         pending = starting;
         task = starting ? -1 : current;
         moved = Map.of();
         deposits.putStarted();
+    }
+
+    /** Review 4 (point 3): what the earlier legs of this same put moved. */
+    private Map<String, Integer> earlier = Map.of();
+
+    /** What the put has moved so far, all its legs (empty: nothing). */
+    public Map<String, Integer> movedSoFar() { return sum(earlier, moved); }
+
+    private static Map<String, Integer> sum(Map<String, Integer> a, Map<String, Integer> b) {
+        if (a.isEmpty()) return b;
+        if (b.isEmpty()) return a;
+        Map<String, Integer> out = new java.util.TreeMap<>(a);
+        b.forEach((k, v) -> out.merge(k, v, Integer::sum));
+        return Map.copyOf(out);
     }
 
     /** The new task whose start ran the put's step got its id: a pending put belongs to it. */
@@ -60,8 +79,15 @@ public final class PutWatch {
         return over(false, "the deposit task's start was refused after the put began: " + why);
     }
 
-    /** The put's leg ended having moved {@code items} into the chest (by the step's ids; empty: nothing). */
-    public void moved(Map<String, Integer> items) { moved = items == null ? Map.of() : Map.copyOf(items); }
+    /**
+     * The put's leg moved {@code items} into the chest so far (by the step's ids; empty: nothing). Review 4 (point 2): told
+     * at the clicks and again at the count, each time the leg's whole count (a replace, never added twice). No put on:
+     * nothing (a deposit that is no planned put).
+     */
+    public void moved(Map<String, Integer> items) {
+        if (!on) return;
+        moved = items == null ? Map.of() : Map.copyOf(items);
+    }
 
     /**
      * Task {@code endedTask}'s run ended ({@code done}, else failed at {@code failedAt}): the put of that task reached the
@@ -106,8 +132,9 @@ public final class PutWatch {
         on = false;
         pending = false;
         task = -1;
-        Map<String, Integer> m = moved;
+        Map<String, Integer> m = movedSoFar();
         moved = Map.of();
+        earlier = Map.of();
         deposits.putEnded(reached, m);
         return "the line's put " + (reached ? "reached the chest"
                 : "did not reach the chest whole (" + (m.isEmpty() ? "nothing went in" : "went in: " + m) + "; the rest is owed again)") + ": " + why;

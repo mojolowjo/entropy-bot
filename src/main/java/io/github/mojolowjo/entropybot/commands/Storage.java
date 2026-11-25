@@ -117,6 +117,18 @@ public final class Storage {
         Map<String, Integer> contents = Gui.containerContents(p);
         if (contents == null || lastOpened == null) return;
         noteChest(lastOpened, contents);
+        // review 4 (point 1): the main chest opened showing room lifts its full hold (MainChestHold.roomSeen)
+        var rt = commands == null ? null : commands.aaRuntime;
+        if (rt == null) return;
+        String[] w = lastOpened.split(" ");
+        if (w.length != 3) return;              // structural: x y z
+        int free = 0;
+        for (var s : p.containerMenu.slots) if (s.container != p.getInventory() && !s.hasItem()) free++;
+        try {
+            rt.chestHoldSaid(rt.chestHold.roomSeen(Integer.parseInt(w[0]), Integer.parseInt(w[1]), Integer.parseInt(w[2]), free));
+        } catch (NumberFormatException e) {
+            LOG.warn("[entropybot] storage: the opened container's cell \"{}\" is not x y z: the main chest's hold is not checked", lastOpened);
+        }
     }
 
     private void noteChest(String key, Map<String, Integer> contents) {

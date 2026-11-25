@@ -1965,7 +1965,7 @@ public final class NeedChain {
                          boolean tableReady, boolean furnaceReady, boolean stuck, String unknown, String pickItem, int pickTier, boolean tableWalked,
                          boolean furnaceWalked, int pickWorn, boolean pickMade, boolean pickOut, boolean atRoom, String down, int downAt,
                          boolean tableDown, boolean furnaceDown, Map<String, Integer> upBag, List<String> path, int pathsWaiting, Map<String, Integer> aside,
-                         boolean hoisting, boolean bandPick, boolean climbPick, Burn burned, String fail, String loopOn, Set<String> keptFuel) {}
+                         boolean hoisting, boolean bandPick, boolean climbPick, boolean lending, Burn burned, String fail, String loopOn, Set<String> keptFuel) {}
 
     /** A cheap hash of an entry state (its sizes and scalars; equal entries hash equal, a clash is settled by Deep.equal). */
     private static int hashOf(Entry e) {
@@ -1974,7 +1974,7 @@ public final class NeedChain {
                 e.down(), e.downAt(), e.path(), e.pathsWaiting(), e.fail(), e.loopOn(), e.unknown(), e.leafAt().size(), e.taken().size());
         int flags = (e.tableReady() ? 1 : 0) | (e.furnaceReady() ? 2 : 0) | (e.stuck() ? 4 : 0) | (e.tableWalked() ? 8 : 0) | (e.furnaceWalked() ? 16 : 0)    // structural: bits
                 | (e.pickMade() ? 32 : 0) | (e.pickOut() ? 64 : 0) | (e.atRoom() ? 128 : 0) | (e.tableDown() ? 256 : 0) | (e.furnaceDown() ? 512 : 0)       // structural: bits
-                | (e.hoisting() ? 1024 : 0) | (e.bandPick() ? 2048 : 0) | (e.climbPick() ? 4096 : 0);                                                         // structural: bits
+                | (e.hoisting() ? 1024 : 0) | (e.bandPick() ? 2048 : 0) | (e.climbPick() ? 4096 : 0) | (e.lending() ? 8192 : 0);                                                         // structural: bits
         return 31 * h + flags;                                                                                                                              // structural: a hash's multiplier
     }
 
@@ -1988,7 +1988,7 @@ public final class NeedChain {
         private final List<String> path;
         private final int pathsWaiting;
         private final Map<String, Integer> aside;
-        private final boolean hoisting, bandPick, climbPick;
+        private final boolean hoisting, bandPick, climbPick, lending;
         private final Burn burned;
         private final String fail, loopOn;
         private final Set<String> kept;
@@ -2002,6 +2002,7 @@ public final class NeedChain {
             hoisting = c.hoisting;
             bandPick = c.bandPick;
             climbPick = c.climbPick;          // stage 4 review 3: a node priced inside a climb's pickaxe-first is not reused outside it
+            lending = c.lending;              // review 4: a node priced inside a lend's collect again (no lend there) is not reused outside it
             burned = c.burned;
             fail = c.fail;
             loopOn = c.loopOn;
@@ -2014,7 +2015,7 @@ public final class NeedChain {
             if (e[i] == null) e[i] = new Entry(fullSteps ? s.steps() : (Object) s.steps().size(), s.leafAt(), s.taken(), awayRead ? s.away() : null,
                     s.tableReady(), s.furnaceReady(), s.stuck(), s.unknown(), s.pickItem(), s.pickTier(), s.tableWalked(), s.furnaceWalked(), s.pickWorn(),
                     s.pickMade(), s.pickOut(), s.atRoom(), s.down(), s.downAt(), s.tableDown(), s.furnaceDown(), s.upBag(), path, pathsWaiting, aside,
-                    hoisting, bandPick, climbPick, burned, fail, loopOn, kept);
+                    hoisting, bandPick, climbPick, lending, burned, fail, loopOn, kept);
             return e[i];
         }
 
@@ -2714,8 +2715,12 @@ public final class NeedChain {
             }
             case io.github.mojolowjo.entropybot.aa.brain.MainChest.NotLoaded n -> { x = n.x(); y = n.y(); z = n.z(); }
             case io.github.mojolowjo.entropybot.aa.brain.MainChest.Known k -> { x = k.x(); y = k.y(); z = k.z(); }
+            // review 4 (point 1): full or gone, held while it is true (MainChestHold): no way, the reason said
+            case io.github.mojolowjo.entropybot.aa.brain.MainChest.Held h -> {
+                c.fail = h.why();
+                return finish(c, name, name);
+            }
         }
-        double bonus = chest instanceof io.github.mojolowjo.entropybot.aa.brain.MainChest.Known k ? Math.max(0, k.bonusS()) : 0;
         Surface over = c.w.where().surface().get();
         boolean under = over != null && (over.depth() >= AaLadder.surfaceDepth() || over.hole() && over.depth() > 0);   // the explore's test (rule 22)
         String overWhy = over == null ? "the surface over the bot is not known (its column is not loaded; rule 15: not known is never on the surface)" : null;
@@ -2730,8 +2735,7 @@ public final class NeedChain {
                 String walked = stationWalk(c, "container", "main chest", x, y, z, strict);
                 if (walked == null) return null;
                 c.steps.add(new Step.Deposit(null, Map.copyOf(owed), new int[]{x, y, z}));
-                if (bonus > 0) c.addS(bonus);
-                return "put " + counted(owed) + " into the main chest: " + walked + (bonus > 0 ? " + the chest's " + s(bonus) : "");
+                return "put " + counted(owed) + " into the main chest: " + walked;
             }));
         }
         if (overWhy != null) notOffered.add(overWhy);

@@ -28,7 +28,7 @@ class MainChestTest {
         assertInstanceOf(MainChest.None.class, MainChest.ofText("1 two 3", null));
         assertEquals(new MainChest.NotLoaded(1, 2, 3), MainChest.ofText("1 2 3", c -> false));
         assertEquals("1 2 3", MainChest.ofText("1 2 3", c -> false).at());
-        assertEquals(new MainChest.Known(-53, 107, -8, 0), MainChest.ofText("-53 107 -8", null));
+        assertEquals(new MainChest.Known(-53, 107, -8), MainChest.ofText("-53 107 -8", null));
         assertEquals("-53 107 -8", MainChest.ofText("-53 107 -8", c -> true).at());
     }
 

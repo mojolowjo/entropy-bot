@@ -307,7 +307,12 @@ public final class LineDeposits {
             for (var i : d.getValue().entrySet()) {
                 String k = io.github.mojolowjo.entropybot.aa.NeedChain.id(fullId(d.getKey(), i.getKey()));
                 int in = Math.min(i.getValue(), left.getOrDefault(k, 0));
-                if (in > 0) left.merge(k, -in, Integer::sum);
+                if (in > 0) {
+                    left.merge(k, -in, Integer::sum);
+                    // review 4 (sim: a chest for 10 of 52 - the 10 left the bag, the met order read itself lost, opened
+                    // again and owed its whole amount a second time): what is in the chest counts for its order
+                    d.getKey().depositPut.merge(i.getKey(), in, Integer::sum);
+                }
                 if (i.getValue() - in > 0) { now.put(i.getKey(), i.getValue() - in); rest = true; }
             }
             d.setValue(now);
@@ -474,7 +479,8 @@ public final class LineDeposits {
 
     private static boolean isLost(Goals.Goal o, Map<String, Integer> bag) {
         if (!o.met || o.deposit <= 0 || o.strip != null || !o.depositWeighed) return false;
-        return take(o, bag).values().stream().mapToInt(Integer::intValue).sum() < o.deposit;
+        int inChest = o.depositPut.values().stream().mapToInt(Integer::intValue).sum();     // review 4: a partial put's part
+        return take(o, bag).values().stream().mapToInt(Integer::intValue).sum() + inChest < o.deposit;
     }
 
     /**

@@ -70,6 +70,10 @@ public final class Goals {
          * NeedChain.deposit, met when nothing is owed (LineDeposits.owed, read through {@link #owedNone}).
          */
         public boolean depositGoal;
+        /** Review 4 (point 1): the deposit goal is parked on the main chest's hold (MainChestHold); it runs again when that lifts. */
+        public boolean chestHeld;
+        /** Review 4: what a partial put of the line's deposit moved into the chest for this order (LineDeposits.putEnded); never owed again. */
+        public final Map<String, Integer> depositPut = new java.util.TreeMap<>();
 
         /** deposit-goal: true when the one owed store (LineDeposits.owed on the goal's board) owes nothing; null on every other goal. */
         java.util.function.BooleanSupplier owedNone;
@@ -593,6 +597,8 @@ public final class Goals {
 
             @Override public io.github.mojolowjo.entropybot.aa.moves.Steps.Routine replan(Step failed, io.github.mojolowjo.entropybot.aa.moves.FactChange.Fact fact, String why,
                                                                                   io.github.mojolowjo.entropybot.aa.moves.Steps.Remaining left) {
+                // review 4 (point 1): a put refused by a full or gone chest is the held fact before the re-plan reads the chest
+                if (g.depositGoal && failed instanceof Step.Deposit) chestRefused(bb, why);
                 return Goals.replan(bb, g, failed, fact, why, left);
             }
 
@@ -1085,8 +1091,16 @@ public final class Goals {
     /** deposit-goal: the deposit goal's key (its goal id is "goal.deposit"). */
     public static final String DEPOSIT_KEY = "deposit";
 
-    /** deposit-goal: the words of a put refused by a full main chest; the park on them keeps no wake (only the owner's word changes it). */
-    public static final String CHEST_FULL = "the main chest is full";
+    /**
+     * Review 4 (point 1): a step's or a run's words that hold the main chest's refusal (full, gone) become the one hold
+     * ({@link MainChestHold}), said once (rule 7). No store on the board, or no refusal in the words: nothing.
+     */
+    public static void chestRefused(Blackboard bb, String words) {
+        if (!(bb.fact(MainChestHold.FACT) instanceof MainChestHold h)) return;
+        String line = h.refused(words);
+        if (line == null) return;
+        bb.port.log(line);
+    }
 
     /**
      * deposit-goal plan, stage 3 (piece 4; owner 2026-11-23: the line's deposit is a planned, priced goal): the line's
@@ -1144,8 +1158,14 @@ public final class Goals {
         if (a != null) {
             g.loopPark = new LoopPark(a, needCounts(a.needs() == null ? List.of() : a.needs().keySet(), bb.in == null ? null : bb.in.bag, bb.in == null ? 0 : bb.in.pickTier), sourceCells(bb, g, a), bb.in == null ? null : bb.in.pos);
             again = "; it tries once more by itself when a need in the bag rises, it moves " + Math.round(Failures.movedV()) + " blocks or a new source is seen";
-        } else if (g.parked.endsWith(OTHER_DIM) || g.depositGoal && g.parked.contains(CHEST_FULL)) {
-            g.loopPark = null;               // stop-wake: only the owner's word changes it - no wake, said as before (deposit-goal: a full chest too)
+        } else if (g.parked.endsWith(OTHER_DIM)) {
+            g.loopPark = null;               // stop-wake: only the owner's word changes it - no wake, said as before
+        } else if (g.depositGoal && MainChest.of(bb) instanceof MainChest.Held held) {
+            // review 4 (point 1): the main chest is full or gone - a fact that holds while it is true (MainChestHold), not a
+            // place park: no move wakes it; OrderEnds.depositSync runs it again when the hold lifts
+            g.loopPark = null;
+            g.chestHeld = true;
+            again = "; held: " + held.why();
         } else {
             // stop-wake: every other park keeps what it waits on (its kind by the reason's cause; not told: the place)
             g.loopPark = null;
@@ -1168,6 +1188,7 @@ public final class Goals {
      * carried set). A passing reason parks nothing; any other parks the order ({@link #park}). True: parked.
      */
     public static boolean runFailed(Blackboard bb, Goal g, String why) {
+        if (g.depositGoal) chestRefused(bb, why);      // review 4 (point 1): a full or gone chest is a held fact first
         if (passing(why)) return false;
         boolean met = g.met || (bb.in != null && bb.in.bag != null && have(free(bb, g), g) >= g.n);
         if (!met) {

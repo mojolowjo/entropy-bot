@@ -60,6 +60,38 @@ class SimDepositGoalTest {
         }
     }
 
+    /** Review 4 (point 1): a chest that takes 10 items: one put, then the deposit holds on the full chest, no walk back. */
+    @Test
+    void aFullChest_onePut_thenHeld_noLoop() {
+        boolean seen = false;
+        for (int seed = 1; seed <= LANDS; seed++) {
+            clear();
+            java.util.Random r = new java.util.Random(seed * 0x9E3779B97F4A7C15L);       // structural: as land()
+            double treeP = 0.05 + r.nextDouble() * 0.25, coalP = 0.005 + r.nextDouble() * 0.03;
+            SimWorld w = SimWorld.deep(seed, 63, treeP, coalP, 24, 10);
+            w.set(40, 64, 45, "minecraft:chest");
+            SimGame g = new SimGame(w, new int[]{0, w.standY(0, 64, 0), 0});
+            g.sight = 24;
+            g.mainAt = "40 64 45";
+            g.chestRoom = 10;                    // test: room for 10 of the 52
+            g.order("cobblestone", 32, "b1", true);
+            g.order("spruce_log", 16, "b1", true);
+            g.order("torch", 4, "b1", true);
+            g.play(SimGameTest.TROUBLE_LIMIT_S);
+            System.out.println("DEPOSIT land " + seed + " (a chest for 10): " + g.end + " | " + g.depositColumn() + " | chest " + g.chest);
+            long puts = g.depositLegs.stream().filter(x -> x.startsWith("put")).count();
+            if (puts == 0) continue;
+            seen = true;
+            assertEquals(1, puts, "one put, never a walk back to the full chest: " + g.depositColumn() + "\n" + g.timelineText());
+            assertTrue(g.end.startsWith("deposit parked: "), g.end);
+            assertNotNull(g.chestHold.hold(), g.end);
+            assertEquals(io.github.mojolowjo.entropybot.aa.brain.MainChestHold.Kind.FULL, g.chestHold.hold().kind());
+            assertEquals(10, g.chest.values().stream().mapToInt(Integer::intValue).sum(), "what fit went in");
+            assertEquals(42, g.deposits.owed().values().stream().mapToInt(Integer::intValue).sum(), "the rest is owed, once: " + g.deposits.owed());
+        }
+        assertTrue(seen, "no land reached the chest");
+    }
+
     @Test
     void anInjectedWalkUpFailure_endsInAnotherWay() {
         boolean seen = false;

@@ -69,6 +69,10 @@ final class SimGame {
     final Set<String> mine = new HashSet<>();
     /** What the main chest holds, by full item id. */
     final Map<String, Integer> chest = new TreeMap<>();
+    /** Review 4: the items the main chest still takes (null: no end, the sim's default). */
+    Integer chestRoom;
+    /** Review 4 (point 1): the main chest's hold, as the runtime's (AaRuntime.chestHold). */
+    final io.github.mojolowjo.entropybot.aa.brain.MainChestHold chestHold = new io.github.mojolowjo.entropybot.aa.brain.MainChestHold();
 
     final List<String> timeline = new ArrayList<>();
     /** How the game ended: "done", or the reason; null while it runs. */
@@ -119,7 +123,10 @@ final class SimGame {
         data.install();
         catalog = catalog(data);
         bb.fact(NeedChain.WORLD_FACT, (Supplier<World>) this::facts);
-        bb.fact(io.github.mojolowjo.entropybot.aa.brain.MainChest.FACT, (Supplier<io.github.mojolowjo.entropybot.aa.brain.MainChest.Answer>) () -> io.github.mojolowjo.entropybot.aa.brain.MainChest.ofText(mainAt, null));   // deposit-goal piece 3: the one reader
+        // review 4 (point 1): a cell that is no chest block answers held (gone), as the game's reader; the hold store as the runtime's
+        bb.fact(io.github.mojolowjo.entropybot.aa.brain.MainChest.FACT, (Supplier<io.github.mojolowjo.entropybot.aa.brain.MainChest.Answer>) () -> io.github.mojolowjo.entropybot.aa.brain.MainChest.ofText(mainAt, null,
+                c -> "minecraft:chest".equals(world.at(c[0], c[1], c[2]))));   // deposit-goal piece 3: the one reader
+        bb.fact(io.github.mojolowjo.entropybot.aa.brain.MainChestHold.FACT, chestHold);
         // job-own-aside-worker (worlds run 4): the trips' legs and the orders' own chains through the planner worker's path,
         // as the game resolves them (snapshot, PlannerWorker.resolve, the port's live check), synchronously
         bb.fact(BatchWay.PLANNER_FACT, planner);

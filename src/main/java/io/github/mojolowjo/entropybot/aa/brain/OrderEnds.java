@@ -86,6 +86,20 @@ public final class OrderEnds {
     public static void depositSync(Blackboard bb, Brain brain, LineDeposits deposits, Hooks h) {
         var owed = deposits.owed();
         Goals.Goal g = Goals.depositGoal(bb);
+        // review 4 (point 1): parked on the main chest's hold - runs again once the hold lifted (the owner's word, a new main
+        // chest, room seen, the block a container again); said once (rule 7). While it holds, nothing wakes it
+        if (g != null && g.chestHeld && g.parked != null && !owed.isEmpty() && !(MainChest.of(bb) instanceof MainChest.Held)) {
+            String line = "the line's deposit runs again: the main chest's hold is lifted (it stopped on: " + g.parked + ")";
+            g.parked = null;
+            g.chestHeld = false;
+            g.park = null;
+            g.loopPark = null;
+            g.wakeSaid = null;
+            g.tries.clear();
+            brain.failures.forget(g.id());           // the chest's held keys of the failed puts go with the hold
+            bb.port.log(line);
+            bb.port.tellOwner(line);
+        }
         if (!owed.isEmpty() && g == null) {
             g = Goals.addDeposit(bb, bb.clock == null ? 0 : bb.clock.now());
             g.depositPutsAtStart = deposits.putsReached();

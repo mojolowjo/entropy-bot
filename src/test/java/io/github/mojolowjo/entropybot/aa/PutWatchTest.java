@@ -95,6 +95,54 @@ class PutWatchTest {
         assertEquals(want, l.s().deposits.owed(), "only the rest is owed again, never sent twice");
     }
 
+    /** Review 4 (point 2): the clicks' count is handed over at the clicks; a cancel in the tick before the count knows it. */
+    @Test
+    void aCancelBetweenTheClicksAndTheCount_owesOnlyTheRest_andALateCountIsIgnored() {
+        Line l = due();
+        Map<String, Integer> owed = l.s().deposits.owed();
+        String k = owed.keySet().iterator().next();
+        PutWatch w = new PutWatch(l.s().deposits);
+        w.started(TASK, false);
+        w.moved(Map.of(k, owed.get(k)));                    // DepositLeg.putOnly: the clicks, read from the bag at once
+        String line = w.cancelled(TASK, "a higher desire");  // AaRuntime.cancel reads the put before the hands' cancel
+        assertNotNull(line);
+        assertTrue(line.contains("went in: "), line);
+        w.moved(Map.of(k, 99));                              // StepHands.cancel hands it over again: the put is over, ignored
+        Map<String, Integer> want = new java.util.TreeMap<>(owed);
+        want.remove(k);
+        assertEquals(want, l.s().deposits.owed(), "what went in is not owed again, so no second put takes it from another order");
+    }
+
+    /** Review 4 (point 3): the same task starting the put again keeps what its earlier leg moved. */
+    @Test
+    void theSameTaskStartsThePutAgain_theEarlierLegsCountStays() {
+        Line l = due();
+        Map<String, Integer> owed = l.s().deposits.owed();
+        String k = owed.keySet().iterator().next();
+        PutWatch w = new PutWatch(l.s().deposits);
+        w.started(TASK, false);
+        w.moved(Map.of(k, 1));                              // the first leg moved one, then an escape
+        w.started(TASK, false);                             // the resume, the same task
+        assertEquals(Map.of(k, 1), w.movedSoFar(), "kept");
+        w.moved(Map.of());                                  // the second leg moved nothing yet
+        String line = w.lost(TASK);
+        assertTrue(line.contains("went in: "), line);
+        Map<String, Integer> want = new java.util.TreeMap<>(owed);
+        if (owed.get(k) == 1) want.remove(k); else want.put(k, owed.get(k) - 1);
+        assertEquals(want, l.s().deposits.owed());
+    }
+
+    @Test
+    void anotherTaskStartingAPut_startsItsCountAfresh() {
+        Line l = due();
+        PutWatch w = new PutWatch(l.s().deposits);
+        String k = l.s().deposits.owed().keySet().iterator().next();
+        w.started(TASK, false);
+        w.moved(Map.of(k, 1));
+        w.started(OTHER, false);
+        assertTrue(w.movedSoFar().isEmpty());
+    }
+
     @Test
     void aPutWhoseTaskIsGoneWithNoEndRead_endsOnTheNet() {
         Line l = due();

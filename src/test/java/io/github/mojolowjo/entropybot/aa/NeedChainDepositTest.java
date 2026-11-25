@@ -30,7 +30,7 @@ class NeedChainDepositTest {
     }
 
     static final int[] FEET = {0, 40, 0};
-    static final MainChest.Answer CHEST = new MainChest.Known(100, 70, 0, 0);
+    static final MainChest.Answer CHEST = new MainChest.Known(100, 70, 0);
     static final Map<String, Integer> OWED = Map.of("minecraft:raw_iron", 5);
 
     /** Under ground: 30 blocks over the feet, the surface cell over them at 0 70 0. */
@@ -186,11 +186,12 @@ class NeedChainDepositTest {
     }
 
     @Test
-    void aChestBonus_isNamed() {
-        Chain c = NeedChain.deposit(OWED, new MainChest.Known(100, 70, 0, 4), world(Map.of(), top(), priced(20), priced(5), List.of()));
-        assertTrue(c.ok(), c.why());
-        assertEquals(24, c.seconds(), 0.1, c.why());
-        assertTrue(c.why().contains("the chest's"), c.why());
+    void aHeldChest_hasNoWay_itsReasonSaid() {
+        // review 4 (point 1; the bonus field that was always 0 is gone): a full or gone chest is no way, with its reason
+        Chain c = NeedChain.deposit(OWED, new MainChest.Held(100, 70, 0, "the main chest at 100 70 0 is full (3 left out of the last put)"), world(Map.of(), top(), priced(20), priced(5), List.of()));
+        assertFalse(c.ok(), c.why());
+        assertTrue(c.why().contains("is full"), c.why());
+        assertTrue(c.steps().isEmpty(), c.why());
     }
 
     @Test
@@ -225,7 +226,7 @@ class NeedChainDepositTest {
 
     @Test
     void aNearbyCellsHeldKey_doesNotHoldTheChest() {
-        Chain c = NeedChain.deposit(OWED, new MainChest.Known(100, 70, 3, 0), world(Map.of(), top(), priced(20), priced(5), List.of(NeedChain.stationKey(100, 70, 30) + ": no chest block there")));
+        Chain c = NeedChain.deposit(OWED, new MainChest.Known(100, 70, 3), world(Map.of(), top(), priced(20), priced(5), List.of(NeedChain.stationKey(100, 70, 30) + ": no chest block there")));
         assertTrue(c.ok(), c.why());
     }
 }

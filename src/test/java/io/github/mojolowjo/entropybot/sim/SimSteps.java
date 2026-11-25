@@ -72,15 +72,25 @@ final class SimSteps {
         g.deposits.putStarted();
         if (!"minecraft:chest".equals(g.world.at(c[0], c[1], c[2]))) {
             g.deposits.putEnded(false);
-            return Result.fail(PUT_S, "deposit: no chest known (" + g.world.at(c[0], c[1], c[2]) + " at " + c[0] + " " + c[1] + " " + c[2] + ")");
+            // review 4: the game's words (DepositLeg: "chest at x y z gone"), the ones the main chest's hold reads
+            return Result.fail(PUT_S, "deposit: " + io.github.mojolowjo.entropybot.aa.brain.DepositRule.gone(c) + " (" + g.world.at(c[0], c[1], c[2]) + " there)");
         }
         java.util.List<String> put = new java.util.ArrayList<>(), short_ = new java.util.ArrayList<>();
+        Map<String, Integer> moved = new java.util.TreeMap<>();
+        int left = 0;
         for (var e : owed.entrySet()) {
             String id = full(e.getKey());
             int n = Math.min(e.getValue(), g.bag.getOrDefault(id, 0));
-            if (n > 0) { g.take(id, n); g.chest.merge(id, n, Integer::sum); }
+            // review 4: a chest with an end takes what fits; the rest stays in the bag (the game's QUICK_MOVE)
+            if (g.chestRoom != null) { int fits = Math.min(n, g.chestRoom); left += n - fits; n = fits; g.chestRoom -= fits; }
+            if (n > 0) { g.take(id, n); g.chest.merge(id, n, Integer::sum); moved.put(e.getKey(), n); }
             put.add(n + " " + e.getKey());
             if (n < e.getValue()) short_.add(n + " of " + e.getValue() + " " + e.getKey());
+        }
+        if (left > 0) {
+            g.deposits.putEnded(false, moved);
+            return Result.fail(PUT_S, "deposit: " + moved.values().stream().mapToInt(Integer::intValue).sum() + " items went in at " + c[0] + " " + c[1] + " " + c[2]
+                    + ": " + io.github.mojolowjo.entropybot.aa.brain.DepositRule.full(c, left));
         }
         g.deposits.putEnded(true);
         return Result.ok(PUT_S, "deposit at " + c[0] + " " + c[1] + " " + c[2] + ": " + put + (short_.isEmpty() ? "" : "; SHORT: " + short_));

@@ -352,7 +352,7 @@ final class DepositLeg {
         JobHands.Result r = c.storage.use(chest);
         if (r.running()) return Car.Status.running("deposit: to the chest at " + DepositRule.at(chest) + " - " + r.why());
         if (!isContainer(chest)) {
-            String why = "chest at " + DepositRule.at(chest) + " gone";
+            String why = DepositRule.gone(chest);
             io.github.mojolowjo.entropybot.clear.OwnStations.forget(chest[0], chest[1], chest[2], why);
             c.nearby.forget();
             return Car.Status.failed("deposit: " + why);
@@ -456,6 +456,12 @@ final class DepositLeg {
             gm.handleInventoryMouseClick(menu.containerId, s.index, 0, ClickType.PICKUP, p);          // the rest back
         }
         splitNote = stayed > 0 ? " (" + stayed + " of a split stack stayed: no empty chest slot for it)" : "";
+        // review 4 (point 2): what the clicks moved, read from the bag at once (the client applies the clicks as it sends
+        // them), so a cancel, a preempt or a lost runner before the count a tick later still knows what is in the chest;
+        // the count reads it again from the bag the server confirmed
+        putItems = putPerItem(onlyPerItem, bag(p), step.only());
+        // handed over now: the runtime's cancel reads the put before the hands are cancelled (AaRuntime.cancel)
+        if (c.aaRuntime != null) c.aaRuntime.putMoved(putItems);
         phase = Phase.COUNT;
         return Car.Status.running("deposit: putting " + total(before) + " items in (" + Step.Deposit.onlyText(step.only()) + ")");
     }

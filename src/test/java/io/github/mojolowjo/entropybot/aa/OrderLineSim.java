@@ -37,6 +37,10 @@ final class OrderLineSim {
 
     /** The main chest's cell; null: none set. */
     String mainAt = "-53 107 -8";
+    /** Review 4: the main chest's block is a container (false: the reader reads it gone). */
+    boolean chestThere = true;
+    /** Review 4: the main chest's hold, as the runtime's. */
+    final io.github.mojolowjo.entropybot.aa.brain.MainChestHold chestHold = new io.github.mojolowjo.entropybot.aa.brain.MainChestHold();
     /** The bag by item path ("cobblestone"). */
     final Map<String, Integer> bag = new HashMap<>();
     /** The sources seen, by item path. */
@@ -61,7 +65,8 @@ final class OrderLineSim {
         ScenariosTest.toolWorld();
         bb.fact(NeedChain.WORLD_FACT, (Supplier<World>) this::world);
         bb.fact(LineDeposits.FACT, deposits);          // deposit-kept: the one store, as the runtime's (the deposit goal reads owed from it)
-        bb.fact(io.github.mojolowjo.entropybot.aa.brain.MainChest.FACT, (Supplier<io.github.mojolowjo.entropybot.aa.brain.MainChest.Answer>) () -> io.github.mojolowjo.entropybot.aa.brain.MainChest.ofText(mainAt, null));   // deposit-goal piece 3: the one reader
+        bb.fact(io.github.mojolowjo.entropybot.aa.brain.MainChest.FACT, (Supplier<io.github.mojolowjo.entropybot.aa.brain.MainChest.Answer>) () -> io.github.mojolowjo.entropybot.aa.brain.MainChest.ofText(mainAt, null, c -> chestThere));   // deposit-goal piece 3: the one reader
+        bb.fact(io.github.mojolowjo.entropybot.aa.brain.MainChestHold.FACT, chestHold);   // review 4: as the runtime's
         sense();
     }
 

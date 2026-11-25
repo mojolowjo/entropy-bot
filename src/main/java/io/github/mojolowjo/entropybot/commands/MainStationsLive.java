@@ -299,6 +299,8 @@ final class MainStationsLive {
                     return "aa deposit: item data not loaded yet, and " + id + " at " + a + " is no container block";
             } else if (!ids.contains(id)) return "aa deposit: " + id + " at " + a + " is no chest the deposit uses";
             String r = mark(c, MainStations.CONTAINER, at, id);
+            // review 4 (point 1): the owner's word on the main chest lifts a full or gone hold (MainChestHold)
+            if (c.aaRuntime != null) c.aaRuntime.chestHoldSaid(c.aaRuntime.chestHold.lift("the owner set the main chest (aa deposit " + a + ")"));
             // run HQ (rule 7): the mark is said with whether the deposit's own lookup lists it now - a refused or unlisted main is
             // said here, at the mark, not 20 minutes later as "no chest known"
             StationFact f = c.nearby.containers();

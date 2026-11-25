@@ -213,6 +213,11 @@ public final class DepositRule {
         return "chest at " + at(at) + " full: " + left + " item" + (left == 1 ? "" : "s") + " left";
     }
 
+    /** "chest at x y z gone" (review 4: the words MainChestHold.refusal reads, one producer for the game and the sim). */
+    public static String gone(int[] at) {
+        return "chest at " + at(at) + " gone";
+    }
+
     public static String at(int[] p) {
         return p[0] + " " + p[1] + " " + p[2];
     }
