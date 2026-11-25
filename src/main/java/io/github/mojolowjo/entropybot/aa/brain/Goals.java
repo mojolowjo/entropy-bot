@@ -1662,7 +1662,7 @@ public final class Goals {
     /**
      * review sent back again (item 1): the order's own ask. What {@link #ownAside} takes off the bag ALWAYS rides in the ask
      * (the runner's keptFromUse holds every member's own -d amount, so no inner get may use it, even when one member holds
-     * none); only the asked count drops, by {@link #askAside}, and never to zero or below. Pure.
+     * none); only the asked count drops, by {@link #askAside}, to 0 at the least (all held: met, nothing gathered). Pure.
      */
     static BatchWay.OwnAsk ownAsk(Map<String, Integer> bag, Map<String, Integer> held, List<String> ids, String key, boolean group, int n) {
         var ownBag = new java.util.LinkedHashMap<>(bag);
@@ -1673,7 +1673,8 @@ public final class Goals {
             if (d > 0) taken.put(e.getKey(), d);
         }
         int aside = askAside(taken, ids, key, group);
-        int askN = aside > 0 && aside < n ? n - aside : n;
+        // review sent back (2): all of n held aside is a met ask (0: the chain gets nothing), never the whole n again
+        int askN = Math.max(0, n - aside);
         return new BatchWay.OwnAsk(group ? key : ids.isEmpty() ? key : ids.get(0), ids, askN, group, taken);
     }
 

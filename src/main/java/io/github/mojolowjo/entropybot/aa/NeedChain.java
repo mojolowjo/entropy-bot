@@ -5475,27 +5475,46 @@ public final class NeedChain {
         Map<String, Set<Long>> trees = new java.util.concurrent.ConcurrentHashMap<>();
         return (item, sp) -> {
             if (sp == null || item == null || !tree(item, sp)) return false;
-            return trees.computeIfAbsent(item, it -> treeCells(cuts, known == null ? null : known.apply(it), it)).contains(cell(sp.x(), sp.y(), sp.z()));
+            return trees.computeIfAbsent(item, it -> treeCells(cuts, known, it)).contains(cell(sp.x(), sp.y(), sp.z()));
         };
     }
 
-    /** The cells reached from {@code cuts} over the log spots in {@code spots} that touch (26 neighbours). Pure. */
-    static Set<Long> treeCells(List<int[]> cuts, List<Spot> spots, String item) {
-        Set<Long> logs = new java.util.HashSet<>();
-        if (spots != null) for (Spot s : spots) if (s != null && tree(item, s)) logs.add(cell(s.x(), s.y(), s.z()));
+    /**
+     * The cells reached from {@code cuts} over the known log spots that touch (26 neighbours). Review sent back (3, w025): the
+     * live lookup answers only the NEAREST spot ({@link Lookup}: AaRuntime.needWorld), so one answer never lists the tree.
+     * A {@link Lookup} is asked again and again with a skip of every spot that is already reached or does not touch the
+     * reached cells: its nearest answer is then the next log of the same tree, until it has none. A plain function (a list
+     * of every known spot) is asked the same way and its list flooded. A lookup that ignores the skip (the worker's frozen
+     * copy) adds nothing new and the flood ends. Pure but for the lookup's own reads.
+     */
+    static Set<Long> treeCells(List<int[]> cuts, Function<String, List<Spot>> known, String item) {
         Set<Long> seen = new java.util.HashSet<>();
-        java.util.ArrayDeque<int[]> q = new java.util.ArrayDeque<>();
-        for (int[] c : cuts) if (seen.add(cell(c[0], c[1], c[2]))) q.add(c);
-        while (!q.isEmpty()) {
-            int[] c = q.poll();
-            for (int dx = -1; dx <= 1; dx++)                                   // structural: the 26 neighbours of a cell
-                for (int dy = -1; dy <= 1; dy++)
-                    for (int dz = -1; dz <= 1; dz++) {
-                        long k = cell(c[0] + dx, c[1] + dy, c[2] + dz);
-                        if (logs.contains(k) && seen.add(k)) q.add(new int[]{c[0] + dx, c[1] + dy, c[2] + dz});
+        for (int[] c : cuts) seen.add(cell(c[0], c[1], c[2]));
+        if (known == null) return seen;
+        java.util.function.BiPredicate<String, Spot> skip = (w, s) -> s == null || seen.contains(cell(s.x(), s.y(), s.z())) || !touches(seen, s);
+        while (true) {
+            List<Spot> got = known instanceof Lookup lk ? lk.apply(item, skip) : known.apply(item);
+            if (got == null || got.isEmpty()) return seen;
+            boolean grew = false;
+            for (boolean more = true; more; ) {
+                more = false;
+                for (Spot s : got)
+                    if (s != null && tree(item, s) && !seen.contains(cell(s.x(), s.y(), s.z())) && touches(seen, s)) {
+                        seen.add(cell(s.x(), s.y(), s.z()));
+                        more = grew = true;
                     }
+            }
+            if (!grew) return seen;
         }
-        return seen;
+    }
+
+    /** The spot's cell touches a reached cell (26 neighbours). */
+    private static boolean touches(Set<Long> seen, Spot s) {
+        for (int dx = -1; dx <= 1; dx++)                                   // structural: the 26 neighbours of a cell
+            for (int dy = -1; dy <= 1; dy++)
+                for (int dz = -1; dz <= 1; dz++)
+                    if ((dx | dy | dz) != 0 && seen.contains(cell(s.x() + dx, s.y() + dy, s.z() + dz))) return true;
+        return false;
     }
 
     private static long cell(int x, int y, int z) {

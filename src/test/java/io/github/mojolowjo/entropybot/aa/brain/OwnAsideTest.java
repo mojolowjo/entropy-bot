@@ -65,6 +65,12 @@ class OwnAsideTest {
         assertEquals(5, on.bag().get("minecraft:dirt"));
         var plain = Goals.ownAsk(Map.of("minecraft:cobblestone", 20), Map.of("cobblestone", 8), List.of("minecraft:cobblestone"), "cobblestone", false, 32);
         assertEquals(24, plain.n());
+        // review sent back (2): 32 cobblestone -d with 32 held is met, never 32 more on the world with the 32 taken off
+        var full = Goals.ownAsk(Map.of("minecraft:cobblestone", 32), Map.of("cobblestone", 32), List.of("minecraft:cobblestone"), "cobblestone", false, 32);
+        assertEquals(0, full.n());
+        var fw = new io.github.mojolowjo.entropybot.aa.NeedChain.World(Map.of("minecraft:cobblestone", 32), false, x -> null);
+        var fc = full.resolve(fw);
+        assertTrue(fc.ok() && fc.steps().isEmpty(), "nothing to gather: " + fc.why() + " " + fc.steps());
         assertEquals(12, plain.pricedOn(new io.github.mojolowjo.entropybot.aa.NeedChain.World(Map.of("minecraft:cobblestone", 20), false, x -> null)).bag().get("minecraft:cobblestone"));
     }
 }

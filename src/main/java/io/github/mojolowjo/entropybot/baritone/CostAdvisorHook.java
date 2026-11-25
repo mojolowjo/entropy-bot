@@ -280,15 +280,16 @@ public final class CostAdvisorHook {
     }
 
     public static double breakMultiplier(Object token, String dimIfNoToken, int x, int y, int z, BlockState state, PolicyRuntime.StateAt at) {
-        return breakMultiplier(token, dimIfNoToken, x, y, z, state, at, PolicyStats.SITE_ASTAR_COST);
+        return breakMultiplier(token, dimIfNoToken, x, y, z, state, at, BreakSite.COST);
     }
 
     /**
      * job-review-leftovers (8, sent back): {@code site} is where a deny is counted: the break site for Baritone's break
      * cost, the place site when {@link #placeNeedsRefusedBreak} asks for a place, so a refused place is counted once.
      */
-    private static double breakMultiplier(Object token, String dimIfNoToken, int x, int y, int z, BlockState state, PolicyRuntime.StateAt at, String site) {
+    private static double breakMultiplier(Object token, String dimIfNoToken, int x, int y, int z, BlockState state, PolicyRuntime.StateAt at, BreakSite bs) {
         PolicyRuntime pr = PolicyRuntime.INSTANCE;
+        String site = bs.site();
         if (!PolicyRuntime.LIVE) return Double.NaN;
         Token t = token instanceof Token tk ? tk : null;
         Intent in = t != null ? t.intent() : pr.intentNow();
@@ -297,16 +298,15 @@ public final class CostAdvisorHook {
         BreakPolicy.Where me = t != null ? t.me() : pr.where();
         // review sent back again (5): asked for a place, the probe line says "place" (not a refused break) and every deny is
         // counted once at the place site (placeCost counted the ask; no second ask here)
-        boolean forPlace = PolicyStats.SITE_ASTAR_PLACE.equals(site);
-        String verb = forPlace ? PLACE_NEEDS_BREAK : "break";
+        String verb = bs.verb();
         if (in == null || in == Intent.NONE) {
-            if (forPlace) pr.stats.deny(site, "walking only");
+            bs.earlyDeny(pr.stats, "walking only");
             return refused(t, x, y, z, state, in, verb, "walking only", null);   // the route map's context
         }
         // job-climb: a walk run with breaks off (the trail's pillar leg, PolicyRuntime.noBreaks) refuses every break for its run
         String nb = t != null ? t.noBreakBy() : pr.noBreakBy();
         if (nb != null) {
-            if (forPlace) pr.stats.deny(site, "a no-break run: " + nb);
+            bs.earlyDeny(pr.stats, "a no-break run: " + nb);
             return refused(t, x, y, z, state, in, verb, "no breaks", "a no-break run: " + nb);
         }
         // STRUCTURE_BLOCKS (RULES 16): every intent's path refuses the cell BreakPolicy refuses for a structure block
@@ -334,19 +334,19 @@ public final class CostAdvisorHook {
         }
         if (dim == null) {
             if (in != Intent.TRAVEL) return Double.NaN;
-            if (forPlace) pr.stats.deny(site, "no dimension, fail closed for travel");
+            bs.earlyDeny(pr.stats, "no dimension, fail closed for travel");
             return refused(t, x, y, z, state, in, verb, "no dimension", "fail closed for travel");
         }
         double wet = wetMult(at, x, y, z);                                        // wetbreak: 1 dry, 5 beside water, 25 deep
         switch (in) {
             case TRAVEL -> {
                 // review sent back again (5): for a place, placeCost asked already: the judge counts its deny only (no second ask)
-                BreakPolicy.Verdict v = pr.judge(site, !forPlace, BreakPolicy.Action.BREAK, in, dim, x, y, z, pr.facts(at, dim, x, y, z, false), me, s);
+                BreakPolicy.Verdict v = pr.judge(site, bs.judgeAsks(),BreakPolicy.Action.BREAK, in, dim, x, y, z, pr.facts(at, dim, x, y, z, false), me, s);
                 return v.allowed() ? v.multiplier() * wet : refused(t, x, y, z, state, in, verb, v.rule(), v.reason());
             }
             case MINE -> {
                 // phase 1: mining keeps Baritone's rules, except the owner's: no digging down from in the water
-                if (PolicyStats.SITE_ASTAR_COST.equals(site)) pr.stats.ask(site);   // a place probe was asked by placeCost already
+                bs.mineAsk(pr.stats);   // a place probe was asked by placeCost already
                 BlockState up = at.at(x, y + 1, z);
                 if (up != null && PolicyRuntime.fluidOf(up) == BreakPolicy.Fluid.WATER) {
                     // aa-costs: in the water, the drowning risk of the cell (DrownRisk): no air to come back = never, else
@@ -375,12 +375,9 @@ public final class CostAdvisorHook {
      * and {@link #breakMultiplier} (the one break decision) refuses that break. Air, a replaceable block or not read
      * (null): no break needed, false.
      */
-    /** The strip-probe action of a place refused because the block in its cell may not be broken. */
-    static final String PLACE_NEEDS_BREAK = "place (the cell's block may not be broken)";
-
     static boolean placeNeedsRefusedBreak(Object token, String dimIfNoToken, int x, int y, int z, BlockState current, PolicyRuntime.StateAt at) {
         if (current == null || current.isAir() || current.canBeReplaced()) return false;
-        return breakMultiplier(token, dimIfNoToken, x, y, z, current, at, PolicyStats.SITE_ASTAR_PLACE) >= COST_INF;
+        return breakMultiplier(token, dimIfNoToken, x, y, z, current, at, BreakSite.PLACE) >= COST_INF;
     }
 
     /**
@@ -429,6 +426,8 @@ public final class CostAdvisorHook {
             String dim = t != null ? t.dim() : dimIfNoToken;
             BreakPolicy.Snapshot s = t != null ? t.snapshot() : pr.snapshot();
             BreakPolicy.Where me = t != null ? t.me() : pr.where();
+            // review sent back (5): a travel place refused here was asked above, so its deny is counted too
+            if ((dim == null || s == null) && in == Intent.TRAVEL) pr.stats.deny(PolicyStats.SITE_ASTAR_PLACE, "no dimension or snapshot, fail closed for travel");
             if (dim == null || s == null) return in == Intent.TRAVEL ? refused(t, x, y, z, current, in, "place", "no dimension or snapshot", "fail closed for travel") : Double.NaN;
             // job-refusal-fact (worlds run 3 w072, the fork's MovementPillar: it prices only this place at its feet cell, then
             // clicks the rail there): a place into a cell that holds a block first needs that block broken; when that break

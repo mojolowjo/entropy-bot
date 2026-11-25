@@ -42,6 +42,26 @@ class SilentEndFactTest {
         assertArrayEquals(new int[]{273, 63, 271}, cut.at(), "the next plan takes tree B, not the next log of A: " + c.steps());
     }
 
+    /**
+     * Review sent back (3): the live lookup answers only the nearest spot (AaRuntime.needWorld). Through World.withoutSources
+     * on such a lookup, the held cut must hold the whole trunk, so the answer is tree B, not 276 65 262 (w025).
+     */
+    @Test
+    void w025_aNearestOnlyLookupStillHoldsTheWholeTrunk() {
+        ScenariosTest.world("wooden");
+        String held = "cut at 276 64 262";
+        List<Spot> logs = new java.util.ArrayList<>();
+        for (int y = 64; y <= 68; y++) logs.add(new Spot(276, y, 262, 10 + y - 64, "minecraft:oak_log", 1));
+        logs.add(new Spot(273, 63, 271, 20, "minecraft:oak_log", 1));
+        NeedChain.Lookup nearest = (word, skip) -> logs.stream().filter(s -> skip == null || !skip.test(NeedChain.word(word), s))
+                .min(java.util.Comparator.comparingDouble(Spot::dist)).map(List::of).orElse(List.of());
+        NeedChain.World w = new NeedChain.World(Map.of(), false, false, nearest, null, null, null, 0);
+        List<Spot> got = w.withoutSources(Map.of(held, "no progress 180 s")).seenAll().apply("minecraft:oak_log");
+        assertEquals(1, got.size(), "" + got);
+        assertEquals(273, got.get(0).x(), "the next nearest after the held trunk is tree B: " + got);
+        assertEquals(276, w.seenAll().apply("minecraft:oak_log").get(0).x(), "with no hold the nearest is the trunk");
+    }
+
     /** job-review-leftovers (2): a 2x2 trunk (dark oak) held at one column holds the adjacent columns of the same tree. */
     @Test
     void aStalledCutOfA2x2TrunkHoldsItsOtherColumns() {
