@@ -169,6 +169,19 @@ public final class Goals {
         /** 0.39.z77 climb: the one more try on the climb way (every order parked under ground) was taken; once per order. */
         public boolean climbRetried;
 
+        /**
+         * job-hold-sight: when (the board clock's ms) the order parked, or its park's facts were read again (a wake priced
+         * again that stays stopped); the sight fact ({@code Inputs.sightAtMs}) is compared with it by {@link Goals#stillChanges}.
+         */
+        public long parkedAtMs;
+
+        /**
+         * job-hold-sight review 3: the change whose wake {@link Goals#retryLoopParks} last asked the planner worker to price and
+         * got its stand (the answer not landed); null: none asked, or the last check had no change, priced it or woke it.
+         * Read with the port's own in-flight answer ({@link BatchWay#pricing}) by {@link Goals#stillChanges}.
+         */
+        public String wakeAsked;
+
         /** wait-not-park: what the order waited on when a run of it ended ({@link Goals#runFailed}); null: nothing. Cleared when it lands. */
         public String waitEnded;
         /** wait-not-park: when (the board clock's ms) the wait in {@link #waitEnded} was first noted; the bound goals.waitEndedMaxS counts from it. */
@@ -216,16 +229,60 @@ public final class Goals {
      * one more try on the climb way (not taken yet), on the surface the one look-around leg of a PLACE park (not taken yet).
      */
     public static String stillChanges(List<Goal> goals, Goal g, boolean underGround, boolean busy, boolean worldClimb) {
+        return stillChanges(goals, g, underGround, busy, worldClimb, Long.MAX_VALUE);
+    }
+
+    /**
+     * job-hold-sight (worlds run 4 w044 07:41:09.917, w027 06:01:33.061: the hold ended with every order stopped, and 3 s
+     * later a parked order woke on "a new source seen" with the bot where it stood - the nearby scan's renewal, nearby.cacheMs,
+     * had not read the loaded area since the stop): {@link #stillChanges(List, Goal, boolean, boolean, boolean)} where
+     * {@code sightAtMs} is the moment the known sources were read over what is loaded (Inputs.sightAtMs). A parked order
+     * that waits on a new source seen ({@link #waitsOnSight}) and parked after that moment can still wake while the bot
+     * stands: the hold lasts until the scan has read again (a fact, no timer). Every order of the line counts (another
+     * order's wake moves the bot). The run 3 circle stays closed: the scan renews by itself while the bot stands, so the
+     * moment passes the park and the hold ends.
+     */
+    public static String stillChanges(List<Goal> goals, Goal g, boolean underGround, boolean busy, boolean worldClimb, long sightAtMs) {
+        return stillChanges(goals, g, underGround, busy, worldClimb, sightAtMs, null);
+    }
+
+    /**
+     * job-hold-sight review 3 (the reviewer, serious: on the planner worker path the sight hold ended at the scan renewal
+     * that found the new source - the moment passed the park - while the wake that renewal started was still a price on the
+     * worker ({@link #retryLoopParks} stands on the planner's stand, the order stays parked), so the deposit went before the
+     * answer landed): as above, with {@code pricing} the port's answer that a parked order's wake price is in flight
+     * ({@link BatchWay#pricing}: the order's noted change, {@link Goal#wakeAsked}, and the port's request out or its result
+     * not taken); null: no planner worker (the price is the tick's own, never in flight). A fact, no timer: the hold ends
+     * when the answer is taken (the order wakes, or stays stopped on a fresh park) or the change is gone.
+     */
+    public static String stillChanges(List<Goal> goals, Goal g, boolean underGround, boolean busy, boolean worldClimb, long sightAtMs,
+                                      java.util.function.Predicate<Goal> pricing) {
         if (g == null || g.parked == null || !canWake(g)) return null;
         if (busy) return "a run or another job moves the bot now";
         if (goals != null)
             // deposit-goal: the deposit goal is no order; its run moves the bot and is counted by {@code busy}
             for (Goal o : goals) if (o != g && o.parked == null && !o.depositGoal) return "order " + o.r.key() + " is open and not stopped";
+        if (goals != null && pricing != null)
+            for (Goal o : goals)
+                if (o.parked != null && !o.depositGoal && canWake(o) && o.wakeAsked != null && pricing.test(o))
+                    return "order " + o.r.key() + " is priced again on the planner worker (" + o.wakeAsked + ") and its answer has not landed";
+        if (goals != null)
+            for (Goal o : goals)
+                if (o.parked != null && !o.depositGoal && canWake(o) && waitsOnSight(o) && sightAtMs < o.parkedAtMs)
+                    return "order " + o.r.key() + " waits on a new source seen and the sources are not read again since it stopped (the nearby scan renews them by nearby.cacheMs; arrived chunks are read first)";
         if (underGround && climbTryDue(g, worldClimb))
             return "its one more try on the climb way, taken with every order stopped under ground";
         if (!underGround && lookAroundDue(g))
             return "its one look-around leg, taken after goals.lookAroundAfterS with every order stopped";
         return null;
+    }
+
+    /**
+     * job-hold-sight (pure): the park of {@code g} waits on a new source seen - its source cells were read at the park (not
+     * known then: no such wake, rule 15), as {@link #retryLoopParks} compares them.
+     */
+    static boolean waitsOnSight(Goal g) {
+        return (g.loopPark != null && g.loopPark.sources() != null) || (g.park != null && g.park.sources() != null);
     }
 
     /** The one more try on the climb way is still to come for {@code g} (read by {@link #parkedTick} and {@link #stillChanges}); {@code byWorld}: a world fact of a failed climb holds for it. */
@@ -549,7 +606,7 @@ public final class Goals {
             String change = g.loopPark != null
                     ? loopChange(g.loopPark, needCounts(g.loopPark.counts().keySet(), bag, bb.in == null ? 0 : bb.in.pickTier), pos, sourceCells(bb, g, g.loopPark.at()))
                     : parkChange(g.park, bb.in == null ? -1 : Failures.items(bb.in), pos, sourceCells(bb, g, null), heldKeys(bb, g));
-            if (change == null) continue;
+            if (change == null) { g.wakeAsked = null; continue; }
             // a wake is a PRICE, not a run: the order runs again only when its chain stands where the bot is now (or still
             // waits on an answer: not known is no verdict, rule 15); else it stays stopped on a fresh snapshot, so the same
             // change is never asked twice and no run starts without a way (no spin)
@@ -557,7 +614,11 @@ public final class Goals {
             // client thread, review 2026-11-21): it runs and its own start decides
             var ch = g.strip != null || g.r.group() ? null : ownChain(bb, g);
             // the planner still thinks (its stand, no verdict yet): asked again at the next pass, the change still pending
-            if (ch != null && !ch.steps().isEmpty() && ch.steps().get(0) instanceof Step.AwaitPaths aw && aw.planner()) continue;
+            // job-hold-sight review 3 (the reviewer: on the worker path the sight hold had ended at the renewal that found the
+            // source, and the deposit went before this answer landed): the change is noted as asked; while the port has it in
+            // flight the line's deposit is held for it (stillChanges, BatchWay.pricing)
+            if (ch != null && !ch.steps().isEmpty() && ch.steps().get(0) instanceof Step.AwaitPaths aw && aw.planner()) { g.wakeAsked = change; continue; }
+            g.wakeAsked = null;                                   // priced now: it wakes or stays stopped below
             boolean stands = ch == null || ch.waiting() || (ch.ok() && !ch.steps().isEmpty());
             String why = stands ? null : ch.why();
             // review 2026-11-21: the same first step from the place it stopped at is the try that stopped it, not a way
@@ -580,6 +641,7 @@ public final class Goals {
                 if (seenNow != null) known.addAll(seenNow);
                 g.loopPark = null;
                 g.park = Park.of(Failures.Cause.of(g.parked) == Failures.Cause.NO_ITEM ? ParkKind.BAG : ParkKind.PLACE, bb, known, heldKeys(bb, g));
+                g.parkedAtMs = bb.clock == null ? 0 : bb.clock.now();      // job-hold-sight: the park's facts read again now
                 // every re-price is said in the log (rule 7; it follows a real change, so never per tick); the whisper only
                 // when the reason is a new one
                 String stay = "order " + g.r.key() + " priced again (" + change + "): no way from here either (" + why + "); it stays stopped - " + g.park.wakeWords();
@@ -1165,6 +1227,8 @@ public final class Goals {
     public static boolean park(Blackboard bb, Goal g, String why) {
         if (g.parked != null) return false;
         g.parked = why == null || why.isBlank() ? "no reason given" : why;
+        g.parkedAtMs = bb.clock == null ? 0 : bb.clock.now();          // job-hold-sight: the sight fact is compared with it
+        g.wakeAsked = null;                                             // job-hold-sight review 3: a new park, no wake asked yet
         // 0.39.z70 (R1 = c): the run parked on an honest loop: its facts are kept, one more try comes when one of them changes
         var a = g.loopAttempt;
         g.loopAttempt = null;
@@ -1829,13 +1893,26 @@ public final class Goals {
         Map<String, Integer> kept = keptFromOthers(bb, g);
         var reserves = bb.in == null || bb.in.bag == null ? List.<baritone.api.process.Reserves.Reserve<String>>of()
                 : plannerReserves(g, finished(bb), bb.in.bag, keptPer(bb), notOff);
-        if (kept.isEmpty()) return w.withReserves(reserves);
+        // job-kept-crafts review 3 (w044): the same orders' holds that are not whole fill from what comes in first, so a
+        // source way of their item asks those on top of its need (World.fills); the runner holds them the same (keptForRun)
+        Map<String, Integer> fills = fillsFromOthers(bb, g);
+        if (kept.isEmpty()) return w.withReserves(reserves).withFills(fills);
         Map<String, Integer> bag = new java.util.LinkedHashMap<>(w.bag());
         for (var e : bag.entrySet()) {
             int k = kept.getOrDefault(Thing.path(e.getKey()), 0);
             if (k > 0) e.setValue(Math.max(0, e.getValue() - k));
         }
-        return w.withBag(bag).withReserves(reserves);
+        return w.withBag(bag).withReserves(reserves).withFills(fills);
+    }
+
+    /**
+     * job-kept-crafts review 3 (worlds run 4 w044): of the holds {@link #keptFromOthers} reads (the same orders: not {@code g},
+     * not its trip's open ones), how many more of each item (by path) they take as the bag of it grows
+     * ({@link LineDeposits#fills}); empty: none, or the bag is not read.
+     */
+    public static Map<String, Integer> fillsFromOthers(Blackboard bb, Goal g) {
+        if (bb.in == null || bb.in.bag == null || !(bb.fact(LineDeposits.FACT) instanceof LineDeposits ld)) return Map.of();
+        return ld.fills(bb.in.bag, of(bb), g, g == null ? null : BatchWay.open(bb, g));
     }
 
     /**

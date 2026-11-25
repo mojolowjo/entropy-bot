@@ -225,6 +225,20 @@ public final class FactChange {
     }
 
     /**
+     * job-hold-sight (worlds run 4 w037, w039: "cut at 30 70 -7: unreachable (Baritone: no path to any target)" from y 33,
+     * then the next surface tree from the same hole, 9 and 22 trees held one after another): a cut that got nothing with the
+     * feet under ground ({@code feet}) is a fact of where it was tried from - "cut from x y z", the walk from this place
+     * (NeedChain.cutFromKey), never the tree's. The order re-plans with the way up priced before the next cut.
+     */
+    public static Fact cutFromFact(int[] feet, String why) {
+        return new Fact("source " + io.github.mojolowjo.entropybot.aa.NeedChain.cutFromKey(feet),
+                "the cut got nothing from under ground at " + feet[0] + " " + feet[1] + " " + feet[2] + " (" + unreachableText(why) + "): no way from here, not a fact of the tree");
+    }
+
+    /** job-hold-sight: the hands say {@link #cutFromFact} (taken once, as every fact here). */
+    public static void cutFrom(int[] feet, String why) { last = cutFromFact(feet, why); }
+
+    /**
      * 0.39.z66 item 2 (run X 08:41:01): the step's blocks were reached and broken but dropped other items than the step
      * counts ({@code why}: the counts). The same source slot as {@link #unreachable}: the order re-plans without that
      * source, in the true words.
@@ -378,6 +392,7 @@ public final class FactChange {
         if (f != null && f.key().startsWith("source " + io.github.mojolowjo.entropybot.aa.NeedChain.NEAR)) return f.key().substring("source ".length());       // z75 review 2
         if (f != null && f.key().startsWith("source " + io.github.mojolowjo.entropybot.aa.NeedChain.EXPLORE_FROZEN)) return f.key().substring("source ".length());   // z76 send-back 2
         if (f != null && f.key().startsWith("source " + io.github.mojolowjo.entropybot.aa.NeedChain.BOXED_IN)) return f.key().substring("source ".length());   // J6b run EH (2)
+        if (f != null && f.key().startsWith("source " + io.github.mojolowjo.entropybot.aa.NeedChain.CUT_FROM)) return f.key().substring("source ".length());   // job-hold-sight: the place, not the tree
         if (f != null && f.key().startsWith("source " + io.github.mojolowjo.entropybot.aa.NeedChain.CAVE_KEY)) return f.key().substring("source ".length());   // run EY: the lip's opening
         if (f != null && f.key().startsWith("source " + io.github.mojolowjo.entropybot.aa.NeedChain.CAVED_KEY)) return f.key().substring("source ".length());   // job-planner-stick: a caving's end
         if (f != null && f.key().startsWith("source " + io.github.mojolowjo.entropybot.cave.Tunnel.HOLD)) return f.key().substring("source ".length());   // job-tunnel2

@@ -57,6 +57,34 @@ public final class Inputs {
      * The brain's exposure, the trip's under-ground key, the night work, the shelter and the ways read it. Not in the vector.
      */
     public int underDepth;
+    /**
+     * job-hold-sight (worlds run 4 w044: torch's hold ended at 07:41:09.917, oak_log woke 3 s later on a source the nearby
+     * scan's renewal found without the bot moving): the moment (the board clock's ms) as of which the known sources were
+     * read over what is loaded - the oldest answer in use of the nearby scan (NearbyLive, renewed after nearby.cacheMs) and
+     * the last moment the chunk pass had no arrived chunk left to read (ChunkPass). A park made after it may still see a
+     * new source while the bot stands (Goals.stillChanges). {@link Long#MAX_VALUE}: no live scan behind the sources (the
+     * simulator, tests): what is known is all that was read. Not in the vector.
+     */
+    public long sightAtMs = Long.MAX_VALUE;
+
+    /**
+     * job-hold-sight send-back item 4 (pure, the live wiring's one rule): {@link #sightAtMs} from the nearby scan's moment
+     * ({@code nearbyReadSince}) and the chunk pass's ({@code arrivalsReadAt}, {@link Long#MAX_VALUE} before its first tick):
+     * the earlier of the two - the sources are read only as far as the older reading.
+     */
+    public static long sightAt(long nearbyReadSince, long arrivalsReadAt) { return Math.min(nearbyReadSince, arrivalsReadAt); }
+
+    /**
+     * job-hold-sight send-back item 4 (pure; NearbyLive.readSince's rule, JUnit: HoldSightTest): over the nearby scan's
+     * answers, each {@code {at, askedAt}}, the oldest {@code at} among those asked within {@code freshMs}; {@code now}: none in
+     * use. A renewal the budget deferred keeps its old {@code at} while it is asked again, so the moment stays back until
+     * that set is read again.
+     */
+    public static long oldestInUse(long now, long freshMs, Iterable<long[]> answers) {
+        long min = now;
+        for (long[] a : answers) if (now - a[1] < freshMs) min = Math.min(min, a[0]);
+        return min;
+    }
     /** Night fix: the bot's armour points (0 = none; early game). Not in the vector. */
     public int armorPoints;
     /** S0: the bot's block position (null unknown; OptionMemory's NO_PATH sweep). Not in the vector. */

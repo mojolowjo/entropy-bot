@@ -70,10 +70,14 @@ public final class OrderEnds {
         // this pass (the waits, the loop parks, the climb retry and the look-around), so an order running again is never
         // weighed as stopped
         // hold-bound (owner 2026-11-24): a hold lasts only while something its park waits on can still change
+        // job-hold-sight (worlds run 4 w044): and while a parked order's new source can still be seen from here (the sight fact)
+        // job-hold-sight review 3: and while a parked order's wake is priced on the planner worker (the port has it in flight)
         var open = Goals.of(bb);
+        long sight = bb.in == null ? Long.MAX_VALUE : bb.in.sightAtMs;
+        java.util.function.Predicate<Goals.Goal> pricing = o -> BatchWay.pricing(bb, o);
         for (var g : goals)
             if (!g.depositGoal) h.deposit(deposits.sweep(       // deposit-goal: the deposit goal is no -d order: nothing of it is weighed
-                    g, bb.in.bag, mainAt, Goals.stillChanges(open, g, underGround, busy, bb.in != null && Goals.worldClimb(bb, g))));
+                    g, bb.in.bag, mainAt, Goals.stillChanges(open, g, underGround, busy, bb.in != null && Goals.worldClimb(bb, g), sight, pricing)));
     }
 
     /**

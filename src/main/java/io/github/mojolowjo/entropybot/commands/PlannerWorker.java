@@ -98,6 +98,11 @@ public final class PlannerWorker {
         synchronized (lock) { return queued.containsKey(key) || key.equals(running); }
     }
 
+    /** job-hold-sight review 3: a result of {@code key} is posted and not polled yet. */
+    public boolean posted(String key) {
+        synchronized (lock) { return done.containsKey(key); }
+    }
+
     /** Results posted since the start. */
     public long landed() { return landed; }
 

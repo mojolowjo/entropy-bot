@@ -51,6 +51,76 @@ public final class SurfaceHeight {
     }
 
     /**
+     * job-hold-sight (worlds run 4 w027 06:01:33: the bot 17 under ground walked "up to the surface at -1 53 -7", one block,
+     * a sky-lit cell of its own dig - a neighbour column of the dig itself was a step away, so {@link #holeDepth} (the
+     * LOWEST of the 8 neighbours) read 0 and that cell passed as the surface, while the ground round it stood at 69): the
+     * one hole reader (Jobs.holeDepth, the simulator's land): walled in over the {@link #RING} square - the columns the
+     * feet reach by level steps or steps of one block up, from the feet's own column at the feet's y; a lower column is
+     * not walked but counted as the ground round them (so a drop beside the feet reads no hole, as {@link #holeDepth}
+     * read it: the 100-world table's w080, a 1x1 dig at 124 beside feet at 126, walls at 130, took a walk up the base did
+     * not); when they reach the ring's border a player walks out (0: a staircase cut down, a slope, a
+     * cliff's foot, a street), else the lowest known surface bordering them, less the feet's y, when more than a step (a
+     * 1x1 shaft reads as {@link #holeDepth} did; a shaft with a notch dug beside it reads its full depth). No known column
+     * round them: 0 (rule 15: no depth claimed). Send-back (the reviewer, the 100-world table 8 worlds 2-25 s slower): the
+     * walled-across reading is gone - it called a staircase a player walks out of a hole, so the deposit and the explore
+     * took a walk up first where Baritone walked straight out (rule 20), and it disagreed with {@link #legNeeded} in the
+     * same cell (rule 23 (2)). Pure.
+     */
+    public static int pitDepth(int[] feet, java.util.function.IntBinaryOperator surface) {
+        return walledIn(feet, surface);
+    }
+
+    /**
+     * job-hold-sight: the reading of {@link #pitDepth} (the flood over the ring). Each column is read once, when the flood
+     * first touches it (open ground reaches the border in a few columns; a climb goal asks this per cell). Pure.
+     */
+    static int walledIn(int[] feet, java.util.function.IntBinaryOperator surface) {
+        int side = 2 * RING + 1;
+        int start = RING * side + RING;
+        int[] h = new int[side * side];
+        boolean[] read = new boolean[h.length];
+        java.util.function.IntUnaryOperator at = i -> {
+            if (!read[i]) { read[i] = true; h[i] = surface.applyAsInt(feet[0] - RING + i % side, feet[2] - RING + i / side); }
+            return h[i];
+        };
+        h[start] = feet[1];                                      // the walk out starts where the feet stand
+        read[start] = true;
+        boolean[] in = new boolean[h.length];
+        java.util.ArrayDeque<Integer> q = new java.util.ArrayDeque<>();
+        q.add(start);
+        in[start] = true;
+        java.util.List<Integer> reached = new java.util.ArrayList<>();
+        while (!q.isEmpty()) {
+            int c = q.poll();
+            reached.add(c);
+            int cx = c % side, cz = c / side;
+            if (cx == 0 || cz == 0 || cx == side - 1 || cz == side - 1) return 0;     // the ring's border reached: walks out
+            for (int dx = -1; dx <= 1; dx++)
+                for (int dz = -1; dz <= 1; dz++) {
+                    int n = (cz + dz) * side + cx + dx;
+                    if ((dx == 0 && dz == 0) || in[n] || !known(at.applyAsInt(n))) continue;
+                    // structural: a 1-block step walks out; a drop is not walked but read as the ground round (the
+                    // lowest bordering), as the lowest-neighbour reading did: a drop beside the feet is no hole
+                    if (h[n] - h[c] > 1 || h[n] < h[c]) continue;
+                    in[n] = true;
+                    q.add(n);
+                }
+        }
+        int lowest = Integer.MAX_VALUE;                          // the ground round the reached cells
+        for (int c : reached) {
+            int cx = c % side, cz = c / side;
+            for (int dx = -1; dx <= 1; dx++)
+                for (int dz = -1; dz <= 1; dz++) {
+                    int n = (cz + dz) * side + cx + dx;
+                    if (!in[n] && read[n] && known(h[n])) lowest = Math.min(lowest, h[n]);     // every neighbour of a reached cell was read
+                }
+        }
+        if (lowest == Integer.MAX_VALUE) return 0;
+        int d = lowest - feet[1];
+        return d > 1 ? d : 0;                                    // structural: a 1-block step walks out
+    }
+
+    /**
      * 0.39.z78 J6b run EI (the manager's fix): the surface leg's target - of the columns within {@link #RING} of the feet
      * (a square, the feet's own column in it) whose leaf-free surface is known and whose surface cell a player can stand
      * in ({@code standable}), the HIGHEST surface, the nearest of those to the feet; null: none known. A dig of our own
