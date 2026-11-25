@@ -439,7 +439,21 @@ final class SimGame {
     /** The bag when the running run started (AaRuntime's typedStartBag). */
     private Map<String, Integer> runStartBag;
 
+    /** The run is on the hands (AaRuntime's task holds): {@link #runStartBagOf} answers only then. */
+    private boolean inRun;
+
+    /** As AaRuntime.runStartBagOf (Goals.RUN_START_FACT): the running run's start bag when it is {@code desireId}'s; null: not. */
+    private Map<String, Integer> runStartBagOf(String desireId) {
+        return inRun && desireId != null && desireId.equals(runDesire) ? runStartBag : null;
+    }
+
     private void run(JobPort.TaskSpec t, long id) {
+        bb.fact(Goals.RUN_START_FACT, (Goals.RunStart) this::runStartBagOf);
+        inRun = true;
+        try { runOn(t, id); } finally { inRun = false; }
+    }
+
+    private void runOn(JobPort.TaskSpec t, long id) {
         say("run " + id + " (" + t.source() + "): " + t.steps().size() + " steps");
         runDesire = t.replan() == null ? null : t.replan().desire();
         if (("goal." + Goals.DEPOSIT_KEY).equals(runDesire)) depositRuns++;
@@ -510,7 +524,7 @@ final class SimGame {
         @Override public List<baritone.api.process.Reserves.Reserve<String>> orderReserves() {
             Goals.Goal running = null;
             if (runDesire != null) for (Goals.Goal g : Goals.of(bb)) if (g.id().equals(runDesire)) running = g;
-            return Goals.orderReserves(running, Goals.finished(bb), bb.in.bag, Goals.keptPer(bb));
+            return Goals.orderReserves(running, Goals.finished(bb), bb.in.bag, Goals.keptPerForRun(bb, running));
         }
 
         /** As the game's hands (StepHands.freeBag over AaRuntime.keptFromOthers): the bag less the other orders' -d amounts. */

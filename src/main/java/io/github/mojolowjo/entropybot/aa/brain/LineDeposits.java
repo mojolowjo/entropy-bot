@@ -88,8 +88,14 @@ public final class LineDeposits {
      * counted (its deposit never comes; a dropped order ends its line through {@link #dropped}).
      */
     public Map<String, Integer> kept(Map<String, Integer> bag, java.util.List<Goals.Goal> goals, Goals.Goal self, java.util.Collection<Goals.Goal> skip) {
+        return kept(bag, goals, self, skip, null);
+    }
+
+    /** {@link #kept} with each order's growing hold capped at {@code atStart} ({@link #held}); null: none capped. */
+    public Map<String, Integer> kept(Map<String, Integer> bag, java.util.List<Goals.Goal> goals, Goals.Goal self, java.util.Collection<Goals.Goal> skip,
+                                     Map<String, Integer> atStart) {
         Map<String, Integer> out = new TreeMap<>();
-        for (Kept k : keptPer(bag, goals, self, skip)) for (var t : k.items().entrySet()) out.merge(t.getKey(), t.getValue(), Integer::sum);
+        for (Kept k : keptPer(bag, goals, self, skip, atStart)) for (var t : k.items().entrySet()) out.merge(t.getKey(), t.getValue(), Integer::sum);
         out.replaceAll((id, n) -> Math.min(n, bag.getOrDefault(id, 0)));
         out.values().removeIf(n -> n <= 0);
         return out;
@@ -105,6 +111,16 @@ public final class LineDeposits {
      * while its earlier deposit is on its way is listed twice (different items of the bag).
      */
     public java.util.List<Kept> keptPer(Map<String, Integer> bag, java.util.List<Goals.Goal> goals, Goals.Goal self, java.util.Collection<Goals.Goal> skip) {
+        return keptPer(bag, goals, self, skip, null);
+    }
+
+    /**
+     * job-kept-crafts review 2: {@link #keptPer} with {@code atStart} (the bag at a run's start, by counted id; null: as
+     * above): an order's entry read from the bag ({@link #held}) is capped at what the bag held of it at the run's start
+     * while it is not whole. The entries with fixed amounts (on the way, due) and every whole one are never capped.
+     */
+    public java.util.List<Kept> keptPer(Map<String, Integer> bag, java.util.List<Goals.Goal> goals, Goals.Goal self, java.util.Collection<Goals.Goal> skip,
+                                        Map<String, Integer> atStart) {
         java.util.List<Kept> out = new java.util.ArrayList<>();
         Set<Goals.Goal> seen = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
         if (self != null) seen.add(self);
@@ -120,12 +136,40 @@ public final class LineDeposits {
         for (Goals.Goal g : goals) if (g.deposit > 0 && g.line != null) lines.add(g.line);
         for (var e : lineEnded.entrySet()) {
             if (!lines.contains(e.getKey())) continue;
-            for (Goals.Goal o : e.getValue().values()) if (seen.add(o)) out.add(new Kept(o, take(o, bag)));
+            for (Goals.Goal o : e.getValue().values()) if (seen.add(o)) out.add(new Kept(o, held(o, bag, atStart)));
         }
         for (Goals.Goal o : goals)
-            if (o.deposit > 0 && o.strip == null && seen.add(o)) out.add(new Kept(o, take(o, bag)));
+            if (o.deposit > 0 && o.strip == null && seen.add(o)) out.add(new Kept(o, held(o, bag, atStart)));
         out.removeIf(k -> k.items().isEmpty());
         return out;
+    }
+
+    /**
+     * job-kept-crafts (worlds run 4 w044, deposit/w044.log 1221 and 1277-1305: the parked oak_log -d order held 7 of 16, the
+     * torch's chain cut a tree for one log, the chop gave 6 and the order's hold grew to 13, "needs 1 of logs_that_burn; the
+     * bag will hold 0"): what the bag holds for {@code o} ({@link #take}) on {@code bag}; with {@code atStart} (a run's start
+     * bag) and the hold not whole ({@link #whole}), never more of an item than {@link #take} on {@code atStart}: what a run's
+     * own gets bring in is the run's, the order gathers its rest itself. A whole hold (met, weighed or not) is never cut:
+     * review 2 (a trip sibling met during the run held none of its met amount). Pure.
+     */
+    static Map<String, Integer> held(Goals.Goal o, Map<String, Integer> bag, Map<String, Integer> atStart) {
+        Map<String, Integer> now = take(o, bag);
+        if (atStart == null || whole(o, now)) return now;
+        Map<String, Integer> start = take(o, atStart);
+        Map<String, Integer> out = new TreeMap<>();
+        for (var e : now.entrySet()) {
+            int n = Math.min(e.getValue(), start.getOrDefault(e.getKey(), 0));
+            if (n > 0) out.put(e.getKey(), n);
+        }
+        return out;
+    }
+
+    /** {@code t} ({@link #take} of {@code o}) is all {@code o} still owes the chest: of every item for a group, in all for one. Pure. */
+    static boolean whole(Goals.Goal o, Map<String, Integer> t) {
+        int owes = Math.max(0, o.deposit - o.depositPut.values().stream().mapToInt(Integer::intValue).sum());
+        if (!o.r.group()) return t.values().stream().mapToInt(Integer::intValue).sum() >= owes;
+        for (String id : o.r.counts()) if (t.getOrDefault(id, 0) < owes) return false;
+        return true;
     }
 
     /**
