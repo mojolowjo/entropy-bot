@@ -2657,37 +2657,15 @@ public final class NeedChain {
      * unmet and is priced again from the new feet. Under ground (or the surface not known, rule 15) only a PRICED walk to the
      * chest is offered (rule 22); on the surface an estimate is ranked (rule 18 amended, run JAC). A walk still computing is
      * the chain's wait (PathPrice.NOT_KNOWN: the bot stands). No way: the failure names every way's reason (rule 7).
-     * The owed items are the deposit's own: never spare blocks, lent only by a priced lend way (their ORDER reserves).
+     * The world is the planner's world ({@code Goals.keptOff} with every order's kept amounts off the bag, its reserves from
+     * {@code Goals.plannerReserves}): the owed items are not in the bag, so no inner get (the climb's pickaxe-first way, a
+     * lend's collect again) crafts, places or lends them, and nothing here reserves them a second time (review: counted once,
+     * the -d amount reaches the chest whole). The world is used as given.
      */
     public static Chain deposit(Map<String, Integer> owedIds, io.github.mojolowjo.entropybot.aa.brain.MainChest.Answer chest, World w) {
         Map<String, Integer> owed = new TreeMap<>();
         if (owedIds != null) for (var e : owedIds.entrySet()) if (e.getValue() != null && e.getValue() > 0) owed.merge(id(e.getKey()), e.getValue(), Integer::sum);
-        World w2 = w == null ? null : w.withReserves(owedReserves(w.reserves(), owed));
-        return root("deposit", java.util.Arrays.asList(owed, chest), w2, c -> depositIn(c, owed, chest), NeedChain::fresh);
-    }
-
-    /** The owner suffix of a -d amount's own reserve (Goals.orderReserves): the deposit's kept entry. */
-    static final String KEPT_FOR_DEPOSIT = " (kept for a deposit)";
-
-    /**
-     * deposit-goal stage 2: the reserve table with each owed item reserved whole. Only the deposit's own kept entries
-     * ({@link #KEPT_FOR_DEPOSIT}) count toward the owed amount (counted once); any other reserve naming the item (another
-     * order, a step, a group) is other demand, so the owed amount is topped up on top of it (review: a -d amount reaches
-     * the chest whole, owner 2026-11-13).
-     */
-    static List<baritone.api.process.Reserves.Reserve<String>> owedReserves(List<baritone.api.process.Reserves.Reserve<String>> rs, Map<String, Integer> owed) {
-        List<baritone.api.process.Reserves.Reserve<String>> out = new ArrayList<>(rs == null ? List.of() : rs);
-        for (var e : owed.entrySet()) {
-            String p = io.github.mojolowjo.entropybot.aa.brain.Thing.path(e.getKey());
-            int own = 0;
-            for (var r : out) {
-                if (r.kind != baritone.api.process.Reserves.Kind.ORDER || r.whole() || r.owner == null || !r.owner.endsWith(KEPT_FOR_DEPOSIT)) continue;
-                for (String m : r.members) if (io.github.mojolowjo.entropybot.aa.brain.Thing.path(m).equals(p)) { own += r.units; break; }
-            }
-            int top = e.getValue() - own;
-            if (top > 0) out.add(io.github.mojolowjo.entropybot.aa.moves.Reservations.order("deposit " + sh(e.getKey()), List.of(e.getKey()), top));
-        }
-        return out;
+        return root("deposit", java.util.Arrays.asList(owed, chest), w, c -> depositIn(c, owed, chest), NeedChain::fresh);
     }
 
     /** deposit-goal stage 2: the words of a chest walk not offered from under ground (rule 22). */
@@ -2716,13 +2694,13 @@ public final class NeedChain {
         List<String> notOffered = new ArrayList<>();
         if (held != null) notOffered.add("the walk to the main chest at " + x + " " + y + " " + z + " is held (" + held + ")");
         else {
-            final boolean strict = under || over == null;
+            final String strict = under ? "not offered from under ground (rule 22)" : over == null ? "not offered while the surface is not known (rules 15, 22)" : null;
             ways.add(new Alt("walk to the main chest", () -> {
                 String walked = stationWalk(c, "container", "main chest", x, y, z, strict);
                 if (walked == null) return null;
                 c.steps.add(new Step.Deposit(null, Map.copyOf(owed), new int[]{x, y, z}));
                 if (bonus > 0) c.addS(bonus);
-                return "put " + counted(owed) + " into the main chest: " + walked;
+                return "put " + counted(owed) + " into the main chest: " + walked + (bonus > 0 ? " + the chest's " + s(bonus) : "");
             }));
         }
         if (overWhy != null) notOffered.add(overWhy);
@@ -2756,25 +2734,26 @@ public final class NeedChain {
     /**
      * deposit-goal stage 2: the walk to a station cell as a step - {@link #walk} (the one walk pricer, rule 23) and a
      * Step.ToStation when it takes more than 0 s (knownWalk's two lines, without its table/furnace marks). {@code strict}
-     * (under ground, or the surface not known): only a PRICED walk is offered (rule 22), an estimate or chunks not loaded
-     * fail with their words. Else an estimate is ranked as it is and chunks not loaded on the straight metres (rule 18
+     * (under ground, or the surface not known: the words why): an estimate or chunks not loaded fail with them (rule 22); a
+     * walk with no path fails with walk()'s own words. Else an estimate is ranked (at least the straight metres,
+     * estimateFloor) and chunks not loaded on Baritone's estimate (floored the same), or with none the straight metres (rule 18
      * amended, run JAC), said. A walk still computing fails with PathPrice.NOT_KNOWN (the wait). Null with {@code c.fail}.
      */
-    private static String stationWalk(Ctx c, String kind, String label, int x, int y, int z, boolean strict) {
+    private static String stationWalk(Ctx c, String kind, String label, int x, int y, int z, String strict) {
         int[] feet = c.w.where().feet() == null ? null : c.w.where().feet().get();
         double dist = feet != null && feet.length >= 3 ? dist3(new int[]{x, y, z}, feet) : 0;    // structural: x y z; no feet: no floor
         Walked wk = walk(c, x, y, z, dist);
-        if (strict && wk.kind() != PathPrice.Kind.PRICED && wk.kind() != PathPrice.Kind.COMPUTING) {
+        if (strict != null && (wk.kind() == PathPrice.Kind.ESTIMATED || wk.kind() == PathPrice.Kind.CHUNKS)) {
             c.fail = CHEST_NOT_PRICED + " (" + wk.kind().name().toLowerCase(java.util.Locale.ROOT) + (wk.fail() == null ? "" : ": " + wk.fail())
-                    + "): not offered from under ground (rule 22)";
+                    + "): " + strict;
             return null;
         }
-        if (!strict && wk.kind() == PathPrice.Kind.CHUNKS && feet != null) {
+        if (strict == null && wk.kind() == PathPrice.Kind.CHUNKS && feet != null) {
             c.fail = null;
             PathPrice pp = c.w.path();
             double be = pp == null ? Double.NaN : pp.estimate(x, y, z);        // rule 18 amended (run JAC): Baritone's heuristic first
             if (!Double.isNaN(be) && be >= 0)
-                wk = new Walked(be, "walk ~" + s(be) + " (" + RANKED + ", not priced: chunks not loaded, Baritone's estimate)", null, PathPrice.Kind.ESTIMATED);
+                wk = estimateFloor(new Walked(be, "walk ~" + s(be) + " (" + RANKED + ", not priced: chunks not loaded, Baritone's estimate)", null, PathPrice.Kind.ESTIMATED), dist);
             else {
                 double es = io.github.mojolowjo.entropybot.aa.brain.Unit.seconds(dist);   // rule 15: no estimate here - the straight metres, said
                 wk = new Walked(es, "walk ~" + s(es) + " (" + RANKED + ", not priced: chunks not loaded, no Baritone estimate, the straight " + Math.round(dist) + " m)", null, PathPrice.Kind.ESTIMATED);
