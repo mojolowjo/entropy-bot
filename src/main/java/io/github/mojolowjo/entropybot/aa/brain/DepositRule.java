@@ -213,6 +213,14 @@ public final class DepositRule {
         return "chest at " + at(at) + " full: " + left + " item" + (left == 1 ? "" : "s") + " left";
     }
 
+    /**
+     * A short exact put's failure words (review 5): what went in, the split note if any, and always the full words, since a
+     * split that stayed for lack of an empty chest slot is a full chest too (MainChestHold.refusal reads the full words).
+     */
+    public static String shortWords(int putN, int meant, int[] chest, String onlyText, String splitNote) {
+        return "deposit: " + putN + " of " + meant + " items went in at " + at(chest) + " (" + onlyText + ")" + splitNote + ": " + full(chest, meant - putN);
+    }
+
     /** "chest at x y z gone" (review 4: the words MainChestHold.refusal reads, one producer for the game and the sim). */
     public static String gone(int[] at) {
         return "chest at " + at(at) + " gone";

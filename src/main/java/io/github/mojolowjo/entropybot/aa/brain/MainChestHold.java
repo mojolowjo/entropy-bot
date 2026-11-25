@@ -83,7 +83,7 @@ public final class MainChestHold {
     /** The chest at the cell was opened with {@code free} empty slots: a full hold there is lifted when it shows room. */
     public String roomSeen(int x, int y, int z, int free) {
         if (hold == null || hold.kind() != Kind.FULL || !hold.at(x, y, z) || free <= 0) return null;
-        return lift("the chest was opened showing " + free + " empty slot" + (free == 1 ? "" : "s"));
+        return lift("the chest was opened showing room in " + free + " slot" + (free == 1 ? "" : "s") + " (empty, or a stack of an owed item below its size)");
     }
 
     /** The reader's answer with the hold applied (see the class). */

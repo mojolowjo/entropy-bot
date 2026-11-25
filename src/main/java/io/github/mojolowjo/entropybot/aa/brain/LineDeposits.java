@@ -300,6 +300,26 @@ public final class LineDeposits {
      */
     public void putEnded(boolean reached, Map<String, Integer> put) {
         if (reached || !onWay || put == null || put.isEmpty()) { putEnded(reached); return; }
+        if (!takeOff(put)) { putsReached++; gone(true); return; }
+        failed();
+    }
+
+    /**
+     * Review 5 (a put started twice in one task asked again for what its first leg put: the in-run re-plan reads
+     * {@link #owed}, and {@link #way} kept the whole amount until the put ended): a leg of the put on its way ended inside
+     * its running task and moved {@code put} (by the step's ids) into the chest. It comes off {@link #way} now, order by
+     * order (the order's {@link Goals.Goal#depositPut}); the put stays on its way. Nothing on its way: nothing.
+     */
+    public void legEnded(Map<String, Integer> put) {
+        if (!onWay || put == null || put.isEmpty()) return;
+        takeOff(put);
+    }
+
+    /** Review 5: nothing of the put on its way is left in {@link #way} (every leg's part reached the chest). */
+    public boolean wayEmpty() { return onWay && way.isEmpty(); }
+
+    /** {@code put} off {@link #way}, order by order, each order's part noted in its depositPut; true: some of the way is left. */
+    private boolean takeOff(Map<String, Integer> put) {
         Map<String, Integer> left = new TreeMap<>(normal(put));
         boolean rest = false;
         for (var d : way.entrySet()) {
@@ -318,8 +338,7 @@ public final class LineDeposits {
             d.setValue(now);
         }
         way.values().removeIf(Map::isEmpty);
-        if (!rest) { putsReached++; gone(true); return; }
-        failed();
+        return rest;
     }
 
     /** The items of {@code maps}' orders summed, by each item's full id ({@link #fullId}) or the bag's key. */
@@ -343,10 +362,12 @@ public final class LineDeposits {
     /** What the bag holds of the order's deposit amount now (counted id -> n; a group: up to the amount of each member). */
     static Map<String, Integer> take(Goals.Goal g, Map<String, Integer> bag) {
         Map<String, Integer> out = new TreeMap<>();
-        int left = g.deposit;
+        // review 5 (once): what an earlier partial put already took to the chest for this order is not asked again
+        int owes = Math.max(0, g.deposit - g.depositPut.values().stream().mapToInt(Integer::intValue).sum());
+        int left = owes;
         for (String id : g.r.counts()) {
             int have = bag.getOrDefault(id, 0);
-            int take = g.r.group() ? Math.min(have, g.deposit) : Math.min(have, left);
+            int take = g.r.group() ? Math.min(have, owes) : Math.min(have, left);
             if (take > 0) { out.merge(id, take, Integer::sum); left -= take; }
             if (!g.r.group() && left <= 0) break;
         }

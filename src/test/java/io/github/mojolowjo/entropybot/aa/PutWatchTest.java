@@ -132,6 +132,82 @@ class PutWatchTest {
         assertEquals(want, l.s().deposits.owed());
     }
 
+    /**
+     * Review 5 (serious): two legs in one task. The first leg's Deposit step fails after moving part; the in-run re-plan
+     * reads owed() and must not ask again for that part, so the second leg's put (planned from owed) passes putDiffers and
+     * moves only the rest; the chest gets each item once.
+     */
+    @Test
+    void twoLegsInOneTask_theSecondNeverAsksForWhatTheFirstPut() {
+        Line l = due();
+        LineDeposits d = l.s().deposits;
+        Map<String, Integer> owed = d.owed();
+        String k = owed.keySet().iterator().next();
+        int all = owed.get(k);
+        PutWatch w = new PutWatch(d);
+        int reached = d.putsReached();
+        w.started(TASK, false);
+        w.moved(Map.of(k, 1));                              // the clicks: one went in
+        w.legEnded();                                       // StepHands.depositStatus: the step failed after it
+        Map<String, Integer> replan = d.owed();             // Goals.chain for the deposit goal: what the re-plan asks
+        Map<String, Integer> want = new java.util.TreeMap<>(owed);
+        if (all == 1) want.remove(k); else want.put(k, all - 1);
+        assertEquals(want, replan, "the re-plan asks only for the rest");
+        assertNull(d.putDiffers(replan), "the second leg's planned put is what is owed");
+        w.started(TASK, false);                             // the second leg, same task
+        assertEquals(Map.of(k, 1), w.movedSoFar());
+        Map<String, Integer> second = new java.util.TreeMap<>(replan);
+        w.moved(second);
+        w.legEnded();
+        String line = w.ended(TASK, true, null, "ok");
+        assertNotNull(line);
+        assertTrue(line.contains("reached the chest"), line);
+        assertTrue(d.owed().isEmpty());
+        assertEquals(reached + 1, d.putsReached());
+        int cobPut = l.cob().depositPut.values().stream().mapToInt(Integer::intValue).sum();
+        int logPut = l.log().depositPut.values().stream().mapToInt(Integer::intValue).sum();
+        assertEquals(owed.values().stream().mapToInt(Integer::intValue).sum(), cobPut + logPut, "each item once");
+    }
+
+    /** Review 5: a leg that put all of it and failed after is reached at the task's failed end. */
+    @Test
+    void aLegThatPutAllOfIt_isReachedWhenTheTaskFailsAtThatStep() {
+        Line l = due();
+        LineDeposits d = l.s().deposits;
+        Map<String, Integer> owed = d.owed();
+        PutWatch w = new PutWatch(d);
+        w.started(TASK, false);
+        w.moved(owed);
+        w.legEnded();
+        w.ended(TASK, false, new Step.Deposit(null, owed, new int[]{0, 64, 0}), "deposit: the chest closed");
+        assertTrue(d.owed().isEmpty(), "all went in: nothing owed again");
+    }
+
+    /** Review 5 (once): an order weighed again after part of it went in asks only for the rest (cobblestone 32, 10 in). */
+    @Test
+    void anOrderWeighedAgain_afterAPartialPut_asksOnlyForTheRest() {
+        OrderLineSim s = new OrderLineSim();
+        Goals.Goal cob = s.order("cobblestone", 32, "b9", true);
+        cob.depositPut.put("cobblestone", 10);
+        s.bag.put("cobblestone", 64);
+        LineDeposits.Out o = s.deposits.weigh(cob, "done", s.bag, AT);
+        assertEquals(Kind.DUE, o.kind(), o.text());
+        assertEquals(22, o.items().values().stream().mapToInt(Integer::intValue).sum(), o.text());
+    }
+
+    /** Review 5 (serious): a split stack that stayed for want of an empty slot is a full chest; its words make the hold. */
+    @Test
+    void aShortPutWithASplitThatStayed_isAFullChestHold() {
+        int[] c = {3, 64, -5};
+        String words = io.github.mojolowjo.entropybot.aa.brain.DepositRule.shortWords(0, 32, c, "cobblestone 32",
+                " (32 of a split stack stayed: no empty chest slot for it)");
+        var h = io.github.mojolowjo.entropybot.aa.brain.MainChestHold.refusal(words);
+        assertNotNull(h, words);
+        assertEquals(io.github.mojolowjo.entropybot.aa.brain.MainChestHold.Kind.FULL, h.kind());
+        assertEquals(3, h.x());
+        assertEquals(-5, h.z());
+    }
+
     @Test
     void anotherTaskStartingAPut_startsItsCountAfresh() {
         Line l = due();

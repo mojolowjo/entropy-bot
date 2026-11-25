@@ -43,7 +43,7 @@ public final class PutWatch {
         // review 4 (point 3): the same task starting the put again (an escape resume, an in-run re-plan that splices a new
         // Deposit) keeps what its earlier legs moved; the leg's own count starts afresh
         boolean again = on && !pending && !starting && task == current;
-        if (again) earlier = sum(earlier, moved);
+        if (again) legEnded();                       // review 5: a leg whose end was not read comes off the owed amount now
         else earlier = Map.of();
         on = true;
         pending = starting;
@@ -90,6 +90,19 @@ public final class PutWatch {
     }
 
     /**
+     * Review 5: the put's leg (its Deposit step) ended inside its running task (done or failed; the task runs on, it may
+     * re-plan and start the put again). What the leg moved comes off what is owed now (LineDeposits.legEnded), so a
+     * re-plan inside the task never asks again for it; it is kept in the earlier legs' sum for the end's line. No put on,
+     * or pending: nothing.
+     */
+    public void legEnded() {
+        if (!on || moved.isEmpty()) return;
+        deposits.legEnded(moved);
+        earlier = sum(earlier, moved);
+        moved = Map.of();
+    }
+
+    /**
      * Task {@code endedTask}'s run ended ({@code done}, else failed at {@code failedAt}): the put of that task reached the
      * chest when the run ended done or failed at a step after the put (LineDeposits.putReached). Another task's end reads
      * nothing.
@@ -133,9 +146,12 @@ public final class PutWatch {
         pending = false;
         task = -1;
         Map<String, Integer> m = movedSoFar();
+        Map<String, Integer> leg = moved;            // review 5: the earlier legs came off the owed amount at their ends
         moved = Map.of();
         earlier = Map.of();
-        deposits.putEnded(reached, m);
+        // review 5: every leg's part reached the chest (nothing of the way is left after this leg): reached
+        if (!reached && !m.isEmpty()) { deposits.legEnded(leg); if (deposits.wayEmpty()) reached = true; leg = Map.of(); }
+        deposits.putEnded(reached, leg);
         return "the line's put " + (reached ? "reached the chest"
                 : "did not reach the chest whole (" + (m.isEmpty() ? "nothing went in" : "went in: " + m) + "; the rest is owed again)") + ": " + why;
     }

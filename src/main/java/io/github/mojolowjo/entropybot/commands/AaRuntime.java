@@ -4250,6 +4250,12 @@ public final class AaRuntime implements JobPort {
     /** Review 2: the put's leg ended having moved {@code items} (empty: nothing). */
     void putMoved(java.util.Map<String, Integer> items) { put.moved(items); }
 
+    /** Review 5: the put's Deposit step ended inside its task: what it moved comes off the owed amount now (PutWatch.legEnded). */
+    void putLegEnded() { put.legEnded(); }
+
+    /** Review 5: what the line's deposit owes now, by full id (the one reader, LineDeposits.owed). */
+    java.util.Map<String, Integer> depositOwed() { return lineDeposits.owed(); }
+
     /** deposit-goal stage 4: a put's end line (PutWatch), said (rule 7); null: nothing ended. */
     private void putSaid(String line) {
         if (line != null) LOG.info("[entropybot] aa: {}", line);

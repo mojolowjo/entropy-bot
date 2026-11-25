@@ -122,8 +122,15 @@ public final class Storage {
         if (rt == null) return;
         String[] w = lastOpened.split(" ");
         if (w.length != 3) return;              // structural: x y z
+        // review 5: room is an empty slot, or a stack of an owed item below its stack size (it takes more of that item)
+        var owed = rt.depositOwed();
         int free = 0;
-        for (var s : p.containerMenu.slots) if (s.container != p.getInventory() && !s.hasItem()) free++;
+        for (var s : p.containerMenu.slots) {
+            if (s.container == p.getInventory()) continue;
+            if (!s.hasItem()) { free++; continue; }
+            var st = s.getItem();
+            if (st.getCount() < st.getMaxStackSize() && owed.containsKey(BuiltInRegistries.ITEM.getKey(st.getItem()).toString())) free++;
+        }
         try {
             rt.chestHoldSaid(rt.chestHold.roomSeen(Integer.parseInt(w[0]), Integer.parseInt(w[1]), Integer.parseInt(w[2]), free));
         } catch (NumberFormatException e) {

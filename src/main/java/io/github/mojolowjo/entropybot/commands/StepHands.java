@@ -779,7 +779,8 @@ public final class StepHands implements Steps.Hands {
         Car.Status st = deposit.tick(p);
         if (st.state() != Car.State.RUNNING) {
             // review 2 (fault 2): what the planned put moved, so a failed put owes only the rest (AaRuntime.putOver)
-            if (c.aaRuntime != null) c.aaRuntime.putMoved(deposit.putItems());
+            // review 5: and that part comes off the owed amount now, so an in-run re-plan never asks for it again
+            if (c.aaRuntime != null) { c.aaRuntime.putMoved(deposit.putItems()); c.aaRuntime.putLegEnded(); }
             deposit = null;
         }
         return st;
