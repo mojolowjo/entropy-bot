@@ -1826,6 +1826,20 @@ public final class Goals {
         return out;
     }
 
+    /**
+     * lost-after-done (tester-2 w064; LineDeposits#lostAfterDone): a met order is among the goals again - not met, off the
+     * finished list (its items are no longer there to keep), its "have" read from the bag like any open order's. The same
+     * key already among the goals (a new aa want of it) wins: false, nothing changed.
+     */
+    public static boolean reopen(Blackboard bb, Goal g) {
+        if (find(bb, g.r.key()) != null) return false;
+        g.met = false;
+        g.playbookRun = false;
+        finished(bb).removeIf(x -> x.key.equals(g.r.key()));
+        of(bb).add(g);
+        return true;
+    }
+
     /** One aa goals line: "iron 2/8 high: score 90 - mine iron 6 dig | ...". */
     /** The strip orders' saved progress (set by the game side, StripStep; the default says it is not wired). */
     public static volatile java.util.function.Function<Step.Strip, StripOrder.Saved> stripProgress = s -> {

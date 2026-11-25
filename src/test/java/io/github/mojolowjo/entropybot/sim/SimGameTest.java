@@ -126,6 +126,28 @@ class SimGameTest {
     }
 
     /**
+     * lost-after-done, replaying tester-2 w064 (run 3): the owner's line, cobblestone 32 met at once (in the bag), then the
+     * death takes the whole bag; the met order opens again and is gathered anew, and the chest gets all three amounts.
+     */
+    @Test
+    void w064_aDeathAfterTheCobblestoneWasDone_reopensIt_andTheLineDepositsWhole() {
+        SimGame g = lineMapWith32();
+        g.order("cobblestone", 32, "b1", true);
+        g.order("spruce_log", 16, "b1", true);
+        g.order("torch", 4, "b1", true);
+        g.tick();
+        assertTrue(g.timelineText().contains("got 32 cobblestone"), g.timelineText());
+        g.bag.clear();                           // 23:20:37 "blown up by Creeper": the bag 35 -> 0
+        String end = g.play(900);
+        String t = g.timelineText();
+        assertEquals("done", end, t);
+        assertTrue(t.contains("cobblestone was done, and the bag holds 0 of its 32 for the line's deposit now: open again"), t);
+        assertEquals(32, g.chest.get("minecraft:cobblestone"), "the cobblestone gathered again and deposited: " + g.chest);
+        assertEquals(16, g.chest.get("minecraft:spruce_log"), g.chest.toString());
+        assertEquals(4, g.chest.get("minecraft:torch"), g.chest.toString());
+    }
+
+    /**
      * deposit-kept (owner 2026-11-13: "if I do drop the torch order, it should still deposit the cobblestone"): the line's
      * cobblestone ended, the torch order is dropped - the line ends there and the cobblestone goes to the chest.
      */
