@@ -260,6 +260,19 @@ public final class LineDeposits {
      */
     public Map<String, Integer> owed() { return sum(java.util.List.of(due, way), true); }
 
+    /**
+     * Stage 4 review (the put's items are fixed when the plan is made, but {@link #putStarted} moves what is owed at the
+     * step's start; a line that came due, or a take-back, in between made the two differ): null when the planned put
+     * {@code only} is what is owed now, else the said reason - the step fails with it and the deposit goal plans again
+     * from {@link #owed}, so nothing goes on its way that the put does not carry.
+     */
+    public String putDiffers(Map<String, Integer> only) {
+        Map<String, Integer> now = owed();
+        Map<String, Integer> planned = only == null ? Map.of() : only;
+        if (now.equals(planned)) return null;
+        return "the deposit owed changed since the plan (planned " + planned + ", owed now " + now + "), planning again";
+    }
+
     /** The items of {@code maps}' orders summed, by each item's full id ({@link #fullId}) or the bag's key. */
     private static Map<String, Integer> sum(java.util.List<Map<Goals.Goal, Map<String, Integer>>> maps, boolean full) {
         Map<String, Integer> out = new TreeMap<>();

@@ -642,6 +642,50 @@ class LineDepositsTest {
         assertEquals(Map.of("stick", 4), s.deposits.dueNow());
     }
 
+    /** Stage 4 review (a): a line came due between the plan and the put's start - the stale put does not start. */
+    @Test
+    void aLineDueAfterThePlanStopsTheStalePut() {
+        OrderLineSim s = new OrderLineSim();
+        Goals.Goal cob = s.order("cobblestone", 32, "b1", true), log = s.order("oak_log", 16, "b1", true);
+        Goals.Goal stick = s.order("stick", 4, "b2", true);
+        due(s, cob, log, 11);
+        Map<String, Integer> planned = s.deposits.owed();
+        assertNull(s.deposits.putDiffers(planned), "planned as owed: the put starts");
+        s.bag.put("stick", 4);
+        assertEquals(Kind.DUE, s.deposits.weigh(stick, "done", s.bag, AT).kind());
+        String why = s.deposits.putDiffers(planned);
+        assertNotNull(why, "owed grew: the stale put must not start");
+        assertTrue(why.contains("planning again"), why);
+        assertNull(s.deposits.putDiffers(s.deposits.owed()), "the new plan carries what is owed");
+    }
+
+    /** Stage 4 review (b): a take-back between the plan and the put's start - the stale put does not start. */
+    @Test
+    void aTakeBackAfterThePlanStopsTheStalePut() {
+        OrderLineSim s = new OrderLineSim();
+        Goals.Goal cob = s.order("cobblestone", 32, "b1", true), log = s.order("oak_log", 16, "b1", true);
+        due(s, cob, log, 11);
+        Map<String, Integer> planned = s.deposits.owed();
+        log.parked = null;
+        assertEquals(Kind.WOKE_TAKEN_BACK, s.deposits.sweep(log, s.bag, AT).kind());
+        assertNotNull(s.deposits.putDiffers(planned), "owed shrank: the stale put must not start");
+        assertTrue(s.deposits.owed().isEmpty());
+        assertNull(s.deposits.putDiffers(Map.of()));
+    }
+
+    /** Stage 4 review: an escape resume starts the same put again - nothing changed, it still matches. */
+    @Test
+    void aResumedPutStillMatches() {
+        OrderLineSim s = new OrderLineSim();
+        Goals.Goal cob = s.order("cobblestone", 32, "b1", true), log = s.order("oak_log", 16, "b1", true);
+        due(s, cob, log, 11);
+        Map<String, Integer> planned = s.deposits.owed();
+        s.deposits.putStarted();
+        assertNull(s.deposits.putDiffers(planned));
+        s.deposits.putStarted();
+        assertEquals(planned, s.deposits.owed(), "a second start moves nothing twice");
+    }
+
     @Test
     void aFailedPutJoinsALineThatCameDueMeanwhile() {
         OrderLineSim s = new OrderLineSim();

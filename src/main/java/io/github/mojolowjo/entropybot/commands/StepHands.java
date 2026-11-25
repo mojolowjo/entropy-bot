@@ -755,6 +755,10 @@ public final class StepHands implements Steps.Hands {
         // and the plain aa deposit carry no chest and are unchanged
         if (d.chest() != null) {
             if (c.aaRuntime == null) return "error: deposit: the put to the chest at " + d.chestText() + " has no owed store (aa not loaded)";
+            // stage 4 review: the step's items were fixed at the plan; what is owed may have changed since (a line came due,
+            // a take-back) - then fail with the reason and let the goal plan again, never send on its way what is not put
+            String differs = c.aaRuntime.putDiffers(d.only());
+            if (differs != null) { deposit = null; return "error: deposit: " + differs; }
             c.aaRuntime.putStarted();
         }
         String[] inst = new String[1];

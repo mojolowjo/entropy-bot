@@ -4211,6 +4211,9 @@ public final class AaRuntime implements JobPort {
      * deposit-goal stage 4: the planned put started (StepHands' deposit leg, a chest given): what is owed goes on its way
      * (LineDeposits.putStarted, the take-back cutoff, open question 4).
      */
+    /** Stage 4 review: LineDeposits.putDiffers - null when the planned put carries what is owed now, else the reason. */
+    String putDiffers(java.util.Map<String, Integer> only) { return lineDeposits.putDiffers(only); }
+
     void putStarted() {
         putOn = true;
         lineDeposits.putStarted();
