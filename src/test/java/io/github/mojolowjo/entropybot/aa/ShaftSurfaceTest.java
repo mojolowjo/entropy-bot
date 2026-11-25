@@ -35,20 +35,23 @@ class ShaftSurfaceTest {
         return n;
     }
 
-    /** w027's cell -1 53 -7 at the foot of a staircase cut down along z (one column a step, the stair at -1 54 -6). */
+    /**
+     * Send-back (the reviewer: 8 worlds of the 100-world table 2-25 s slower): a staircase cut down along z that a player
+     * walks up (one column a step, from -1 53 -7 to the ground) is no hole - the walk by steps reaches the ring's border,
+     * as the base read it, so no walk up leg before the deposit or the explore. (The ring's rim stays the leg's target for
+     * a boxed-in way out, as in the base: legNeeded sees only the ring and the stair still deep at its border.)
+     */
     @Test
-    void w027_theFootOfAStaircaseCutDown_isNoSurface() {
+    void aStaircaseAPlayerWalksUp_isNoHole() {
         Map<String, Integer> dug = new HashMap<>();
         for (int i = 0; i <= 15; i++) dug.put("-1," + (-7 + i), 53 + i);       // -1 53 -7, -1 54 -6, ... up to the ground
         IntBinaryOperator s = land(dug);
-        assertEquals(0, SurfaceHeight.holeDepth(53, around(s, -1, -7)), "the lowest-neighbour reading said 0 (the stair a step up): the run's fault");
-        int d = SurfaceHeight.pitDepth(new int[]{-1, 53, -7}, s);
-        assertEquals(16, d, "walled across: 16 under the ground at 69");
-        NeedChain.Surface at = new NeedChain.Surface(SurfaceHeight.belowSurface(0, d), 0, 69, -10, 16, true);
-        assertTrue(at.under(), "the deposit's and the orders' one test: under ground, the walk up or the climb first");
+        int[] feet = {-1, 53, -7};
+        assertEquals(0, SurfaceHeight.pitDepth(feet, s), "walks out by steps: no hole");
+        assertEquals(0, SurfaceHeight.holeDepth(53, around(s, -1, -7)), "as the base read it (the stair a step up)");
+        assertFalse(new NeedChain.Surface(SurfaceHeight.belowSurface(0, 0), feet[0], feet[1], feet[2], 0, false).under(), "not under ground");
     }
-
-    /** The same cell beside a notch dug at the shaft's side (the other way the dig may run): no surface either. */
+    /** w027's cell beside a notch dug at the shaft's side: walled in, 16 under the ground at 69 - the deposit's and the orders' one test says under ground. */
     @Test
     void w027_aShaftWithANotchBesideIt_isNoSurface() {
         Map<String, Integer> dug = new HashMap<>(Map.of("-1,-7", 53, "-2,-6", 54));
@@ -56,6 +59,8 @@ class ShaftSurfaceTest {
         assertEquals(0, SurfaceHeight.holeDepth(53, around(s, -1, -7)), "the old reading: 0");
         assertEquals(16, SurfaceHeight.pitDepth(new int[]{-1, 53, -7}, s));
         assertEquals(16, SurfaceHeight.pitDepth(new int[]{-1, 53, -7}, land(Map.of("-1,-7", 53))), "a plain 1x1 shaft reads as before");
+        NeedChain.Surface at = new NeedChain.Surface(SurfaceHeight.belowSurface(0, 16), 0, 69, -10, 16, true);
+        assertTrue(at.under(), "the deposit's and the orders' one test: under ground, the walk up or the climb first");
     }
 
     /** Ground a player walks out of stays the surface: flat land, a cliff's foot, a street between houses, a slope. */
@@ -74,11 +79,32 @@ class ShaftSurfaceTest {
         assertEquals(0, SurfaceHeight.pitDepth(new int[]{0, 53, 0}, unknown), "nothing known round it: no depth claimed (rule 15)");
     }
 
-    /** The 1-wide trench rule itself, pair by pair. */
+    /**
+     * Send-back, the 100-world table's w080 (the one world still slower after the walled-across rule went: a walk up to
+     * 0 132 6 before the chest at -7 127 -1): feet at 0 126 6 in its own dig, a 1x1 dig down to 124 beside them, the
+     * ground round at 130-132. A drop beside the feet reads no hole, as the base's lowest neighbour did.
+     */
     @Test
-    void trenchDepth_pairs() {
-        assertEquals(16, SurfaceHeight.trenchDepth(53, 69, 69, 54, 52));
-        assertEquals(0, SurfaceHeight.trenchDepth(53, 69, 53, 69, 54), "open on one side of each pair");
-        assertEquals(0, SurfaceHeight.trenchDepth(53, 54, 69, SurfaceHeight.NOT_KNOWN, 69), "a step, and a pair not known");
+    void w080_aDropBesideTheFeet_isNoHole() {
+        IntBinaryOperator s = (x, z) -> x == 1 && z == 7 ? 124 : x == 0 && z == 6 ? 126 : 131;
+        assertEquals(0, SurfaceHeight.pitDepth(new int[]{0, 126, 6}, s));
+        assertEquals(0, SurfaceHeight.holeDepth(126, around(s, 0, 6)), "as the base read it");
+    }
+
+    /** The hole reader and the leg reader agree in the w027 shapes (rule 23 (2)): a hole is where the no-break walk cannot get out. */
+    @Test
+    void theHoleAndTheLeg_agree() {
+        java.util.List<Map<String, Integer>> shapes = java.util.List.of(
+                Map.of("-1,-7", 53),                                   // a 1x1 shaft
+                Map.of("-1,-7", 53, "-2,-6", 54),                      // with a notch beside it (w027)
+                Map.of("-1,-7", 53, "-1,-6", 53),                      // a 1x2 shaft
+                Map.of("-1,-7", 66, "-1,-6", 66));                     // a shallow 2-cell dig, 3 deep
+        for (Map<String, Integer> dug : shapes) {
+            IntBinaryOperator s = land(dug);
+            int[] feet = {-1, dug.get("-1,-7"), -7};
+            int d = SurfaceHeight.pitDepth(feet, s);
+            assertTrue(d > 0, "walled in: " + dug);
+            assertTrue(SurfaceHeight.legNeeded(feet, s, SurfaceHeight.ringTarget(feet, s, (x, y, z) -> true)), "the leg too: " + dug);
+        }
     }
 }

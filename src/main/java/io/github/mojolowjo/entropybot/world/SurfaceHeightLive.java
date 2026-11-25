@@ -45,7 +45,7 @@ public final class SurfaceHeightLive {
 
     /**
      * job-hold-sight send-back item 3 (the reviewer: a bamboo jungle or a village alley read "under ground" on the real
-     * surface by the walled-across rule): a block the ground reader walks past - leaves, logs (the game's tags), no motion
+     * surface by the hole rule): a block the ground reader walks past - leaves, logs (the game's tags), no motion
      * blocked, and the stalks, posts and plant blocks that stand on the ground rather than being it: bamboo, cactus,
      * chorus, huge mushroom blocks (stems and caps, a tree's kind), fences, fence gates, walls, panes and bars. Read by the
      * block's class as well as its tag (Loader notes: vanilla {@code FenceBlock}, {@code FenceGateBlock}, {@code WallBlock},

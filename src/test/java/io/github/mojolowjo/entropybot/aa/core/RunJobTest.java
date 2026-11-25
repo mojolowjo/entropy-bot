@@ -133,7 +133,7 @@ class RunJobTest {
     @Test
     void aCut_theTasksLimit_theStepsKindInTheWords() {
         long[] start = {clock.now()};
-        port.onStepWatch = id -> new JobPort.StepWatch("ChopTree", "cut 3 oak_log at 22 74 -69", -1, clock.now() - start[0]);
+        port.onStepWatch = id -> new JobPort.StepWatch("ChopTree", "cut 3 oak_log at 22 74 -69", -1, clock.now() - start[0], false);
         job.tick(bb);
         clock.advance(30_000);
         start[0] = clock.now();                              // the next step started (no progress counted)
@@ -146,7 +146,7 @@ class RunJobTest {
     @Test
     void aStepOnItsOwnBound_itsOwnLimitFromItsStart() {
         long[] start = {clock.now()};
-        port.onStepWatch = id -> new JobPort.StepWatch("AwaitPaths", "stand while paths compute", 70_000, clock.now() - start[0]);
+        port.onStepWatch = id -> new JobPort.StepWatch("AwaitPaths", "stand while paths compute", 70_000, clock.now() - start[0], clock.now() - start[0] > 70_000);
         job.tick(bb);
         clock.advance(41_000);
         assertEquals(Status.RUNNING, job.tick(bb), "its own limit: no fire at the task's 40 s");

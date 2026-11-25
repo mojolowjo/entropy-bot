@@ -141,4 +141,25 @@ class HoldSightTest {
         log.park = new Goals.Park(Goals.ParkKind.PLACE, new int[]{0, 64, 0}, 0, null, java.util.Set.of());
         assertNull(Goals.stillChanges(List.of(log), log, false, false, false, parked - 1), "sources not known at the park: no sight wake (rule 15)");
     }
+
+    /**
+     * Send-back (the reviewer: a chunk pass tick that throws before its stamp every time froze arrivalsReadAt, and every
+     * park waiting on a sight held the deposit for ever): a failed tick leaves no pass to wait on - said once a streak - so
+     * the hold reads the nearby scan alone and ends once it read again (the run 3 circle stays closed).
+     */
+    @Test
+    void aFailingChunkPass_isNoReaderToWaitOn_saidOnce() {
+        Goals.Goal[] g = new Goals.Goal[2];
+        w044(g);
+        Goals.Goal log = g[1];
+        long parked = log.parkedAtMs;
+        int[] said = {0};
+        long frozen = parked - 1;                                    // the last stamp, before the park
+        assertNotNull(Goals.stillChanges(List.of(log), log, false, false, false, io.github.mojolowjo.entropybot.aa.core.Inputs.sightAt(parked + 5, frozen)), "frozen: held");
+        long after = io.github.mojolowjo.entropybot.sense.ChunkPass.arrivalsAfterError(frozen, () -> said[0]++);
+        after = io.github.mojolowjo.entropybot.sense.ChunkPass.arrivalsAfterError(after, () -> said[0]++);
+        assertEquals(1, said[0], "said once a streak (rule 7)");
+        assertNull(Goals.stillChanges(List.of(log), log, false, false, false, io.github.mojolowjo.entropybot.aa.core.Inputs.sightAt(parked + 5, after)), "the nearby scan read since the park: the hold ends");
+        assertNotNull(Goals.stillChanges(List.of(log), log, false, false, false, io.github.mojolowjo.entropybot.aa.core.Inputs.sightAt(parked - 1, after)), "the nearby scan not read since: still held on it");
+    }
 }

@@ -113,13 +113,14 @@ public final class RunJob extends Node {
         // step - its kind in the words, and its own limit and start only for a step that has a limit of its own (the stand
         // on its own bound); any other step, a judged cut included, keeps the task's watch (review: the hand-off bound)
         JobPort.StepWatch sw = bb.port.stepWatch(taskId);
+        // send-back: each clock compared only with itself - the step's age against its own limit by the step runner (its
+        // ticks, sw.past), the quiet time against the task's limit here (this clock)
         boolean ownLimit = sw != null && sw.limitMs() >= 0;
         long quiet = now - lastProgressAt;
-        if (ownLimit) quiet = Math.min(quiet, sw.ageMs());
         long limit = ownLimit ? sw.limitMs() : running.noProgressMs();
         String in = sw == null ? String.valueOf(running.kind()) : "step " + sw.kind() + " (" + sw.step() + ") of " + running.kind() + ", its limit " + limit / 1000   // structural: milliseconds per second
                 + " s" + (ownLimit ? " (its own)" : " (the task's: the step has no limit of its own)");
-        if (quiet > limit) {
+        if (quiet > running.noProgressMs() && (!ownLimit || sw.past())) {
             long s = quiet / 1000;  // structural: milliseconds per second
             // 0.39.z71 (D2 3.2): with monitor.stallS below this watch it fires only when the step monitor is off or broken: said
             bb.port.log("outer watch fired after " + s + " s in " + in + ": the step monitor said nothing");

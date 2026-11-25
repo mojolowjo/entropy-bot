@@ -54,36 +54,25 @@ public final class SurfaceHeight {
      * job-hold-sight (worlds run 4 w027 06:01:33: the bot 17 under ground walked "up to the surface at -1 53 -7", one block,
      * a sky-lit cell of its own dig - a neighbour column of the dig itself was a step away, so {@link #holeDepth} (the
      * LOWEST of the 8 neighbours) read 0 and that cell passed as the surface, while the ground round it stood at 69): the
-     * one hole reader (Jobs.holeDepth, the simulator's land), the deeper of two readings, each counted over a step:
-     * <ul><li>{@link #trenchDepth}: walled across - the lower of two opposite neighbours (east and west, or south and
-     * north), less the feet's y: a 1-wide dig (a staircase cut down, a shaft with a notch) is a hole however its own
-     * column runs on; a cliff's foot or a street has open ground on one side, never a hole;</li>
-     * <li>walled in over the {@link #RING} square: the columns the feet reach by steps of at most one block up (drops
-     * walked), from the feet's own column at the feet's y; when they reach the ring's border a player walks out (0), else
-     * the lowest known surface bordering them, less the feet's y (a 1x1 shaft reads as {@link #holeDepth} did).</li></ul>
-     * No known column round them: 0 (rule 15: no depth claimed). Pure.
+     * one hole reader (Jobs.holeDepth, the simulator's land): walled in over the {@link #RING} square - the columns the
+     * feet reach by level steps or steps of one block up, from the feet's own column at the feet's y; a lower column is
+     * not walked but counted as the ground round them (so a drop beside the feet reads no hole, as {@link #holeDepth}
+     * read it: the 100-world table's w080, a 1x1 dig at 124 beside feet at 126, walls at 130, took a walk up the base did
+     * not); when they reach the ring's border a player walks out (0: a staircase cut down, a slope, a
+     * cliff's foot, a street), else the lowest known surface bordering them, less the feet's y, when more than a step (a
+     * 1x1 shaft reads as {@link #holeDepth} did; a shaft with a notch dug beside it reads its full depth). No known column
+     * round them: 0 (rule 15: no depth claimed). Send-back (the reviewer, the 100-world table 8 worlds 2-25 s slower): the
+     * walled-across reading is gone - it called a staircase a player walks out of a hole, so the deposit and the explore
+     * took a walk up first where Baritone walked straight out (rule 20), and it disagreed with {@link #legNeeded} in the
+     * same cell (rule 23 (2)). Pure.
      */
     public static int pitDepth(int[] feet, java.util.function.IntBinaryOperator surface) {
-        int across = trenchDepth(feet[1], surface.applyAsInt(feet[0] + 1, feet[2]), surface.applyAsInt(feet[0] - 1, feet[2]),
-                surface.applyAsInt(feet[0], feet[2] + 1), surface.applyAsInt(feet[0], feet[2] - 1));
-        return Math.max(across, walledIn(feet, surface));
+        return walledIn(feet, surface);
     }
 
     /**
-     * job-hold-sight (pure): walled across at {@code feetY} - for each pair of opposite neighbours ({@code east}/{@code west},
-     * {@code south}/{@code north}; a pair with a side not known is left out, rule 15) the lower side less the feet's y; the
-     * deeper pair, when more than a step, else 0.
-     */
-    public static int trenchDepth(int feetY, int east, int west, int south, int north) {
-        int d = Integer.MIN_VALUE;
-        if (known(east) && known(west)) d = Math.max(d, Math.min(east, west) - feetY);
-        if (known(south) && known(north)) d = Math.max(d, Math.min(south, north) - feetY);
-        return d > 1 ? d : 0;                                    // structural: a 1-block step walks out
-    }
-
-    /**
-     * job-hold-sight: the walled-in reading of {@link #pitDepth} (the flood over the ring). Each column is read once, when
-     * the flood first touches it (open ground reaches the border in a few columns; a climb goal asks this per cell). Pure.
+     * job-hold-sight: the reading of {@link #pitDepth} (the flood over the ring). Each column is read once, when the flood
+     * first touches it (open ground reaches the border in a few columns; a climb goal asks this per cell). Pure.
      */
     static int walledIn(int[] feet, java.util.function.IntBinaryOperator surface) {
         int side = 2 * RING + 1;
@@ -110,7 +99,9 @@ public final class SurfaceHeight {
                 for (int dz = -1; dz <= 1; dz++) {
                     int n = (cz + dz) * side + cx + dx;
                     if ((dx == 0 && dz == 0) || in[n] || !known(at.applyAsInt(n))) continue;
-                    if (h[n] - h[c] > 1) continue;               // structural: a 1-block step walks out
+                    // structural: a 1-block step walks out; a drop is not walked but read as the ground round (the
+                    // lowest bordering), as the lowest-neighbour reading did: a drop beside the feet is no hole
+                    if (h[n] - h[c] > 1 || h[n] < h[c]) continue;
                     in[n] = true;
                     q.add(n);
                 }

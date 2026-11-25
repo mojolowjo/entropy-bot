@@ -824,7 +824,7 @@ public final class Steps {
         boolean own = standsOnItsOwnBound();
         long tickMs = 50;                                    // game fact: 20 game ticks per second
         return new io.github.mojolowjo.entropybot.aa.core.JobPort.StepWatch(s.getClass().getSimpleName(), s.text(),
-                own ? stepTicks() * tickMs : -1, Math.max(0, now - stepStart) * tickMs);
+                own ? stepTicks() * tickMs : -1, Math.max(0, now - stepStart) * tickMs, own && now - stepStart > stepTicks());
     }
 
     public boolean monitorJudges() {
