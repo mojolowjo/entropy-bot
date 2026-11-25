@@ -5372,8 +5372,7 @@ public final class NeedChain {
             case CHUNKS -> new Walked(Double.NaN, "", PathPrice.NOT_KNOWN + " (" + (why.isEmpty() ? "chunks not loaded" : why) + ")", a.kind());
             case UNREACHABLE -> new Walked(Double.NaN, "", io.github.mojolowjo.entropybot.aa.moves.FactChange.unreachableText(why.isEmpty() ? "no path, the search ended" : why), a.kind());
             // z76 send-back 3 review (rule 15): no estimate after the wait is a way that drops, never another stand
-            // job-deposit-park-wake (w004): a walk answered no progress from this cell drops the same way
-            case NONE -> why.startsWith(PathPrice.NO_ESTIMATE) || why.startsWith(PathPrice.NO_PROGRESS_HERE) ? new Walked(Double.NaN, "", why, a.kind())
+            case NONE -> why.startsWith(PathPrice.NO_ESTIMATE) ? new Walked(Double.NaN, "", why, a.kind())
                     : new Walked(Double.NaN, "", PathPrice.NOT_KNOWN + " (" + (why.isEmpty() ? "no answer, no reason given" : why) + ")", a.kind());
             // 0.39.z76 send-back 3 (rule 18 amended, rule 22): past the first-answer wait the walk is taken by Baritone's estimate
             case ESTIMATED -> a.walk() == null || !(a.walk().seconds() >= 0) || Double.isInfinite(a.walk().seconds())

@@ -24,8 +24,9 @@ import static org.junit.jupiter.api.Assertions.*;
  * the hold left the deposit goal no way, every order parked and the bot stood 253 s with the whole line in the bag.
  * (a) the short end is a fact about the walk's last blocks: its finish is priced once from there (the walk again with
  * blocks to place, or N more blocks got first); a second short end from there is no finish. (b) the deposit goal parked on
- * that held walk with every order stopped takes the one look-around leg, then is priced from where it ends (the hold lifts
- * by distance: a walk from another side); after it, the wake words say no wake by itself. Hand numbers: the chest 9 over
+ * that held walk with every order stopped takes one move away (review 1: Baritone's run-away goal from where the walk failed,
+ * ended by the distance the hold lifts at - no untargeted explore, rule 22), then is priced from where it ends (a walk from
+ * another side); after it, the wake words say no wake by itself. Hand numbers: the chest 9 over
  * the feet, as w005; the walks are the fake path's seconds.
  */
 class DepositParkWakeTest {
@@ -64,6 +65,15 @@ class DepositParkWakeTest {
         int far = (int) Math.ceil(Failures.movedV() + 20);
         StationHolds.INSTANCE.walkFailed("deposit", 30, 74, -42, SHORT_REASON, new int[]{30 + far, 65, -42}, true);
         assertTrue(StationHolds.INSTANCE.held(30, 74, -42, new int[]{30 + far, 65, -42}, null).endsWith(StationHolds.SHORT));
+        // review 1: whether a second short end is AGAIN is the two stops alone, not the lift state (which only a price moves):
+        // away and back with no price between, a short end at the first stop is AGAIN
+        StationHolds.INSTANCE.reset();
+        StationHolds.INSTANCE.walkFailed("deposit", 30, 74, -42, SHORT_REASON, from, true);
+        assertNull(StationHolds.INSTANCE.held(30, 74, -42, new int[]{30 + far, 65, -42}, null), "lifted far away");
+        StationHolds.INSTANCE.walkFailed("deposit", 30, 74, -42, SHORT_REASON, from.clone(), true);
+        assertTrue(StationHolds.INSTANCE.held(30, 74, -42, from, null).endsWith(StationHolds.AGAIN), "the same stop: again");
+        assertArrayEquals(from, StationHolds.INSTANCE.walkFrom("deposit"), "where the walk failed, for the move away");
+        assertNull(StationHolds.INSTANCE.walkFrom("other"));
         // a put's fault at the chest (not the walk) carries neither
         StationHolds.INSTANCE.walkFailed("deposit", 1, 2, 3, "no chest block there", from);
         String put = StationHolds.INSTANCE.held(1, 2, 3, from, null);
@@ -172,15 +182,19 @@ class DepositParkWakeTest {
         // every order parked on the surface: after goals.lookAroundAfterS the deposit takes its one look-around leg
         int before = s.starts();
         s.run((int) Math.ceil(Tuning.get("goals.lookAroundAfterS") / 5) + 4, 5000);
-        assertTrue(s.port.told.stream().anyMatch(l -> l.startsWith("the line's deposit looks around")), s.port.told.toString());
+        assertTrue(s.port.told.stream().anyMatch(l -> l.startsWith("the line's deposit moves away")), s.port.told.toString());
         assertTrue(s.starts() > before, "a run started");
         var spec = s.port.started.get(s.port.started.size() - 1);
         assertEquals(1, spec.steps().size(), spec.steps().toString());
-        Step.Explore ex = assertInstanceOf(Step.Explore.class, spec.steps().get(0));
-        assertNull(ex.until(), "the deposit's leg has no item to end it");
-        // the leg ends far away: the hold lifted by distance, the deposit is priced from there (the walk from another side)
-        s.feet[0] += (int) Math.ceil(Failures.movedV() + 20);
-        s.endRun("explored 5 min");
+        // review 1 (rule 22: no explore without a target): Baritone's run-away goal from where the walk failed, as far as
+        // the hold lifts - the leg ends on that fact, never on a minute timer
+        assertTrue(spec.steps().stream().noneMatch(st -> st instanceof Step.Explore), "no untargeted explore: " + spec.steps());
+        Step.MoveAway away = assertInstanceOf(Step.MoveAway.class, spec.steps().get(0));
+        assertArrayEquals(s.feet, new int[]{away.x(), away.y(), away.z()}, "from where the walk ended short");
+        assertTrue(away.dist() > Failures.movedV() + 8, "past failures.moved + WorldFacts.MARGIN: " + away);
+        // the leg ends where Baritone's goal is met: the hold lifted by distance, the deposit is priced from there
+        s.feet[0] += away.dist();
+        s.endRun("ok: arrived near " + s.feet[0] + " " + s.feet[1] + " " + s.feet[2]);
         s.run(2, 5000);
         var from = Goals.chain(s.bb, dg);
         assertTrue(from.ok(), from.why());

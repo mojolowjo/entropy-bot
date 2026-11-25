@@ -348,6 +348,9 @@ final class SimGame {
     }
 
     /** Plays until every order is done or the game cannot go on; {@code limitS}: the game seconds allowed. Returns {@link #end}. */
+    /** job-deposit-park-wake review 1: run before each run the brain started (a scenario's own state, e.g. the bag at the deposit); null: none. */
+    Runnable beforeRun;
+
     String play(int limitS) {
         long idleSince = clock.now();
         while (end == null) {
@@ -367,6 +370,7 @@ final class SimGame {
                 // starts while this one runs is handled next, never skipped (deposit-goal stage 3: the deposit goal's run
                 // started in the tick that cancelled a dropped order's run)
                 handled = port.started.size();
+                if (beforeRun != null) beforeRun.run();      // job-deposit-park-wake review 1: a scenario's state set as a run starts
                 run(port.started.get(handled - 1), handled);
                 idleSince = clock.now();
                 continue;

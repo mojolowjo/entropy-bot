@@ -15,8 +15,9 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * job-deposit-park-wake (tester pilot on c606aca8, w004 09:44-09:47; the clock's part is commands.W004NoProgressTest): the
  * bot 20 blocks under ground after the pickaxe broke, the order's tree walks answered no progress from its cell. As the
- * fork's answer (COMPUTING) the chain stood for it again and again; as the answer from here (NONE, the clock's) the next
- * price takes another way at once - the walk up - on the tick and through the planner worker's path (SyncPlanner).
+ * fork's answer (COMPUTING) the chain stood for it again and again; as the answer from here (review 1: Baritone's estimate at
+ * once, never a none - rule 15) the next price ranks the tree walk by the estimate with no stand, on the tick and through the
+ * planner worker's path (SyncPlanner).
  */
 class W004StandTest {
     @AfterEach
@@ -50,18 +51,18 @@ class W004StandTest {
     }
 
     @Test
-    void w004_theAnswerFromHere_takesAnotherWay_onTheTick() {
-        OrderLineSim s = under(PricedAnswers.noProgressHere(new int[]{0, 64, 0}));
+    void w004_theEstimateFromHere_noStand_onTheTick() {
+        OrderLineSim s = under(PricedAnswers.noProgressEstimate(PricedAnswers.noPath("no progress", false, true, "chunks not loaded"), 40, new int[]{0, 44, 0}));
         Goals.Goal g = s.order("oak_log", 16, null, false);
         var c = Goals.chain(s.bb, g);
         assertFalse(stands(c), "no stand on the same question: " + c.why());
         assertTrue(c.ok(), c.why());
-        assertTrue(c.steps().get(0) instanceof Step.ToSurface || c.steps().get(0) instanceof Step.Climb, "another way: " + c.why());
+        assertTrue(c.steps().stream().noneMatch(st -> st instanceof Step.AwaitPaths), "no stand step: " + c.steps());
     }
 
     @Test
-    void w004_theAnswerFromHere_takesAnotherWay_throughTheWorker() {
-        OrderLineSim s = under(PricedAnswers.noProgressHere(new int[]{0, 64, 0}));
+    void w004_theEstimateFromHere_noStand_throughTheWorker() {
+        OrderLineSim s = under(PricedAnswers.noProgressEstimate(PricedAnswers.noPath("no progress", false, true, "chunks not loaded"), 40, new int[]{0, 44, 0}));
         s.plannerThinks();
         s.plannerAnswers.run();
         Goals.Goal g = s.order("oak_log", 16, null, false);

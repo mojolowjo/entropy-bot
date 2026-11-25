@@ -71,17 +71,29 @@ public final class StationHolds {
 
     /**
      * As above; {@code shortWalk}: the failed step was the walk itself (Step.ToStation ended short), not a use or a put at
-     * the station. A short walk that failed before from within failures.moved of these feet (its hold still holding) is
-     * held {@link Hold#again} - the finish was the one more question from here, and it was answered.
+     * the station. A short walk that ended short before within failures.moved of these feet (whether or not the bot was
+     * away between) is held {@link Hold#again} - the finish was the one more question from that stop, and it was answered.
      */
     public synchronized void walkFailed(String order, int x, int y, int z, String reason, int[] feet, boolean shortWalk) {
         String key = NeedChain.stationKey(x, y, z);
         Hold was = holds.get(key);
-        boolean again = shortWalk && was != null && was.shortWalk() && !back.contains(key) && was.from() != null && feet != null
+        // review 1 (the reviewer: AGAIN read the lift state, which only a price updates - a return to the same stop with no
+        // price between read SHORT and offered one more finish): by the two stops alone, the one fact it is about
+        boolean again = shortWalk && was != null && was.shortWalk() && was.from() != null && feet != null
                 && Failures.moved(was.from(), feet) <= Failures.movedV();
         Hold h = new Hold(x, y, z, order, reason, feet, null, shortWalk, again);
         holds.put(h.key(), h);
         back.remove(h.key());
+    }
+
+    /**
+     * job-deposit-park-wake review 1: where the latest walk hold {@code order} learned failed (a copy; null: none kept) - the
+     * cell the deposit goal's move-away leg runs from (Goals.moveAway), so the leg ends where that hold lifts.
+     */
+    public synchronized int[] walkFrom(String order) {
+        int[] out = null;
+        for (Hold h : holds.values()) if (h.block() == null && h.from() != null && java.util.Objects.equals(order, h.order())) out = h.from().clone();
+        return out;
     }
 
     /** The station at x y z ({@code block}: its block id now) is refused for every order: it never opened / its use was given up. */

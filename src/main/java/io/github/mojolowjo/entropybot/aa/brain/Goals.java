@@ -170,6 +170,13 @@ public final class Goals {
         public boolean climbRetried;
 
         /**
+         * job-deposit-park-wake review 1: the deposit goal's wake leg ({@link Goals#moveAway}) - Baritone's run-away step from
+         * where its held walk failed, set when the leg is due ({@link Goals#parkedTick}); null: none (an order's leg is the
+         * explore for its item).
+         */
+        public io.github.mojolowjo.entropybot.aa.moves.Step.MoveAway awayLeg;
+
+        /**
          * job-hold-sight: when (the board clock's ms) the order parked, or its park's facts were read again (a wake priced
          * again that stays stopped); the sight fact ({@code Inputs.sightAtMs}) is compared with it by {@link Goals#stillChanges}.
          */
@@ -305,6 +312,19 @@ public final class Goals {
                 && (g.park != null && g.park.kind() == ParkKind.PLACE || g.loopPark != null);
     }
 
+    /**
+     * job-deposit-park-wake review 1 (pure): the deposit goal's wake leg - Baritone's run-away goal from {@code failedFrom}
+     * (where its held walk failed, StationHolds.walkFrom; null: not kept) else from {@code feet} (null: not known), as far as
+     * the hold lifts: past failures.moved + WorldFacts.MARGIN (StationHolds.heldAt), which is past failures.moved too (the
+     * honest loop's wake). GoalRunAway measures across (x z): that far across is at least that far. Null: neither cell known.
+     */
+    public static io.github.mojolowjo.entropybot.aa.moves.Step.MoveAway moveAway(int[] failedFrom, int[] feet) {
+        int[] from = failedFrom != null && failedFrom.length >= 3 ? failedFrom : feet != null && feet.length >= 3 ? feet : null;     // structural: x y z
+        if (from == null) return null;
+        int dist = (int) Math.floor(Failures.movedV() + WorldFacts.MARGIN) + 1;     // structural: the first whole block past the lift
+        return new io.github.mojolowjo.entropybot.aa.moves.Step.MoveAway(from[0], from[1], from[2], dist);
+    }
+
     /** {@link #wake(Goal)}; {@code worldClimb}: another order's failed climb holds here for it (a world fact, run EJ). */
     static String wake(Goal g, boolean worldClimb) {
         // job-deposit-park-wake (rule 7: never a wake that cannot come): the deposit goal that took its look-around leg and
@@ -399,10 +419,23 @@ public final class Goals {
         if (!underGround && nowMs - since >= (long) (Tuning.get("goals.lookAroundAfterS") * 1000)) {       // structural: s -> ms
             for (Goal g : goals) {
                 if (!lookAroundDue(g)) continue;
+                // job-deposit-park-wake review 1 (rule 22: no explore without a target; the reviewer: the deposit's timed explore
+                // wandered 940 blocks with the line in the bag): the deposit goal's leg is a move away that ends on the fact its
+                // park waits on - the held walk lifts past failures.moved + WorldFacts.MARGIN from where it failed
+                g.awayLeg = g.depositGoal ? moveAway(StationHolds.INSTANCE.walkFrom(g.r.key()), bb.in == null ? null : bb.in.pos) : null;
+                if (g.depositGoal && g.awayLeg == null) {
+                    // rule 15: no cell to move away from (the feet not known, no failed walk kept) - no leg; said once (rule 7)
+                    String no = "the line's deposit: no move away - neither where its walk failed nor the feet are known (rule 15); it stays stopped";
+                    if (!no.equals(g.wakeSaid)) { g.wakeSaid = no; bb.port.log(no); out.add(no); }
+                    continue;
+                }
                 g.looked = true;
                 g.lookAround = true;
                 g.wakeSaid = null;
-                String line = (g.depositGoal ? "the line's deposit" : "order " + g.r.key()) + " looks around: every order is stopped and nothing they wait on changes while I stand here; one explore leg (Baritone's explore), then it is priced again (it stopped on: " + g.parked + ")";
+                String line = g.awayLeg != null
+                        ? "the line's deposit moves away: every order is stopped and nothing they wait on changes while I stand here; one " + g.awayLeg.text()
+                                + ", where its held walk lifts, then it is priced again from there (it stopped on: " + g.parked + ")"
+                        : (g.depositGoal ? "the line's deposit" : "order " + g.r.key()) + " looks around: every order is stopped and nothing they wait on changes while I stand here; one explore leg (Baritone's explore), then it is priced again (it stopped on: " + g.parked + ")";
                 g.parked = null;
                 g.loopPark = null;
                 g.park = null;

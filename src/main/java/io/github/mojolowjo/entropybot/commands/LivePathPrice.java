@@ -133,7 +133,11 @@ public final class LivePathPrice implements PathPrice {
      * job-stand2 item 3: the order's stand ran its full first-answer wait - the walks it waited on are past their wait for the
      * rest of the order (FirstAnswerClock#spend): a re-price takes them by the estimate at once, no second stand on them.
      */
-    public void standServed() { firstAsked.spendWaiting(); }
+    public void standServed() {
+        Minecraft mc = Minecraft.getInstance();
+        // job-deposit-park-wake review 1 (w004): kept by the cell it was served on, over an order flip from that same cell
+        firstAsked.spendWaiting(mc == null || mc.player == null ? null : Jobs.here(mc.player));
+    }
 
     /** structural: a memory bound on the clocks kept (a chain asks a few dozen) */
     private static final int ASKED_AT_MAX = 1024;

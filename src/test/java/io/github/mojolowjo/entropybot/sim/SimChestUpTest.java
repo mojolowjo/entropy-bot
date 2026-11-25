@@ -10,7 +10,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * job-deposit-park-wake (tester pilot on c606aca8, w005): the main chest on a log column 9 above the ground, played by the
  * simulator (Baritone's real search on the sim's blocks, placing only the bag's spare filler, as the game's lease). The
  * first walk ends short below the chest when the bag has no filler to spare; the deposit then finishes it (blocks got
- * first, the walk again) or, held, wakes by its look-around - never a deposit parked on a held walk while nothing moves.
+ * first, the walk again) or, held, wakes by its move away - never a deposit parked on a held walk while nothing moves.
  * A game ends with the line whole in the chest or the deposit stopped with its reasons named. Hand numbers: the lands are
  * SimDepositGoalTest's; the column at 6 0 next to the feet.
  */
@@ -36,31 +36,44 @@ class SimChestUpTest {
         g.order("cobblestone", 32, "b1", true);
         g.order("spruce_log", 16, "b1", true);
         g.order("torch", 4, "b1", true);
+        // review 1, w005's bag at the deposit (dirt 3, oak_planks 1: no filler to spare for 9 up): as each of the deposit goal's
+        // runs starts until its walk first ended short, every placeable block over its owed amount leaves the bag - so the
+        // first walk to the chest cannot pillar (a walk up before it digs filler of its own)
+        g.beforeRun = () -> {
+            if (g.depositLegs.contains("walk!") || io.github.mojolowjo.entropybot.aa.brain.Goals.depositGoal(g.bb) == null) return;
+            java.util.Map<String, Integer> owed = new java.util.HashMap<>();
+            for (var e : g.deposits.owed().entrySet()) owed.put(SimSteps.full(e.getKey()), e.getValue());
+            for (var e : g.bag.entrySet())
+                if (io.github.mojolowjo.entropybot.aa.AaEscape.pillarBlock(e.getKey())) e.setValue(Math.min(e.getValue(), owed.getOrDefault(e.getKey(), 0)));
+        };
         g.play(SimGameTest.TROUBLE_LIMIT_S);
         return g;
     }
 
     /**
-     * The sim's station walk stands within 2 of the station (SimSteps.apply): Baritone's search finds no such stand by a
-     * column with a chest on top (a probe of this branch: within 3 it pillars to 70, within 2 "no path" with 64 dirt to
-     * spare), so the put is never reached here - what is checked is the wake: after the first short walk the deposit
-     * prices its finish (the walk again from there), and parked with every order stopped it takes its look-around leg (an
-     * explore) before the game ends on it, the reasons and the owed line said. Before this job the game ended at the first
-     * park: "deposit parked" on the held walk, nothing after it.
+     * Review 1 (the reviewer: no put was ever reached here, and a land with no short walk passed with nothing checked): the
+     * sim's station walk is now the game's (SimSteps.toStation: done in reach from the eye, Baritone's search to the first
+     * cell in reach). Every land: the first walk to the chest ends short (no filler to spare, so no pillar) - checked, never
+     * skipped; then the deposit finishes it (the blocks got first, the walk again from there) and the line reaches the chest
+     * whole, once. If a land ends parked instead, its wake was the move away (never an untargeted explore, rule 22) and the
+     * end names what is owed.
      */
     @Test
-    void aChestNineUp_theShortWalksFinish_thenTheLookAround_thenSaid() {
+    void aChestNineUp_theShortWalkIsFinished_theLineReachesTheChestWhole() {
+        int put = 0;
         for (int seed = 1; seed <= LANDS; seed++) {
             clear();
             SimGame g = land(seed);
             System.out.println("CHEST UP land " + seed + ": " + g.end + " | " + g.depositColumn() + " | chest " + g.chest);
             SimDepositGoalTest.endsWholeOrSaid("land " + seed, g);
             int failed = g.depositLegs.indexOf("walk!");
-            if (failed < 0 || g.end.equals("done")) continue;
-            assertTrue(g.depositLegs.subList(failed + 1, g.depositLegs.size()).contains("walk!"), "the finish was walked: " + g.depositColumn());
-            assertTrue(g.timeline.stream().anyMatch(l -> l.contains("  explore ") && l.contains(" -> ")), "the look-around leg (an explore) before the end: " + g.depositColumn() + "\n" + g.end);
-            assertTrue(g.timeline.stream().anyMatch(l -> l.contains("the line's deposit looks around")), "said");
-            assertTrue(g.end.contains("owed"), "the end names what is owed: " + g.end);
+            assertTrue(failed >= 0, "land " + seed + ": the first walk to the chest 9 up ends short: " + g.depositColumn());
+            assertTrue(g.depositLegs.subList(failed + 1, g.depositLegs.size()).contains("walk"), "land " + seed + ": the finish was walked: " + g.depositColumn());
+            assertTrue(g.timeline.stream().noneMatch(l -> l.contains("  explore ") && l.contains("deposit")), "land " + seed + ": no untargeted explore for the deposit");
+            if (g.end.equals("done")) { put++; continue; }
+            assertTrue(g.timeline.stream().anyMatch(l -> l.contains("the line's deposit moves away")), "land " + seed + ": its wake was the move away: " + g.end);
+            assertTrue(g.end.contains("owed"), "land " + seed + ": the end names what is owed: " + g.end);
         }
+        assertEquals(LANDS, put, "every land: the finish puts the line whole in the chest");
     }
 }

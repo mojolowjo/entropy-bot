@@ -46,7 +46,8 @@ final class SimSteps {
         if (s instanceof Step.PlaceNear p) return placeNear(g, full(p.item()));
         if (s instanceof Step.TakeNear t) return takeNear(g, full(t.item()));
         if (s instanceof Step.TakeStation t) return take(g, full(t.item()), new int[]{t.x(), t.y(), t.z()});
-        if (s instanceof Step.ToStation t) return walk(g, new Step.Walk(t.x(), t.y(), t.z(), 2));     // sim: stands within 2 of the station
+        if (s instanceof Step.ToStation t) return toStation(g, t);
+        if (s instanceof Step.MoveAway m) return moveAway(g, m);
         if (s instanceof Step.Smelt m) return smelt(g, m);
         if (s instanceof Step.Wait w) return Result.ok(w.seconds(), "waited");
         if (s instanceof Step.AwaitPaths) return Result.ok(0, "paths: the sim's walks are priced at once");
@@ -58,16 +59,70 @@ final class SimSteps {
     }
 
     static final double PUT_S = 2;               // sim: the chest opened and the items moved (not measured)
-    static final int PUT_REACH = 2;              // sim: the feet within this of the chest (ToStation stands within 2)
+    static final double GAME_REACH = 4.5;        // game fact: vanilla's default block interaction range (Player#blockInteractionRange)
+    static final double EYE = 1.62;              // game fact: the standing player's eye height over the feet
+
+    /** The station's block is in reach from the feet's eye (StationReach, the game's own test in StepHands.inReachOf). */
+    static boolean inReach(int[] feet, int[] cell) {
+        return io.github.mojolowjo.entropybot.aa.moves.StationReach.inReach(new double[]{feet[0] + 0.5, feet[1] + EYE, feet[2] + 0.5}, cell, GAME_REACH);   // structural: the cell's middle
+    }
 
     /**
-     * deposit-goal stage 3: the put (the planned Step.Deposit with its chest cell). The feet within {@link #PUT_REACH} of
-     * the chest; moves exactly min(owed, bag) of each owed item (LineDeposits.owed, the one store) and says SHORT for less.
-     * No chest block there: fails with the deposit's words, and the owed items stay owed (putEnded false).
+     * job-deposit-park-wake review 1 (the reviewer: the sim's station walk stood within 2 of the station, which Baritone's
+     * search never found by a chest on a 9-high column, so no put was ever reached there): as the game's station walk
+     * (StepHands.toStation / toStationStatus) - in reach from the eye already: done, no walk; else Baritone's search to the
+     * first cell the station is in reach from (the walk on the game's GoalBlock ends in reach, then done there); the
+     * search finds none: the walk ends short (the station's fact, as the game's).
+     */
+    private static Result toStation(SimGame g, Step.ToStation t) {
+        int[] cell = {t.x(), t.y(), t.z()};
+        if (inReach(g.feet, cell)) return Result.ok(0, "the " + t.name() + " at " + t.x() + " " + t.y() + " " + t.z() + " is in reach from here");
+        if (!g.realSearch) return walk(g, new Step.Walk(t.x(), t.y(), t.z(), 2));     // sim: the dug-stair search stands within 2
+        Way way = goReal(g, new ReachGoal(cell), t.x() + " " + t.y() + " " + t.z() + " (in reach)");
+        String at = "at " + g.feet[0] + " " + g.feet[1] + " " + g.feet[2] + way.said();
+        return way.fail() != null ? Result.fail(way.secs(), way.fail()) : Result.ok(way.secs(), at);
+    }
+
+    /** Baritone's goal of the sim's station walk: a cell the station is in reach from ({@link #inReach}); its heuristic is GoalBlock's. */
+    static final class ReachGoal implements baritone.api.pathing.goals.Goal {
+        final int[] cell;
+        final baritone.api.pathing.goals.GoalBlock toward;
+
+        ReachGoal(int[] cell) { this.cell = cell.clone(); this.toward = new baritone.api.pathing.goals.GoalBlock(cell[0], cell[1], cell[2]); }
+
+        @Override public boolean isInGoal(int x, int y, int z) { return inReach(new int[]{x, y, z}, cell); }
+
+        @Override public double heuristic(int x, int y, int z) { return isInGoal(x, y, z) ? 0 : toward.heuristic(x, y, z); }
+    }
+
+    /**
+     * job-deposit-park-wake review 1: the deposit goal's move away - Baritone's real search on GoalRunAway (the game's
+     * Jobs.startAway); without the real search, the straight line away from the cell (as the sim's other walks).
+     */
+    private static Result moveAway(SimGame g, Step.MoveAway m) {
+        int[] from = {m.x(), m.y(), m.z()};
+        var goal = new baritone.api.pathing.goals.GoalRunAway(m.dist(), new net.minecraft.core.BlockPos(m.x(), m.y(), m.z()));
+        if (goal.isInGoal(g.feet[0], g.feet[1], g.feet[2])) return Result.ok(0, "already " + m.dist() + " away");
+        if (g.realSearch) {
+            Way way = goReal(g, goal, m.dist() + " away from " + m.x() + " " + m.y() + " " + m.z());
+            String at = "at " + g.feet[0] + " " + g.feet[1] + " " + g.feet[2] + way.said();
+            return way.fail() != null ? Result.fail(way.secs(), way.fail()) : Result.ok(way.secs(), at);
+        }
+        double dx = g.feet[0] - from[0], dz = g.feet[2] - from[2], d = Math.hypot(dx, dz);
+        if (d == 0) { dx = 1; d = 1; }
+        int[] to = {from[0] + (int) Math.ceil(dx / d * (m.dist() + 1)), g.feet[1], from[2] + (int) Math.ceil(dz / d * (m.dist() + 1))};
+        Way way = go(g, to, 0, false);
+        return way.fail() != null ? Result.fail(way.secs(), way.fail()) : Result.ok(way.secs(), "at " + g.feet[0] + " " + g.feet[1] + " " + g.feet[2] + way.said());
+    }
+
+    /**
+     * deposit-goal stage 3: the put (the planned Step.Deposit with its chest cell). The chest in reach from the eye ({@link
+     * #inReach}, the game's test); moves exactly min(owed, bag) of each owed item (LineDeposits.owed, the one store) and
+     * says SHORT for less. No chest block there: fails with the deposit's words, and the owed items stay owed (putEnded false).
      */
     private static Result deposit(SimGame g, int[] c, Step.Deposit step) {
-        if (SimWorld.dist(c, g.feet) > PUT_REACH + 0.5)        // structural: a cell's half
-            return Result.fail(0, "deposit: the chest at " + c[0] + " " + c[1] + " " + c[2] + " is " + Math.round(SimWorld.dist(c, g.feet)) + " blocks from the feet");
+        if (!inReach(g.feet, c))
+            return Result.fail(0, "deposit: the chest at " + c[0] + " " + c[1] + " " + c[2] + " is " + Math.round(SimWorld.dist(c, g.feet)) + " blocks from the feet, out of reach");
         // short-wake: as the game's StepHands (stage 4 review) - the step's items were fixed at the plan; when what is owed
         // changed since (a wake took an order out of the due deposit), nothing is put, said, and the goal plans again
         String differs = g.deposits.putDiffers(step.only());
@@ -172,6 +227,11 @@ final class SimSteps {
     static Way goReal(SimGame g, int[] to, int within) {
         baritone.api.pathing.goals.Goal goal = within <= 0 ? new baritone.api.pathing.goals.GoalBlock(to[0], to[1], to[2])
                 : new baritone.api.pathing.goals.GoalNear(new net.minecraft.core.BlockPos(to[0], to[1], to[2]), within);
+        return goReal(g, goal, to[0] + " " + to[1] + " " + to[2] + (within > 0 ? " near " + within : ""));
+    }
+
+    /** {@link #goReal(SimGame, int[], int)} on any Baritone goal ({@code what}: its words for the lines). */
+    static Way goReal(SimGame g, baritone.api.pathing.goals.Goal goal, String what) {
         double secs = 0;
         int dug = 0, placed = 0;
         try {
@@ -182,7 +242,7 @@ final class SimSteps {
                         id -> digS(g, id), cell -> "minecraft:chest".equals(g.world.at(cell[0], cell[1], cell[2])) || g.mine.contains(cell[0] + " " + cell[1] + " " + cell[2]));
                 baritone.api.pathing.calc.IPath p = SimSearch.search(c, g.feet, goal, SEARCH_NODES);
                 if (p == null || p.movements().isEmpty())
-                    return new Way(secs, dug, placed, "no path to " + to[0] + " " + to[1] + " " + to[2] + (within > 0 ? " near " + within : "") + " from " + g.feet[0] + " " + g.feet[1] + " " + g.feet[2]
+                    return new Way(secs, dug, placed, "no path to " + what + " from " + g.feet[0] + " " + g.feet[1] + " " + g.feet[2]
                             + " (Baritone's search, " + SEARCH_NODES + " nodes" + (g.bestSpare() == null ? ", no filler to spare" : "") + ")");
                 moves:
                 for (baritone.api.pathing.movement.IMovement im : p.movements()) {
@@ -211,7 +271,7 @@ final class SimSteps {
             throw new IllegalStateException("sim: Baritone's search could not run: " + e, e);
         }
         if (goal.isInGoal(g.feet[0], g.feet[1], g.feet[2])) return new Way(secs, dug, placed, null);
-        return new Way(secs, dug, placed, "the path did not arrive in " + SEGMENTS + " segments; at " + g.feet[0] + " " + g.feet[1] + " " + g.feet[2] + " for " + to[0] + " " + to[1] + " " + to[2]);
+        return new Way(secs, dug, placed, "the path did not arrive in " + SEGMENTS + " segments; at " + g.feet[0] + " " + g.feet[1] + " " + g.feet[2] + " for " + what);
     }
 
     static final double STEP_M = 1.4;            // structural: the metres of one stair step (a block along, a block up or down)
