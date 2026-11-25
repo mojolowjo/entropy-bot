@@ -59,6 +59,15 @@ the chain's own asked item, never inside another lend's collect again, `Ctx.lend
 orders' first) and the same amount is collected again right after it (`obtain`), so a -d amount is whole again before any
 later step. `climbUp` adds "make a pickaxe first" (`cheapestPickaxe`) when there is no pickaxe and too few spare blocks.
 Each way's reason reaches the failure itself (read from the dropped lines `choose` wrote, so a reused D6 node says it too).
+The plan's size (job-plan-budget, worlds run 4: seven games out of heap while the planner resolved a trip): while
+`cheapestPickaxe` prices the ways of a pickaxe requirement of tier t (`Ctx.pickFloor`, in the D6 node key), a pickaxe need
+of tier t or better inside one of them fails at once with `pickInside` - any pickaxe it would find meets the outer need
+itself and is one of its own ways (was: every tier's whole tree priced again inside every other's, 6098 nodes for w084's
+shape, now about 100). The last line of defence: every way `choose` prices counts against Tuning `planner.maxWays` per
+resolve (`Ctx.ways`; a reused node adds its `Out.waysOff`, so the tick and the worker count alike); past it `TooLarge` is
+thrown out of the resolve, nothing of it is kept, and the request (`root`) fails "plan too large (N ways ...): the deepest
+chain a > b > c", logged once per request and count (`TOO_LARGE_SAID`). `needChain.maxTrials` still ends a search early
+once a way stands.
 
 ### Path memory (D11)
 The fork keeps priced paths (`PathMemory`) and re-joins a kept path the feet left by one short search (build 1); the mod
