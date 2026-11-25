@@ -122,20 +122,6 @@ public interface JobPort {
      */
     default NoProgress noProgress(long taskId, String text) { return NoProgress.NOT_MINE; }
 
-    /**
-     * job-hold-sight (worlds run 4 w054: "outer watch fired after 180 s in EXPLORE" 12 times during cuts, every second one
-     * ending a cut that the step monitor saw working): the running typed step the no-progress watch reads - its kind and
-     * words ({@code kind}, {@code step}), the limit it runs under ({@code limitMs}: a step with a limit of its own, the stand
-     * on its own bound, runs to it, steps.stepMaxS from its start; -1: any other, a judged step included, the task's own
-     * no-progress limit) and how long it has run ({@code ageMs}), both in the step runner's own ticks (for the words), and
-     * {@code past}: the runner's own answer, on its own tick count, that the step has run past its own limit (send-back:
-     * the watch compares no tick age with its game-clock time; each clock is compared only with itself).
-     */
-    record StepWatch(String kind, String step, long limitMs, long ageMs, boolean past) {}
-
-    /** job-hold-sight: the running typed step of the task for the watch ({@link StepWatch}); null: none (the task's kind and jobPort.noProgressMs). */
-    default StepWatch stepWatch(long taskId) { return null; }
-
     /** 0.39.z70: what the no-progress watch found ({@link #noProgress}). */
     enum NoProgress {
         REPLANNED, ENDED, NOT_MINE,

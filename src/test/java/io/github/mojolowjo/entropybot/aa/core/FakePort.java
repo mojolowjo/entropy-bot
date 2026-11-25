@@ -56,11 +56,6 @@ public final class FakePort implements JobPort {
 
     @Override public NoProgress noProgress(long taskId, String text) { return onNoProgress == null ? NoProgress.NOT_MINE : onNoProgress.apply(taskId, text); }
 
-    /** job-hold-sight: the running typed step the watch reads (null: none, as before). */
-    public java.util.function.LongFunction<StepWatch> onStepWatch;
-
-    @Override public StepWatch stepWatch(long taskId) { return onStepWatch == null ? null : onStepWatch.apply(taskId); }
-
     @Override public void log(String line) { log.add(line); }
 
     @Override public void incident(String what) { incidents.add(what); }

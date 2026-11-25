@@ -150,7 +150,7 @@ final class SimWorld {
     int below(int x, int y, int z) { return io.github.mojolowjo.entropybot.world.SurfaceHeight.belowSurface(over(x, y, z), holeDepth(x, y, z)); }
 
     /** The game's surface leg target (SurfaceHeight.ringTarget): the highest standable surface within its ring of the feet; null: none. */
-    int[] ringTop(int[] feet) { return io.github.mojolowjo.entropybot.world.SurfaceHeight.ringTarget(feet, this::surfaceY, this::standable); }
+    int[] ringTop(int[] feet) { return io.github.mojolowjo.entropybot.world.SurfaceHeight.ringTarget(feet, this::groundY, this::standable); }   // job-hold-sight review 3: the game's one column reader (Jobs.ground)
 
     /** The blocks over the head at a feet cell, up to the box's top: 0 = under open sky. */
     int over(int x, int y, int z) {

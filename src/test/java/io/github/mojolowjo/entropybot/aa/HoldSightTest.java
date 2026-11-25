@@ -25,7 +25,7 @@ class HoldSightTest {
     void clear() { Tuning.reset(); }
 
     /** The w044 line: cobblestone met, oak_log 13 of 16, oak_log parked with the bot standing, its looks taken. */
-    private static OrderLineSim w044(Goals.Goal[] out) {
+    static OrderLineSim w044(Goals.Goal[] out) {
         OrderLineSim s = new OrderLineSim();
         s.bag.put("wooden_pickaxe", 1);
         s.bag.put("cobblestone", 32);

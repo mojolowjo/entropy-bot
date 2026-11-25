@@ -175,6 +175,13 @@ public final class Goals {
          */
         public long parkedAtMs;
 
+        /**
+         * job-hold-sight review 3: the change whose wake {@link Goals#retryLoopParks} last asked the planner worker to price and
+         * got its stand (the answer not landed); null: none asked, or the last check had no change, priced it or woke it.
+         * Read with the port's own in-flight answer ({@link BatchWay#pricing}) by {@link Goals#stillChanges}.
+         */
+        public String wakeAsked;
+
         /** wait-not-park: what the order waited on when a run of it ended ({@link Goals#runFailed}); null: nothing. Cleared when it lands. */
         public String waitEnded;
         /** wait-not-park: when (the board clock's ms) the wait in {@link #waitEnded} was first noted; the bound goals.waitEndedMaxS counts from it. */
@@ -236,11 +243,29 @@ public final class Goals {
      * moment passes the park and the hold ends.
      */
     public static String stillChanges(List<Goal> goals, Goal g, boolean underGround, boolean busy, boolean worldClimb, long sightAtMs) {
+        return stillChanges(goals, g, underGround, busy, worldClimb, sightAtMs, null);
+    }
+
+    /**
+     * job-hold-sight review 3 (the reviewer, serious: on the planner worker path the sight hold ended at the scan renewal
+     * that found the new source - the moment passed the park - while the wake that renewal started was still a price on the
+     * worker ({@link #retryLoopParks} stands on the planner's stand, the order stays parked), so the deposit went before the
+     * answer landed): as above, with {@code pricing} the port's answer that a parked order's wake price is in flight
+     * ({@link BatchWay#pricing}: the order's noted change, {@link Goal#wakeAsked}, and the port's request out or its result
+     * not taken); null: no planner worker (the price is the tick's own, never in flight). A fact, no timer: the hold ends
+     * when the answer is taken (the order wakes, or stays stopped on a fresh park) or the change is gone.
+     */
+    public static String stillChanges(List<Goal> goals, Goal g, boolean underGround, boolean busy, boolean worldClimb, long sightAtMs,
+                                      java.util.function.Predicate<Goal> pricing) {
         if (g == null || g.parked == null || !canWake(g)) return null;
         if (busy) return "a run or another job moves the bot now";
         if (goals != null)
             // deposit-goal: the deposit goal is no order; its run moves the bot and is counted by {@code busy}
             for (Goal o : goals) if (o != g && o.parked == null && !o.depositGoal) return "order " + o.r.key() + " is open and not stopped";
+        if (goals != null && pricing != null)
+            for (Goal o : goals)
+                if (o.parked != null && !o.depositGoal && canWake(o) && o.wakeAsked != null && pricing.test(o))
+                    return "order " + o.r.key() + " is priced again on the planner worker (" + o.wakeAsked + ") and its answer has not landed";
         if (goals != null)
             for (Goal o : goals)
                 if (o.parked != null && !o.depositGoal && canWake(o) && waitsOnSight(o) && sightAtMs < o.parkedAtMs)
@@ -568,7 +593,7 @@ public final class Goals {
             String change = g.loopPark != null
                     ? loopChange(g.loopPark, needCounts(g.loopPark.counts().keySet(), bag, bb.in == null ? 0 : bb.in.pickTier), pos, sourceCells(bb, g, g.loopPark.at()))
                     : parkChange(g.park, bb.in == null ? -1 : Failures.items(bb.in), pos, sourceCells(bb, g, null), heldKeys(bb, g));
-            if (change == null) continue;
+            if (change == null) { g.wakeAsked = null; continue; }
             // a wake is a PRICE, not a run: the order runs again only when its chain stands where the bot is now (or still
             // waits on an answer: not known is no verdict, rule 15); else it stays stopped on a fresh snapshot, so the same
             // change is never asked twice and no run starts without a way (no spin)
@@ -576,7 +601,11 @@ public final class Goals {
             // client thread, review 2026-11-21): it runs and its own start decides
             var ch = g.strip != null || g.r.group() ? null : ownChain(bb, g);
             // the planner still thinks (its stand, no verdict yet): asked again at the next pass, the change still pending
-            if (ch != null && !ch.steps().isEmpty() && ch.steps().get(0) instanceof Step.AwaitPaths aw && aw.planner()) continue;
+            // job-hold-sight review 3 (the reviewer: on the worker path the sight hold had ended at the renewal that found the
+            // source, and the deposit went before this answer landed): the change is noted as asked; while the port has it in
+            // flight the line's deposit is held for it (stillChanges, BatchWay.pricing)
+            if (ch != null && !ch.steps().isEmpty() && ch.steps().get(0) instanceof Step.AwaitPaths aw && aw.planner()) { g.wakeAsked = change; continue; }
+            g.wakeAsked = null;                                   // priced now: it wakes or stays stopped below
             boolean stands = ch == null || ch.waiting() || (ch.ok() && !ch.steps().isEmpty());
             String why = stands ? null : ch.why();
             // review 2026-11-21: the same first step from the place it stopped at is the try that stopped it, not a way
@@ -1185,6 +1214,7 @@ public final class Goals {
         if (g.parked != null) return false;
         g.parked = why == null || why.isBlank() ? "no reason given" : why;
         g.parkedAtMs = bb.clock == null ? 0 : bb.clock.now();          // job-hold-sight: the sight fact is compared with it
+        g.wakeAsked = null;                                             // job-hold-sight review 3: a new park, no wake asked yet
         // 0.39.z70 (R1 = c): the run parked on an honest loop: its facts are kept, one more try comes when one of them changes
         var a = g.loopAttempt;
         g.loopAttempt = null;

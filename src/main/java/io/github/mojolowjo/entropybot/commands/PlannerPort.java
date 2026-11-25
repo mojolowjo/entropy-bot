@@ -104,6 +104,16 @@ public final class PlannerPort implements BatchWay.Planner {
         return s.ready != null;
     }
 
+    /**
+     * job-hold-sight review 3: the request of {@code key} is queued or resolving on the worker, or its result has landed and
+     * the next ask has not taken it (posted, or polled by {@link #ready}): its answer is still to come.
+     */
+    @Override
+    public boolean asking(String key) {
+        State s = states.get(key);
+        return worker.busy(key) || worker.posted(key) || (s != null && s.ready != null);
+    }
+
     @Override
     public NeedChain.Legs legs(String key, Playbook pb, Set<String> kept, NeedChain.World w) { return ask(key, pb, kept, null, w); }
 

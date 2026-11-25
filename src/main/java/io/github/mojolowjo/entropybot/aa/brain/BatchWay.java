@@ -80,6 +80,22 @@ public final class BatchWay {
          * its facts hold now, else the thinking stand (NeedChain.thinking).
          */
         NeedChain.Chain own(String key, OwnAsk ask, NeedChain.World w);
+
+        /**
+         * job-hold-sight review 3: a request of {@code key} is out (queued or resolving) or its result has landed and is not
+         * taken yet - its answer is still to come. False by default: a planner that answers at once has nothing in flight.
+         */
+        default boolean asking(String key) { return false; }
+    }
+
+    /**
+     * job-hold-sight review 3 (worlds run 4 w044 on the worker path): the parked order {@code g}'s wake is being priced -
+     * a change was asked ({@link Goals.Goal#wakeAsked}) and the planner worker has the order's own chain or its trip in
+     * flight ({@link Planner#asking}). No planner worker: false (the tick prices at once).
+     */
+    public static boolean pricing(Blackboard bb, Goals.Goal g) {
+        if (g == null || g.wakeAsked == null || !(bb.fact(PLANNER_FACT) instanceof Planner port)) return false;
+        return port.asking(OWN_KEY + g.id()) || port.asking(tripKey(g));
     }
 
     /**

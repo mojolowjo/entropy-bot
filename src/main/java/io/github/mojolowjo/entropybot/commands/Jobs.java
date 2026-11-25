@@ -830,7 +830,18 @@ public final class Jobs {
      */
     public static int holeDepth(net.minecraft.world.level.Level lv, int x, int y, int z) {
         // the ground under any tree (a trunk beside the feet is no wall of a hole)
-        return io.github.mojolowjo.entropybot.world.SurfaceHeight.pitDepth(new int[]{x, y, z}, (cx, cz) -> io.github.mojolowjo.entropybot.world.SurfaceHeightLive.ground(lv, cx, cz));
+        return io.github.mojolowjo.entropybot.world.SurfaceHeight.pitDepth(new int[]{x, y, z}, (cx, cz) -> ground(lv, cx, cz));
+    }
+
+    /**
+     * job-hold-sight review 3 (rule 23 (2): the hole reader read the ground under any tree while the surface leg's ring and
+     * its no-break walk read the leaf-free top, so a trunk or a post bordering the ring was a wall to one and no wall to the
+     * other): the ONE column height of the surface fact round the feet - the ground under any tree, past stalks and posts
+     * (SurfaceHeightLive.ground). Read by the hole ({@link #holeDepth}), the surface leg's target and its no-break walk, the
+     * fluid top and the open-sky cell (AaRuntime.surfaceAt). NOT_KNOWN: not known (rule 15).
+     */
+    public static int ground(net.minecraft.world.level.Level lv, int x, int z) {
+        return io.github.mojolowjo.entropybot.world.SurfaceHeightLive.ground(lv, x, z);
     }
 
     /**
