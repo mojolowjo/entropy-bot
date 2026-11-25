@@ -30,13 +30,28 @@ final class FirstAnswerClock {
     /** job-stand2 item 3: the walks waited on by this order's full stand (cleared on a new order). */
     private final java.util.Set<String> spent = new java.util.HashSet<>();
 
+    /**
+     * job-deposit-park-wake review 1 (pilot c606aca8 w004: the plan flipped between the tree walk and the stone-pickaxe plan,
+     * every flip a new run id, so {@link #newOrder} cleared {@link #spent} and the stand waited its 30 s again on the same
+     * walks from the same cell): the walks a served stand waited on, key -&gt; the cell it was served on. Kept over a new
+     * order while the bot stands on that cell (the same question from the same place: the estimate at once); any other cell
+     * drops it (a new order there waits again, job-stand2).
+     */
+    private final Map<String, int[]> spentAt = new HashMap<>();
+
     /** job-stand2 item 3: the order's stand ran its full wait: every walk on a clock now is spent for the order. */
-    void spendWaiting() {
+    void spendWaiting() { spendWaiting(null); }
+
+    /** As above; {@code feet}: the cell the stand was served on (null: not known - spent for this order only). */
+    void spendWaiting(int[] feet) {
         if (spent.size() + clocks.size() > max) spent.clear();
         spent.addAll(clocks.keySet());
+        if (feet == null) return;
+        if (spentAt.size() + clocks.size() > max) spentAt.clear();
+        for (String k : clocks.keySet()) spentAt.put(k, feet.clone());
     }
 
-    /** job-stand2 item 3: a new order - its stand waits again. */
+    /** job-stand2 item 3: a new order - its stand waits again (review 1: not on a walk spent from the cell the bot still stands on). */
     void newOrder() { spent.clear(); }
 
     boolean spent(String key) { return spent.contains(key); }
@@ -46,7 +61,34 @@ final class FirstAnswerClock {
      * Baritone's estimate ({@code estimateS}, read only then).
      */
     PathPrice.Answer answer(String key, PathPrice.Answer a, long now, int waitS, DoubleSupplier estimateS) {
-        if (!PricedAnswers.waits(a)) { clocks.remove(key); return a; }
+        return answer(key, a, now, waitS, estimateS, null);
+    }
+
+    /**
+     * job-deposit-park-wake (pilot c606aca8 w004 09:44-09:47: "walk to 93 65 74: COMPUTING (no progress ...)" 25 times from one
+     * cell, the bot standing 30 s each time, 213 s in all): the walks answered "no progress" from a cell, key -&gt; that cell.
+     * Review 1 (the reviewer: the branch's first fix made it a NONE, so a walk only not known dropped - rule 15, rule 23(1),
+     * the 0.39.z77 noprogress / J6b ruling, run DH's descent): a search that stopped on its budget with no step past its start
+     * is not known, and a wait from that cell gives no more - Baritone's estimate at once ({@link PricedAnswers#noProgressEstimate},
+     * ranked, not priced, the walk computes its full path on the way), and again while the bot stands on that cell and the
+     * fork has no answer yet; any other cell asks the fork again. No usable estimate: the wait as before.
+     */
+    private final Map<String, int[]> noProgress = new HashMap<>();
+
+    /** As above, {@code feet}: the cell the bot stands on (null: not known - the answer at once, nothing kept). */
+    PathPrice.Answer answer(String key, PathPrice.Answer a, long now, int waitS, DoubleSupplier estimateS, int[] feet) {
+        int[] np = noProgress.get(key);
+        if (np != null && (feet == null || !java.util.Arrays.equals(np, feet) || !PricedAnswers.waits(a))) { noProgress.remove(key); np = null; }
+        int[] sp = spentAt.get(key);
+        if (sp != null && (feet == null || !java.util.Arrays.equals(sp, feet))) { spentAt.remove(key); sp = null; }
+        if (PricedAnswers.noProgress(a) || np != null) {
+            if (feet != null) {
+                if (noProgress.size() >= max) noProgress.clear();
+                noProgress.put(key, feet.clone());
+            }
+            PathPrice.Answer e = PricedAnswers.noProgressEstimate(a, estimateS.getAsDouble(), feet);
+            if (e != null) { clocks.remove(key); return e; }
+        }        if (!PricedAnswers.waits(a)) { clocks.remove(key); return a; }
         // 0.39.z78 J6c run EU (1a; 10:39:58-10:40:37: two lip walks "chunks not loaded" stood 30 s on nothing - 0 walks
         // computing): a walk into chunks not loaded has no search to wait on - it is ranked at once by Baritone's own goal
         // heuristic (the fork's IPathEstimate: no world read, valid without the chunks), "estimate, chunks not loaded",
@@ -58,7 +100,7 @@ final class FirstAnswerClock {
         long wait = (long) Math.max(0, waitS) * GameTimes.TPS;
         // job-stand2 item 3 (run JAS: 6 stands of 30 s in one order): a walk this order's stand already waited its full wait
         // on is past its wait for the rest of the order - the estimate at once, never a second stand on it
-        if (spent.contains(key)) return PricedAnswers.afterWait(a, wait, waitS, estimateS.getAsDouble());
+        if (spent.contains(key) || sp != null) return PricedAnswers.afterWait(a, wait, waitS, estimateS.getAsDouble());
         long[] c = clocks.get(key);
         if (c == null || now - c[1] > wait) {              // a new wait: first asked, or not asked for longer than the wait
             if (clocks.size() >= max) clocks.clear();

@@ -1812,6 +1812,8 @@ public final class StepHands implements Steps.Hands {
             case Step.Shelter k -> c.stepJob(s.text(), () -> ShelterJob.start(c, p, "", true, me));
             case Step.Sleep k -> c.stepJob(s.text(), () -> SleepJob.start(c, p, ""));
             case Step.Wait k -> c.stepJob(s.text(), () -> c.jobs.startWait(String.valueOf(k.seconds())));
+            // job-deposit-park-wake review 1: the deposit goal's wake leg - Baritone's run-away goal as a travel job
+            case Step.MoveAway k -> c.stepJob(s.text(), () -> c.jobs.startAway(s.text(), new int[]{k.x(), k.y(), k.z()}, k.dist()));
             case Step.GoBase k -> c.stepJob(s.text(), () -> c.goBase(p));
             case Step.Come k -> c.stepJob(s.text(), () -> c.comeTo(me, p));
             case Step.Give k -> c.stepJob(s.text(), () -> {

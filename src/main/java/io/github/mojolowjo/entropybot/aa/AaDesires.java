@@ -468,6 +468,10 @@ public final class AaDesires {
             // the explore step (Baritone's explore) until a source of the order's item is known; the order is priced after it
             if (g.lookAround) {
                 g.lookAround = false;
+                // job-deposit-park-wake review 1 (rule 22: an explore only with a target): the deposit goal's leg is its move
+                // away (Goals.moveAway, set by Goals.parkedTick) - Baritone's run-away goal, ended by the distance its held walk
+                // lifts at; then the deposit is priced from there. No leg (never set): nothing runs, the goal stays as it is
+                if (g.depositGoal) return g.awayLeg == null ? null : JobPort.TaskSpec.steps(TaskKind.EXPLORE, List.<Step>of(g.awayLeg), "owner goal");
                 return JobPort.TaskSpec.steps(TaskKind.EXPLORE, List.<Step>of(new Step.Explore(NeedChain.exploreMinutes(), g.r.key())), "owner goal");
             }
             var rt = io.github.mojolowjo.entropybot.aa.brain.Goals.routine(bb, g);

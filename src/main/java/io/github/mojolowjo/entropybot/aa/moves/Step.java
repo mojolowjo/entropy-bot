@@ -658,6 +658,16 @@ public sealed interface Step {
         public String text() { return "up to the surface at " + x + " " + y + " " + z + " (priced path)"; }
     }
 
+    /**
+     * job-deposit-park-wake review 1 (the deposit goal's wake: rule 22 allows no explore without a target; the fact the park
+     * waits on is a distance): Baritone's run-away goal (GoalRunAway) {@code dist} blocks across from x y z - Baritone picks
+     * the cell and the way. Done when the feet stand that far (the goal's own test): the fact a held walk lifts on
+     * (StationHolds: failures.moved + WorldFacts.MARGIN from where the walk failed) and the honest loop's wake (moved).
+     */
+    record MoveAway(int x, int y, int z, int dist) implements Step {
+        public String text() { return "move " + dist + " blocks away from " + x + " " + y + " " + z + " (Baritone's run-away goal)"; }
+    }
+
     /** A step made of steps: {@link Steps} runs its parts in its place (one machine, one failure path). */
     sealed interface Compound extends Step permits StripLeg, ClearChunk, Kelp {
         List<Step> parts();

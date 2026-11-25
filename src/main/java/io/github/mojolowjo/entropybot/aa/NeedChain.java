@@ -2848,7 +2848,7 @@ public final class NeedChain {
         int x, y, z;
         switch (chest) {
             case io.github.mojolowjo.entropybot.aa.brain.MainChest.None n -> {
-                c.fail = "no main chest set (" + n.why() + ")";
+                c.fail = NO_MAIN_CHEST + " (" + n.why() + ")";
                 return finish(c, name, name);
             }
             case io.github.mojolowjo.entropybot.aa.brain.MainChest.NotLoaded n -> { x = n.x(); y = n.y(); z = n.z(); }
@@ -2866,8 +2866,12 @@ public final class NeedChain {
         String held = heldExact(c, key);
         List<Alt> ways = new ArrayList<>();
         List<String> notOffered = new ArrayList<>();
-        if (held != null) notOffered.add("the walk to the main chest at " + x + " " + y + " " + z + " is held (" + held + ")");
-        else {
+        if (held != null) {
+            notOffered.add(CHEST_WALK_HELD + x + " " + y + " " + z + " is held (" + held + ")");
+            // job-deposit-park-wake (pilot c606aca8 w005): a walk that ended short is a fact about its last blocks - its finish is priced
+            if (held.contains(io.github.mojolowjo.entropybot.aa.brain.StationHolds.SHORT) && !held.contains(io.github.mojolowjo.entropybot.aa.brain.StationHolds.AGAIN))
+                finishWays(c, ways, notOffered, owed, x, y, z);
+        } else {
             final String strict = under ? "not offered from under ground (rule 22)" : over == null ? "not offered while the surface is not known (rules 15, 22)" : null;
             ways.add(new Alt("walk to the main chest", () -> {
                 String walked = stationWalk(c, "container", "main chest", x, y, z, strict);
@@ -2902,6 +2906,67 @@ public final class NeedChain {
         String head = name + " <- " + win.phrase();
         if (!notOffered.isEmpty()) head += " (not offered: " + String.join("; ", notOffered) + ")";
         return finish(c, name, head);
+    }
+
+    /** job-deposit-park-wake: the start of the words of a held chest walk. */
+    public static final String CHEST_WALK_HELD = "the walk to the main chest at ";
+
+    /** job-deposit-park-wake: the words of a deposit with no main chest (its park is the owner's word: no look-around, Goals.lookAroundDue). */
+    public static final String NO_MAIN_CHEST = "no main chest set";
+
+    /** job-deposit-park-wake: the words of a finish walk off a priced path (rule 18: the finish is walked on Baritone's complete path). */
+    public static final String FINISH_PRICED_ONLY = "a finish of a walk that ended short is offered on a priced path only (rule 18)";
+
+    /**
+     * job-deposit-park-wake (pilot c606aca8 w005 09:51:28: the walk to the main chest at 30 74 -42, on a log column 9 above
+     * the ground, ended short below it at 30 65 -42; the hold left the deposit goal "no way" and every order parked - 253 s
+     * standing with the line in the bag): the walk that ended short beside or below the chest it cannot reach, priced again
+     * once from here as a finish (StationHolds.SHORT; a second short end here is StationHolds.AGAIN, no finish). Baritone
+     * walks it again on its complete path (rule 18: priced only), placing what the lease lets it - the bag's SPARE blocks
+     * ({@link #spareBlocks}: every reserve off, the owed amounts off the planner's bag already). A pillar to the chest's own
+     * level places at most its height over the feet (rough, rule 14). Spare enough: the walk again. Short by N: per placeable
+     * block (the bag's and the owed ones', each its own way for the scorer, rule 1) N more of it got first ({@link #obtain},
+     * the same recursion as any need: they are spare, the owed amount stays whole), then the walk. A lend of kept blocks is
+     * not offered here: the only kept blocks in the deposit goal's run are the owed ones, and a pillar of them stands under
+     * the feet at the chest - not collected again before the put, so the put would be short (the owner's rule: whole, once).
+     * Baritone picks every cell, stand and placement (rule 2).
+     */
+    private static void finishWays(Ctx c, List<Alt> ways, List<String> notOffered, Map<String, Integer> owed, int x, int y, int z) {
+        int[] feet = c.w.where().feet() == null ? null : c.w.where().feet().get();
+        if (feet == null || feet.length < 3) { notOffered.add("a finish of the walk: the feet are not known (rule 15)"); return; }     // structural: x y z
+        final int levels = Math.max(0, y - feet[1]);       // structural: the chest's height over the feet
+        Map<String, Integer> bag = forecastBag(c);
+        final int spare = spareBlocks(bag, c.w.reserves(), c.asked, c.askedN);
+        final int[] cell = {x, y, z};
+        if (spare >= levels) {
+            ways.add(new Alt("finish the walk to the main chest", () -> {
+                String walked = stationWalk(c, "container", "main chest", x, y, z, FINISH_PRICED_ONLY);
+                if (walked == null) return null;
+                c.steps.add(new Step.Deposit(null, Map.copyOf(owed), cell));
+                return "put " + counted(owed) + " into the main chest: the walk that ended short, again from here (Baritone may place " + levels + " of the " + spare
+                        + " spare blocks): " + walked;
+            }));
+            return;
+        }
+        final int n = levels - spare;
+        Set<String> blocks = new TreeSet<>();
+        for (var e : bag.entrySet()) if (e.getValue() != null && e.getValue() > 0 && AaEscape.pillarBlock(id(e.getKey()))) blocks.add(id(e.getKey()));
+        for (String k : owed.keySet()) if (AaEscape.pillarBlock(id(k))) blocks.add(id(k));
+        if (blocks.isEmpty()) {
+            notOffered.add("a finish of the walk: " + spare + " spare blocks for " + levels + " up and no placeable block in the bag or owed to get more of");
+            return;
+        }
+        for (String b : blocks) ways.add(new Alt(n + " more " + sh(b) + " first, then finish the walk to the main chest", () -> {
+            int before = c.have(b);
+            String got = obtain(c, b, before + n);
+            if (c.fail != null) return null;
+            if (c.stuck) { c.fail = "the " + n + " " + shw(b) + " to place have no known source (an explore)"; return null; }
+            String walked = stationWalk(c, "container", "main chest", x, y, z, FINISH_PRICED_ONLY);
+            if (walked == null) return null;
+            c.steps.add(new Step.Deposit(null, Map.copyOf(owed), cell));
+            return "put " + counted(owed) + " into the main chest: " + n + " more " + shw(b) + " first (" + (got == null ? "in the bag" : got) + "), then the walk that ended short, again from here (Baritone may place "
+                    + levels + " of the " + (spare + n) + " spare blocks): " + walked;
+        }));
     }
 
     /**

@@ -52,7 +52,8 @@ class SimShortWakeTest {
     }
 
     /**
-     * (3) in the simulator: the deposit's walk moves the bot 28 blocks, and the sim's put step starts as the walk ends, so the
+     * (3) in the simulator: the deposit's walk moves the bot 26 blocks (job-deposit-park-wake review 1: to where the chest is in
+     * reach from the eye, as the game's station walk; was 28, within 2 of it), and the sim's put step starts as the walk ends, so the
      * wake (w061's "moved ... from where it parked") finds the put on its way: the put carries what it was sent with, the
      * order owes the rest of its amount and deposits it when it ends - 3 + 13, whole, once.
      */
@@ -62,7 +63,7 @@ class SimShortWakeTest {
         String end = g.play(900);
         String t = g.timelineText();
         assertTrue(t.contains("short: spruce_log 3 of 16"), "owed short: " + t);
-        assertTrue(t.contains("runs again: moved 28 blocks from where it stopped"), "the deposit's walk woke it: " + t);
+        assertTrue(t.contains("runs again: moved 26 blocks from where it stopped"), "the deposit's walk woke it: " + t);
         assertTrue(t.contains("the rest of its amount (13) follows when it ends"), t);
         assertFalse(t.contains("taken back"), "nothing taken back: " + t);
         assertEquals("done", end, t);

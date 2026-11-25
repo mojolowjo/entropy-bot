@@ -429,6 +429,27 @@ public final class Jobs {
     }
 
     /**
+     * job-deposit-park-wake review 1 (Step.MoveAway): a travel job on Baritone's run-away goal - {@code dist} blocks across
+     * from {@code from}; Baritone picks the cell and the way (walk lease as any walk). It ends as a travel does (no path,
+     * Baritone idle); idle outside the goal is an end short, said (rule 7). Loader notes: Baritone API GoalRunAway (public).
+     */
+    public String startAway(String label, int[] from, int dist) {
+        if (!door("travel " + label)) return io.github.mojolowjo.entropybot.aa.door.Door.refusal("travel " + label);
+        IBaritone b = baritone();
+        if (b == null) return "error: baritone not loaded";
+        if (from == null || from.length < 3 || dist <= 0) return "error: " + label + ": no cell or distance to move away from";     // structural: x y z
+        Job j = new Job();
+        j.type = "travel";
+        j.startTick = core.tick();
+        j.label = label;
+        j.status = label;
+        job = j;
+        walkGoal(b, j, new baritone.api.pathing.goals.GoalRunAway(dist, new BlockPos(from[0], from[1], from[2])));
+        watch(j);
+        return "ok: " + label;
+    }
+
+    /**
      * rm-routes: a travel's walk is ONE Baritone goal (Baritone plans, the fork's chunk cache remembers). A fixed "goto
      * x y z" beyond Tuning walk.farXZ across asks for GoalXZ first and sets its GoalBlock on arrival (stepWalk); every
      * other goal is the Baritone command itself.
@@ -696,6 +717,12 @@ public final class Jobs {
             if (!j.reflex && d != null && !WalkEnd.arrived(me, d)) {
                 j.shortEnd = me.clone();
                 finish(WalkEnd.shortResult(me, d) + " (walk: Baritone stopped short)");
+                return;
+            }
+            // job-deposit-park-wake review 1: a move away (startAway) idle short of its distance is an end short, said
+            if (j.goalObj instanceof baritone.api.pathing.goals.GoalRunAway away && !away.isInGoal(new BlockPos(me[0], me[1], me[2]))) {
+                j.shortEnd = me.clone();
+                finish("error: " + j.label + ": Baritone stopped at " + fmt(me) + ", short of the distance (walk: Baritone stopped short)");
                 return;
             }
             int[] xz = d == null && j.xzOrder && !j.reflex ? travelXZ(j) : null;

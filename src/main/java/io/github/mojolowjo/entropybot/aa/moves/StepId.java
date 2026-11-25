@@ -48,6 +48,7 @@ public record StepId(String kind, String target) {
             case Step.Scan k -> new StepId("scan", k.base() ? "base" : "");
             case Step.FindCave f -> new StepId("findCave", String.valueOf(f.minutes()));
             case Step.Explore e -> new StepId("explore", e.minutes() + " until " + e.until());
+            case Step.MoveAway m -> new StepId("moveAway", cell(m.x(), m.y(), m.z()) + " " + m.dist());   // job-deposit-park-wake review 1
             case Step.AwaitPaths a -> new StepId("stand", "paths " + a.waitS());   // 0.39.z76 send-back 3 (rule 22)
             case Step.Deposit d -> new StepId("deposit", (d.order() != null ? strip(d.order()) : d.only() == null ? "" : Step.Deposit.onlyText(d.only()))
                     + (d.chest() == null ? "" : " at " + d.chestText()));
