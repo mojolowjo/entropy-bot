@@ -63,11 +63,15 @@ The plan's size (job-plan-budget, worlds run 4: seven games out of heap while th
 `cheapestPickaxe` prices the ways of a pickaxe requirement of tier t (`Ctx.pickFloor`, in the D6 node key), a pickaxe need
 of tier t or better inside one of them fails at once with `pickInside` - any pickaxe it would find meets the outer need
 itself and is one of its own ways (was: every tier's whole tree priced again inside every other's, 6098 nodes for w084's
-shape, now about 100). The last line of defence: every way `choose` prices counts against Tuning `planner.maxWays` per
-resolve (`Ctx.ways`; a reused node adds its `Out.waysOff`, so the tick and the worker count alike); past it `TooLarge` is
-thrown out of the resolve, nothing of it is kept, and the request (`root`) fails "plan too large (N ways ...): the deepest
-chain a > b > c", logged once per request and count (`TOO_LARGE_SAID`). `needChain.maxTrials` still ends a search early
-once a way stands.
+shape, now about 100). A lend's collect again (`addLendWays`) is priced with `pickFloor` 0: it is a debt its way pays
+before it can finish, never the outer requirement's own way. The last line of defence: every way `choose` prices counts
+against Tuning `planner.maxWays` per resolve (`Ctx.ways`; a reused node adds its `Out.waysOff`, so the tick and the
+worker count alike); past it `TooLarge` is thrown out of the resolve, nothing of it is kept, and the request (`root`)
+fails "plan too large (N ways ...): the deepest chain a > b > c". Its `Read` holds every fact the run asked
+(`PlanNodes.Run.now`, not the root frame's own) and the effects it met, so the worker's kept failure is checked on the
+same facts the tick would price again. Said in the aa log once while the request stays too large (`TOO_LARGE_SAID`:
+request -> deepest chain; again when the chain changes or after it resolved within the bound). `needChain.maxTrials`
+still ends a search early once a way stands.
 
 ### Path memory (D11)
 The fork keeps priced paths (`PathMemory`) and re-joins a kept path the feet left by one short search (build 1); the mod

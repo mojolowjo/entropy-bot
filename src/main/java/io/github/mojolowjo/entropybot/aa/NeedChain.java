@@ -2465,22 +2465,27 @@ public final class NeedChain {
      * children reused where their facts hold. {@link PlanNodes#old}, a trace (aa debug), or no World: {@code body} as before D6.
      */
     private static <T> T root(String kind, Object args, World w, Function<Ctx, T> body, java.util.function.UnaryOperator<T> fresh, Function<String, T> tooLarge) {
+        String req = kind + " " + args;
         try {
-            return rootIn(kind, args, w, body, fresh);
+            T out = rootIn(kind, args, w, body, fresh);
+            TOO_LARGE_SAID.remove(req);              // review 1 item 5: resolved within the bound, a later "too large" is said again
+            return out;
         } catch (TooLarge e) {
-            // job-plan-budget (rule 7): the resolve past planner.maxWays fails with its count and its deepest chain, said once
-            // a request and count (the re-plans of one stuck order say it again only when it changes)
+            // job-plan-budget (rule 7): the resolve past planner.maxWays fails with its count and its deepest chain. Review 1
+            // item 5: said once while the request stays too large (the count is nearly always planner.maxWays + 1, so it is the
+            // deepest chain that tells one failure from another: said again when it changes, and again after the request
+            // resolved within the bound once), in the aa log's own form (the testers' per-run lines are the "aa: " ones)
             String why = e.getMessage();
-            if (TOO_LARGE_SAID.add(kind + " " + args + " " + e.ways)) {
-                if (TOO_LARGE_SAID.size() > TOO_LARGE_SAID_MAX) TOO_LARGE_SAID.clear();
-                com.mojang.logging.LogUtils.getLogger().warn("[entropybot] planner: " + kind + " " + args + ": " + why);
+            if (!e.deepest.equals(TOO_LARGE_SAID.put(req, e.deepest))) {
+                if (TOO_LARGE_SAID.size() > TOO_LARGE_SAID_MAX) { TOO_LARGE_SAID.clear(); TOO_LARGE_SAID.put(req, e.deepest); }
+                com.mojang.logging.LogUtils.getLogger().warn("[entropybot] aa: planner: " + req + ": " + why);
             }
             return tooLarge.apply(why);
         }
     }
 
-    /** job-plan-budget: the too-large failures said so far (request and count), so each is logged once. */
-    private static final Set<String> TOO_LARGE_SAID = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    /** job-plan-budget: the too-large failures said and not yet resolved within the bound (request -> its deepest chain). */
+    private static final Map<String, String> TOO_LARGE_SAID = new java.util.concurrent.ConcurrentHashMap<>();
 
     /** structural: a memory bound on {@link #TOO_LARGE_SAID} (cleared past it; a failure may then be said once more). */
     private static final int TOO_LARGE_SAID_MAX = 256;
@@ -2524,12 +2529,16 @@ public final class NeedChain {
         try {
             out = body.apply(new Ctx(w, run));
         } catch (TooLarge e) {
-            // job-plan-budget: nothing of it is kept (not the root); the record is the root's own reads, so the port checks the
-            // failure on them and the next request fetches the rest
+            // job-plan-budget: no node of it is kept (not the root). Review 1 (serious: the record held the root frame's own facts
+            // only - the child frames' facts stay theirs when they close - so on the worker a kept "plan too large" outlived a
+            // source seen or a walk priced deep in the cut tree): the record is every fact the run asked (Run.now: each read
+            // and each kept node's check), so the port checks the failure on all of them and a change asks again. Review 1
+            // item 4: the effects the cut tree met go with it as on the tick, where Run.effect ran each as it was met (the
+            // same path requests either way)
             PlanNodes.Stats st = new PlanNodes.Stats(f.size, run.computed, run.reusedN, run.dirty);
             p.last(st);
-            LAST.set(new Read(new LinkedHashMap<>(f.reads), new LinkedHashMap<>(f.bagReads), new LinkedHashMap<>(f.scans), f.whole ? bag0 : null,
-                    List.of(), st, PlanNodes.FactNodes.NONE));      // the cut resolve's effects are not applied
+            LAST.set(new Read(new LinkedHashMap<>(run.now), new LinkedHashMap<>(f.bagReads), new LinkedHashMap<>(f.scans), f.whole ? bag0 : null,
+                    run.defer ? List.copyOf(run.deferred) : List.of(), st, PlanNodes.FactNodes.NONE));
             throw e;
         } finally {
             run.top = null;
@@ -6306,12 +6315,19 @@ public final class NeedChain {
             c.addS(sec);
             c.bag.merge(lend, -n, Integer::sum);
             boolean was = c.lending;
+            int floor0 = c.pickFloor;
             c.lending = true;
+            // job-plan-budget review 1 (serious): the collect again is a debt this way pays before it can finish - inside a
+            // pickaxe's price (the bot under ground with no pickaxe, the wooden pickaxe's logs on the surface) its pickaxe
+            // need is not the outer requirement's own way, since that way stands only once this debt is paid: it is priced
+            // whole (pickFloor 0; the recursion is bounded by c.lending, no lend inside it)
+            c.pickFloor = 0;
             String back;
             try {
                 back = obtain(c, lend, before);
             } finally {
                 c.lending = was;
+                c.pickFloor = floor0;
             }
             if (c.fail != null) return null;
             if (c.stuck) { c.fail = "the " + n + " lent " + shw(lend) + " have no known source to collect again (an explore)"; return null; }
