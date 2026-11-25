@@ -56,6 +56,14 @@ public final class Goals {
          */
         public boolean depositMissed;
 
+        /**
+         * short-wake (pilot w057, w061, 2026-11-25): this order's stop was weighed with nothing it waits on able to change,
+         * and its line's deposit was owed without the rest of it (LineDeposits.sweep). A wake then takes only this order
+         * out of the due deposit, the rest stays due (LineDeposits.reopen); its amount follows with a deposit of its own.
+         * Cleared wherever {@link #depositWeighed} is set again.
+         */
+        public boolean depositOwedShort;
+
         /** deposit-words (owner 2026-11-08): how many of the item go into the main chest when its line ends (the amount ordered); 0: none. */
         public int deposit;
 
