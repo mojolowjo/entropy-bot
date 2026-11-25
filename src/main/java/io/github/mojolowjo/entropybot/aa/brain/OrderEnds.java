@@ -72,6 +72,45 @@ public final class OrderEnds {
         // hold-bound (owner 2026-11-24): a hold lasts only while something its park waits on can still change
         var open = Goals.of(bb);
         for (var g : goals)
-            h.deposit(deposits.sweep(g, bb.in.bag, mainAt, Goals.stillChanges(open, g, underGround, busy, bb.in != null && Goals.worldClimb(bb, g))));
+            if (!g.depositGoal) h.deposit(deposits.sweep(       // deposit-goal: the deposit goal is no -d order: nothing of it is weighed
+                    g, bb.in.bag, mainAt, Goals.stillChanges(open, g, underGround, busy, bb.in != null && Goals.worldClimb(bb, g))));
+    }
+
+    /**
+     * deposit-goal plan, stage 3 (piece 4; owner 2026-11-23: the line's deposit is a planned, priced goal): keeps the
+     * deposit goal in step with the one owed store ({@link LineDeposits#owed}). Something owed and no deposit goal: the
+     * goal is added ({@link Goals#addDeposit}) with its desire; nothing owed and a deposit goal: it leaves with its desire
+     * (the put reached the chest, or a wake took the deposit back). Each said (rule 7). Called after {@link #tick} (the
+     * runtime's goals pass since stage 4, the simulator's and OrderLineSim's).
+     */
+    public static void depositSync(Blackboard bb, Brain brain, LineDeposits deposits, Hooks h) {
+        var owed = deposits.owed();
+        Goals.Goal g = Goals.depositGoal(bb);
+        // review 4 (point 1): parked on the main chest's hold - runs again once the hold lifted (the owner's word, a new main
+        // chest, room seen, the block a container again); said once (rule 7). While it holds, nothing wakes it
+        if (g != null && g.chestHeld && g.parked != null && !owed.isEmpty() && !(MainChest.of(bb) instanceof MainChest.Held)) {
+            String line = "the line's deposit runs again: the main chest's hold is lifted (it stopped on: " + g.parked + ")";
+            g.parked = null;
+            g.chestHeld = false;
+            g.park = null;
+            g.loopPark = null;
+            g.wakeSaid = null;
+            g.tries.clear();
+            brain.failures.forget(g.id());           // the chest's held keys of the failed puts go with the hold
+            bb.port.log(line);
+            bb.port.tellOwner(line);
+        }
+        if (!owed.isEmpty() && g == null) {
+            g = Goals.addDeposit(bb, bb.clock == null ? 0 : bb.clock.now());
+            g.depositPutsAtStart = deposits.putsReached();
+            brain.add(io.github.mojolowjo.entropybot.aa.AaDesires.ownerGoal(g));
+            h.deposit(new LineDeposits.Out(LineDeposits.Kind.NOTED, "the line's deposit of " + io.github.mojolowjo.entropybot.aa.moves.Step.Deposit.onlyText(owed) + " is a goal now", null));
+        } else if (owed.isEmpty() && g != null) {
+            final Goals.Goal gone = g;
+            Goals.of(bb).removeIf(x -> x == gone);
+            String why = deposits.putsReached() > g.depositPutsAtStart ? "in the chest" : "taken back (nothing is owed now)";
+            brain.remove(g.id(), "the line's deposit: " + why);
+            h.deposit(new LineDeposits.Out(LineDeposits.Kind.NOTED, "the line's deposit goal ended: " + why, null));
+        }
     }
 }

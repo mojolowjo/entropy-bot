@@ -147,7 +147,7 @@ public final class LineDeposits {
      * deposit back too (tester-2 w003-3: birch_log noted nothing).
      */
     private final Map<String, Map<String, Goals.Goal>> dueLine = new HashMap<>();
-    /** take-back: per line whose deposit run is on its way ({@link #started}), the items it was sent with (for the log). */
+    /** take-back: per line whose deposit run is on its way ({@link #putStarted}), the items it was sent with (for the log). */
     private final Map<String, Map<String, Integer>> wayLine = new HashMap<>();
 
     /** The due items of the orders in {@code ended}, summed. */
@@ -163,49 +163,49 @@ public final class LineDeposits {
     /**
      * Review round 2 (cobblestone 32 -d went with 20, was met while that run climbed out through stone, and its line came
      * due again on the other 12; the run's end removed "the lines on their way" and the 12 with them): the amounts of the
-     * run on its way, per order as {@link #started} sent it. They are kept apart from {@link #due}, so what comes due while
+     * run on its way, per order as {@link #putStarted} sent it. They are kept apart from {@link #due}, so what comes due while
      * the run is on its way (another line, or the SAME line and the same order again) is never the run's to take off.
      */
     private final Map<Goals.Goal, Map<String, Integer>> way = new java.util.IdentityHashMap<>();
-    /** A deposit run is on its way ({@link #started} to {@link #gone}). */
+    /** A deposit run is on its way ({@link #putStarted} to {@link #gone}). */
     private boolean onWay;
 
     /**
-     * take-back: the due deposit's run started: from here a wake of one of its orders leaves it alone. The run takes
-     * exactly what is due now ({@link #due} and {@link #dueLine} are empty after this); what comes due later is a later run's.
+     * deposit-goal piece 2: the deposit's put started: what is due now goes on its way; from here a wake
+     * of one of its orders leaves it alone (take-back).
      */
-    public void started() {
-        for (var e : dueLine.entrySet()) { wayLine.put(e.getKey(), dueOf(e.getValue())); wayOrders.addAll(e.getValue().values()); }
+    public void putStarted() {
+        // review 7 (point 2): a second start while a put is on (its leg ended short, the task re-planned) adds what came due
+        // since to what is still on its way, as failed() merges back: a remainder on its way is never replaced
+        for (var e : dueLine.entrySet()) {
+            wayLine.merge(e.getKey(), dueOf(e.getValue()), LineDeposits::plus);
+            wayOrders.addAll(e.getValue().values());
+        }
         dueLine.clear();
-        way.putAll(due);
+        for (var d : due.entrySet()) way.merge(d.getKey(), d.getValue(), LineDeposits::plus);
         due.clear();
         onWay = true;
     }
 
-    /** take-back: the items of every line whose deposit is due and not started (empty: none). */
-    public Map<String, Integer> dueNow() {
-        Map<String, Integer> out = new TreeMap<>();
-        for (Map<String, Goals.Goal> ended : dueLine.values()) for (var i : dueOf(ended).entrySet()) out.merge(i.getKey(), i.getValue(), Integer::sum);
-        return out;
+    /** Two item counts summed into a new map (id -> n). */
+    private static Map<String, Integer> plus(Map<String, Integer> a, Map<String, Integer> b) {
+        Map<String, Integer> sum = new TreeMap<>(a);
+        for (var i : b.entrySet()) sum.merge(i.getKey(), i.getValue(), Integer::sum);
+        return sum;
     }
 
     /**
-     * take-back: the due items of every line whose deposit is due and not started, by each item's FULL id (the order's own
-     * id, {@link #fullId}) - what the deposit step is sent with (merge review 2026-11-23: a modded -d item sent by its
-     * path was looked for as minecraft:&lt;path&gt;, not found, and the run ended "none of it in the bag").
+     * take-back: the items of every line whose deposit is due and not started (empty: none), by the bag's key. Deposit-goal
+     * stage 4: the not-started part of {@link #owed} - the same sum over {@link #due} alone (one reader, rule 23).
      */
-    public Map<String, Integer> dueIds() {
-        Map<String, Integer> out = new TreeMap<>();
-        for (Map<String, Goals.Goal> ended : dueLine.values())
-            for (Goals.Goal o : ended.values()) {
-                Map<String, Integer> t = due.get(o);
-                if (t != null) for (var i : t.entrySet()) out.merge(fullId(o, i.getKey()), i.getValue(), Integer::sum);
-            }
-        return out;
-    }
-
-    /** The orders of the lines whose deposit run is on its way ({@link #started}), the ones that noted nothing included. */
+    public Map<String, Integer> dueNow() { return sum(java.util.List.of(due), false); }
+    /** The orders of the lines whose deposit run is on its way ({@link #putStarted}), the ones that noted nothing included. */
     private final Set<Goals.Goal> wayOrders = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+    /**
+     * Review 7 (point 2): per order of the put on its way whose wake cut what the line took off its amount ({@link #reopen}),
+     * the part of it that was still on its way then (by the way's keys): when it goes in, it is not noted in depositPut again.
+     */
+    private final Map<Goals.Goal, Map<String, Integer>> wayCut = new java.util.IdentityHashMap<>();
 
     /**
      * deposit-kept: the deposit run ended, or the due deposit could not start (said by the caller): its items are no longer
@@ -222,22 +222,211 @@ public final class LineDeposits {
             if (!reached) for (Map<String, Goals.Goal> ended : dueLine.values()) for (Goals.Goal o : ended.values()) o.depositMissed = true;
             due.clear();
             dueLine.clear();
+            wayCut.clear();
             return;
         }
         onWay = false;
-        if (!reached) for (Goals.Goal o : wayOrders) o.depositMissed = true;
+        if (!reached) {
+            for (Goals.Goal o : wayOrders) o.depositMissed = true;
+            cutBack();           // review 8: the owner's cancel - what a wake cut and did not go in is the order's again
+        }
+        wayCut.clear();
         way.clear();
         wayLine.clear();
         wayOrders.clear();
     }
 
+    /**
+     * deposit-goal piece 2: the put ended. {@code reached}: as {@link #gone gone(true)}, its items are in the chest. Not
+     * reached ({@link #failed}): the put's items are owed again - {@link #way} back into {@link #due}, its lines back into
+     * {@link #dueLine} - and no order is marked missed: the items stay owed and kept, and a later wake still takes the
+     * deposit back ({@link #reopen}). Nothing on its way: nothing to put back.
+     */
+    public void putEnded(boolean reached) {
+        if (reached) { if (onWay) putsReached++; gone(true); return; }
+        failed();
+    }
+
+    /** deposit-goal stage 3: the puts that reached the chest so far (OrderEnds.depositSync tells "in the chest" from "taken back" by it). */
+    private int putsReached;
+
+    /** deposit-goal stage 3: {@link #putsReached}. */
+    public int putsReached() { return putsReached; }
+
+    /** {@link #putEnded putEnded(false)}: the put did not reach the chest; what it was sent with is owed again. */
+    public void failed() {
+        if (!onWay) return;
+        onWay = false;
+        // review 8 (serious, the review's case: cobblestone 32 -d put 20, 10 went in, the order woke - its amount cut to 12,
+        // the 10 still on its way the put's - then the put's task was lost; the 10 came back into due and the order's
+        // re-end REPLACED it with its 12, so the chest got 22 of 32): what a wake cut off an order's amount and did not
+        // reach the chest is the order's own again - back on its amount, never left in due for a later end or take-back
+        // to replace or drop
+        Map<Goals.Goal, Map<String, Integer>> back = cutBack();
+        // a line that came due while the put ran keeps its own orders; the put's orders join them per line. An order open
+        // again (woke) is not among a due line's orders: it is weighed when it ends
+        for (var e : wayLine.entrySet()) {
+            Map<String, Goals.Goal> line = dueLine.computeIfAbsent(e.getKey(), k -> new java.util.LinkedHashMap<>());
+            for (Goals.Goal o : wayOrders) if (e.getKey().equals(o.line) && o.depositWeighed) line.putIfAbsent(o.r.key(), o);
+            if (line.isEmpty()) dueLine.remove(e.getKey());
+        }
+        for (var d : way.entrySet()) {
+            Map<String, Integer> rest = new TreeMap<>(d.getValue());
+            Map<String, Integer> b = back.get(d.getKey());
+            // an order open again owes its cut part on its own amount (weighed on the bag at its end); one weighed again
+            // since (its new due amount taken on the cut amount) keeps it in due beside the new part, added
+            // (its noted part grows by it too, so a later wake takes off all that went for it)
+            if (b != null && !d.getKey().depositWeighed) for (var i : b.entrySet()) rest.merge(i.getKey(), -i.getValue(), Integer::sum);
+            else if (b != null) d.getKey().depositTook = plus(d.getKey().depositTook == null ? Map.of() : d.getKey().depositTook, b);
+            rest.values().removeIf(n -> n <= 0);
+            if (!rest.isEmpty()) due.merge(d.getKey(), rest, LineDeposits::plus);
+        }
+        way.clear();
+        wayLine.clear();
+        wayOrders.clear();
+    }
+
+    /**
+     * Review 8: the put on its way did not reach the chest (failed, or the owner's cancel): per order, the part of what a
+     * wake cut off its amount ({@link #wayCut}) that is still on its way, added back to the order's amount
+     * ({@link Goals.Goal#deposit}); {@link #wayCut} is cleared. Returns what went back, per order (by the way's keys).
+     */
+    private Map<Goals.Goal, Map<String, Integer>> cutBack() {
+        Map<Goals.Goal, Map<String, Integer>> out = new java.util.IdentityHashMap<>();
+        for (var c : wayCut.entrySet()) {
+            Map<String, Integer> on = way.getOrDefault(c.getKey(), Map.of());
+            Map<String, Integer> b = new TreeMap<>();
+            for (var i : c.getValue().entrySet()) {
+                int n = Math.min(i.getValue(), on.getOrDefault(i.getKey(), 0));
+                if (n > 0) b.put(i.getKey(), n);
+            }
+            if (b.isEmpty()) continue;
+            c.getKey().deposit += b.values().stream().mapToInt(Integer::intValue).sum();
+            out.put(c.getKey(), b);
+        }
+        wayCut.clear();
+        return out;
+    }
+
+    /**
+     * deposit-goal piece 2: the one reader of what the deposit still owes - the items of {@link #due} and {@link #way}, by
+     * each item's full id ({@link #fullId}), summed. Empty: nothing owed.
+     */
+    public Map<String, Integer> owed() { return sum(java.util.List.of(due, way), true); }
+
+    /**
+     * Stage 4 review (the put's items are fixed when the plan is made, but {@link #putStarted} moves what is owed at the
+     * step's start; a line that came due, or a take-back, in between made the two differ): null when the planned put
+     * {@code only} is what is owed now, else the said reason - the step fails with it and the deposit goal plans again
+     * from {@link #owed}, so nothing goes on its way that the put does not carry.
+     */
+    public String putDiffers(Map<String, Integer> only) {
+        // stage 4 review 2 (fault 4): both sides by the one normalisation the step's keys carry (NeedChain.id), so an
+        // owed item whose full id fell back to the bare counted key still matches the planned put
+        Map<String, Integer> now = normal(owed());
+        Map<String, Integer> planned = normal(only == null ? Map.of() : only);
+        if (now.equals(planned)) return null;
+        return "the deposit owed changed since the plan (planned " + planned + ", owed now " + now + "), planning again";
+    }
+
+    /**
+     * Stage 4 review 2 (faults 1 and 5, the rule apart and replayed): the end of task {@code endedTask} reads the put
+     * started in {@code putTask}; true: the put reached the chest - the run ended done, or failed at a step after the put
+     * (the put's own step is never the failed one then). Another task's end never counts it reached.
+     */
+    public static boolean putReached(long putTask, long endedTask, boolean done, io.github.mojolowjo.entropybot.aa.moves.Step failedAt) {
+        if (putTask < 0 || putTask != endedTask) return false;
+        return done || (failedAt != null && !(failedAt instanceof io.github.mojolowjo.entropybot.aa.moves.Step.Deposit));
+    }
+
+    /** {@code m} keyed by {@link io.github.mojolowjo.entropybot.aa.NeedChain#id} (the step's normalisation), summed. */
+    private static Map<String, Integer> normal(Map<String, Integer> m) {
+        Map<String, Integer> out = new TreeMap<>();
+        for (var e : m.entrySet()) out.merge(io.github.mojolowjo.entropybot.aa.NeedChain.id(e.getKey()), e.getValue(), Integer::sum);
+        return out;
+    }
+
+    /**
+     * Stage 4 review 2 (fault 2: a put that failed after moving some stacks sent the whole amount back to due, and the
+     * re-plan put it twice): the put did not reach the chest whole, and {@code put} (by the step's ids, NeedChain.id; null
+     * or empty: nothing went in) did go in. What went in is taken off the put's amounts first, order by order, so only
+     * the rest is owed again ({@link #failed}); the put counts as reached when nothing is left of it.
+     */
+    public void putEnded(boolean reached, Map<String, Integer> put) {
+        if (reached || !onWay || put == null || put.isEmpty()) { putEnded(reached); return; }
+        if (!takeOff(put)) { putsReached++; gone(true); return; }
+        failed();
+    }
+
+    /**
+     * Review 5 (a put started twice in one task asked again for what its first leg put: the in-run re-plan reads
+     * {@link #owed}, and {@link #way} kept the whole amount until the put ended): a leg of the put on its way ended inside
+     * its running task and moved {@code put} (by the step's ids) into the chest. It comes off {@link #way} now, order by
+     * order (the order's {@link Goals.Goal#depositPut}); the put stays on its way. Nothing on its way: nothing.
+     */
+    public void legEnded(Map<String, Integer> put) {
+        if (!onWay || put == null || put.isEmpty()) return;
+        takeOff(put);
+    }
+
+    /** Review 5: nothing of the put on its way is left in {@link #way} (every leg's part reached the chest). */
+    public boolean wayEmpty() { return onWay && way.isEmpty(); }
+
+    /** {@code put} off {@link #way}, order by order, each order's part noted in its depositPut; true: some of the way is left. */
+    private boolean takeOff(Map<String, Integer> put) {
+        Map<String, Integer> left = new TreeMap<>(normal(put));
+        boolean rest = false;
+        for (var d : way.entrySet()) {
+            Map<String, Integer> now = new TreeMap<>();
+            for (var i : d.getValue().entrySet()) {
+                String k = io.github.mojolowjo.entropybot.aa.NeedChain.id(fullId(d.getKey(), i.getKey()));
+                int in = Math.min(i.getValue(), left.getOrDefault(k, 0));
+                if (in > 0) {
+                    left.merge(k, -in, Integer::sum);
+                    // review 4 (sim: a chest for 10 of 52 - the 10 left the bag, the met order read itself lost, opened
+                    // again and owed its whole amount a second time): what is in the chest counts for its order
+                    // review 7: the part a wake already cut off the order's amount (its remainder on its way then) is not
+                    // noted again; the rest is
+                    Map<String, Integer> cut = wayCut.get(d.getKey());
+                    int was = cut == null ? 0 : Math.min(in, cut.getOrDefault(i.getKey(), 0));
+                    if (was > 0) cut.merge(i.getKey(), -was, Integer::sum);
+                    if (in - was > 0) d.getKey().depositPut.merge(i.getKey(), in - was, Integer::sum);
+                }
+                if (i.getValue() - in > 0) { now.put(i.getKey(), i.getValue() - in); rest = true; }
+            }
+            d.setValue(now);
+        }
+        way.values().removeIf(Map::isEmpty);
+        return rest;
+    }
+
+    /** The items of {@code maps}' orders summed, by each item's full id ({@link #fullId}) or the bag's key. */
+    private static Map<String, Integer> sum(java.util.List<Map<Goals.Goal, Map<String, Integer>>> maps, boolean full) {
+        Map<String, Integer> out = new TreeMap<>();
+        for (var m : maps)
+            for (var d : m.entrySet()) for (var i : d.getValue().entrySet()) out.merge(full ? fullId(d.getKey(), i.getKey()) : i.getKey(), i.getValue(), Integer::sum);
+        return out;
+    }
+    /**
+     * deposit-goal piece 2: the orders behind {@link #owed}: every order of the due lines and of the put on its way, the
+     * ones that noted nothing included; each once, by identity.
+     */
+    public Set<Goals.Goal> owedOrders() {
+        Set<Goals.Goal> out = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+        for (Map<String, Goals.Goal> ended : dueLine.values()) out.addAll(ended.values());
+        out.addAll(wayOrders);
+        return out;
+    }
+
     /** What the bag holds of the order's deposit amount now (counted id -> n; a group: up to the amount of each member). */
     static Map<String, Integer> take(Goals.Goal g, Map<String, Integer> bag) {
         Map<String, Integer> out = new TreeMap<>();
-        int left = g.deposit;
+        // review 5 (once): what an earlier partial put already took to the chest for this order is not asked again
+        int owes = Math.max(0, g.deposit - g.depositPut.values().stream().mapToInt(Integer::intValue).sum());
+        int left = owes;
         for (String id : g.r.counts()) {
             int have = bag.getOrDefault(id, 0);
-            int take = g.r.group() ? Math.min(have, g.deposit) : Math.min(have, left);
+            int take = g.r.group() ? Math.min(have, owes) : Math.min(have, left);
             if (take > 0) { out.merge(id, take, Integer::sum); left -= take; }
             if (!g.r.group() && left <= 0) break;
         }
@@ -282,7 +471,7 @@ public final class LineDeposits {
             Out back = reopen(g);
             if (back.kind() == Kind.WOKE_GONE) return back;
             // review 3: a due deposit this weighing took back is said in the line that follows (rule 7), whatever it answers;
-            // the runtime starts a queued deposit only from dueNow(), so a taken-back one never starts
+            // the deposit goal puts only what owed() holds, so a taken-back one never goes
             how = "done (stopped earlier and met since: weighed again" + (back.kind() == Kind.WOKE_TAKEN_BACK ? "; the line's deposit that had not started is taken back and weighed with it" : "") + ")";
         }
         g.depositWeighed = true;
@@ -370,7 +559,8 @@ public final class LineDeposits {
 
     private static boolean isLost(Goals.Goal o, Map<String, Integer> bag) {
         if (!o.met || o.deposit <= 0 || o.strip != null || !o.depositWeighed) return false;
-        return take(o, bag).values().stream().mapToInt(Integer::intValue).sum() < o.deposit;
+        int inChest = o.depositPut.values().stream().mapToInt(Integer::intValue).sum();     // review 4: a partial put's part
+        return take(o, bag).values().stream().mapToInt(Integer::intValue).sum() + inChest < o.deposit;
     }
 
     /**
@@ -418,6 +608,20 @@ public final class LineDeposits {
      * ({@link Kind#WOKE_TAKEN_BACK}); the line is weighed on the bag again when it ends. The words for a deposit that is on
      * its way or went already say that, never "waits for it" (rule 7).
      */
+    /**
+     * Review 6 (serious: every leg that ended wrote its part into {@link Goals.Goal#depositPut}, a reached put included,
+     * and a wake then cut the order's amount by its noted part as well; {@link #take} took depositPut off a second time -
+     * cobblestone 32 -d stopped with 20, the 20 reached the chest, the wake left 12 and take asked for none): what the wake
+     * cuts off the amount is what is in the chest for the order - its depositPut when a leg noted it (the count of what
+     * went in), else {@code noted} (a put that ended with no leg count) - and depositPut is cleared, so the amount alone
+     * holds it from then on. One count, never two.
+     */
+    private static int inChest(Goals.Goal g, int noted) {
+        int put = g.depositPut.values().stream().mapToInt(Integer::intValue).sum();
+        g.depositPut.clear();
+        return put > 0 ? put : noted;
+    }
+
     public Out reopen(Goals.Goal g) {
         Map<String, Goals.Goal> back = dueLine.get(g.line);
         if (back != null) {
@@ -429,6 +633,7 @@ public final class LineDeposits {
             // merge review 2026-11-23: an earlier deposit that did not reach the chest took nothing of it
             Map<String, Integer> went = outside && !g.depositMissed && g.depositTook != null ? g.depositTook : Map.of();
             int gone = went.values().stream().mapToInt(Integer::intValue).sum();
+            if (outside && !g.depositMissed) gone = inChest(g, gone);
             g.depositWeighed = false;
             g.depositMissed = false;
             g.depositTook = null;
@@ -464,8 +669,17 @@ public final class LineDeposits {
         if (wasOpen || missed) {
             // the line has not ended, or its deposit never reached the chest: the order is simply open again (its note
             // was of the bag then, nothing was taken)
-        } else if (noted > 0) {
-            g.deposit = Math.max(0, g.deposit - noted);       // the line's deposit took them already
+        } else if (onWay && wayOrders.contains(g)) {
+            // review 7 (point 2): its put is on its way: what the line took of it (in the chest by the legs so far, or still on
+            // its way) is done with for the order; what of it reaches the chest later is the put's, never cut from the order
+            // again (wayCut), so a second start that adds the order's new due amount to its remainder puts each item once
+            g.deposit = Math.max(0, g.deposit - noted);
+            g.depositPut.clear();
+            Map<String, Integer> rest = this.way.get(g);
+            // review 8: all of it still on its way is cut now (an earlier cut is a part of it), never more than the way holds
+            if (rest != null && !rest.isEmpty()) wayCut.put(g, new TreeMap<>(rest));
+        } else if (noted > 0 || !g.depositPut.isEmpty()) {
+            g.deposit = Math.max(0, g.deposit - inChest(g, noted));       // the line's deposit took them already
         }
         if (g.deposit <= 0) return new Out(Kind.WOKE_GONE, g.r.key() + " woke: its deposit went with the line already (" + Step.Deposit.onlyText(took) + ") - nothing more to deposit", null);
         lineOpen.computeIfAbsent(g.line, k -> new LinkedHashSet<>()).add(g.r.key());

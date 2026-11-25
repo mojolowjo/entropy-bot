@@ -120,6 +120,8 @@ final class AaCommands {
         v("reserved", (c, aa, vb, a) -> OwnerReads.reservedText(aa.bb.reserved()),
                 f(S, "reserved", "the bag ledger: each item, its count, for which step"));
         v("why", (c, aa, vb, a) -> {
+            // deposit-goal stage 4: aa why deposit - the line's deposit goal alone (its owed items, plan or park, holds)
+            if (a != null && a.trim().equalsIgnoreCase(io.github.mojolowjo.entropybot.aa.brain.Goals.DEPOSIT_KEY)) return aa.depositWhy();
             List<String> d = aa.decisions();
             // STRUCTURE_BLOCKS: the station lookups this why reports, each with its own notes (skipped, priced); a way's
             // structure refusal is in that way's own option line (no global last state, 0.39.z26 fix 11)

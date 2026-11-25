@@ -54,6 +54,10 @@ final class SimGame {
     final Blackboard bb = new Blackboard(clock, port, new Tracer());
     final Brain brain = new Brain("brain", "sim");
     final LineDeposits deposits = new LineDeposits();
+    /** Review 6: the put's ends go through the runtime's one reader (PutWatch), as StepHands and AaRuntime drive it. */
+    final io.github.mojolowjo.entropybot.aa.brain.PutWatch put = new io.github.mojolowjo.entropybot.aa.brain.PutWatch(deposits);
+    /** The task ids of this game's puts (SimSteps.deposit; any distinct ids). */
+    long putTask;
 
     final SimWorld world;
     /** How far the fake senses see on each axis (an endless map sets it lower: the explore then has something to find). */
@@ -69,7 +73,10 @@ final class SimGame {
     final Set<String> mine = new HashSet<>();
     /** What the main chest holds, by full item id. */
     final Map<String, Integer> chest = new TreeMap<>();
-    private final List<Map<String, Integer>> due = new ArrayList<>();
+    /** Review 4: the items the main chest still takes (null: no end, the sim's default). */
+    Integer chestRoom;
+    /** Review 4 (point 1): the main chest's hold, as the runtime's (AaRuntime.chestHold). */
+    final io.github.mojolowjo.entropybot.aa.brain.MainChestHold chestHold = new io.github.mojolowjo.entropybot.aa.brain.MainChestHold();
 
     final List<String> timeline = new ArrayList<>();
     /** How the game ended: "done", or the reason; null while it runs. */
@@ -79,25 +86,32 @@ final class SimGame {
     final Map<String, Double> troubleRates = new HashMap<>();
     /** Step 5: the troubles' dice (a seed of the test's own: the same game twice). */
     java.util.Random troubleDice = new java.util.Random(1);
+    /** deposit-goal stage 3: how many of the deposit goal's next walk-ups (Step.ToSurface) fail, injected. */
+    int walkUpFailures;
     /** Step 5: the injected troubles so far. */
     int troubles;
     static final double TROUBLE_S = 10;          // sim: the seconds a failing step takes before it gives up (not measured)
-    /** The rates seen in 16 recorded runs (to-do/simulator-plan.md): collect 7 of 25, climb 6 of 12, cut 4 of 56. Deposits (4 of 15) and digs (5 of 26) have no brain-run step here. */
-    static final Map<String, Double> MEASURED = Map.of("collect", 7 / 25.0, "climb", 6 / 12.0, "cut", 4 / 56.0);
+    /** The rates seen in 16 recorded runs (to-do/simulator-plan.md): collect 7 of 25, climb 6 of 12, cut 4 of 56, deposits 4 of 15 (run 2; the planned put since the deposit goal, stage 3). Digs (5 of 26) have no brain-run step here. */
+    static final Map<String, Double> MEASURED = Map.of("collect", 7 / 25.0, "climb", 6 / 12.0, "cut", 4 / 56.0, "deposit", 4 / 15.0);
 
     /** The trouble kind of a step; null: a kind no trouble was measured for. */
     static String kind(Step s) {
         if (s instanceof Step.Collect) return "collect";
         if (s instanceof Step.ChopTree) return "cut";
         if (s instanceof Step.Climb || s instanceof Step.ToSurface) return "climb";
+        if (s instanceof Step.Deposit d && d.chest() != null) return "deposit";       // deposit-goal stage 3: the put (run 2: 4 of 15)
         return null;
     }
 
     /** The injected failure of this step, or null: it runs. */
     private String trouble(Step s) {
+        // deposit-goal stage 3: the next walk-ups fail by the test's word (the game's ToSurface fault, its fact below)
+        if (s instanceof Step.ToSurface && walkUpFailures > 0 && ("goal." + Goals.DEPOSIT_KEY).equals(runDesire)) { walkUpFailures--; troubles++; return "TROUBLE (injected, climb): the walk up gave up"; }
         Double p = troubleRates.get(kind(s));
         if (p == null || troubleDice.nextDouble() >= p) return null;
         troubles++;
+        // deposit-goal stage 3: the put fails with the deposit's own words (the walk-up and the climb give their facts below)
+        if (s instanceof Step.Deposit d) return "deposit: TROUBLE (injected): the chest at " + d.chestText() + " was not opened";
         return "TROUBLE (injected, " + kind(s) + "): the step gave up";
     }
     private final TestData data;
@@ -113,6 +127,10 @@ final class SimGame {
         data.install();
         catalog = catalog(data);
         bb.fact(NeedChain.WORLD_FACT, (Supplier<World>) this::facts);
+        // review 4 (point 1): a cell that is no chest block answers held (gone), as the game's reader; the hold store as the runtime's
+        bb.fact(io.github.mojolowjo.entropybot.aa.brain.MainChest.FACT, (Supplier<io.github.mojolowjo.entropybot.aa.brain.MainChest.Answer>) () -> io.github.mojolowjo.entropybot.aa.brain.MainChest.ofText(mainAt, null,
+                c -> "minecraft:chest".equals(world.at(c[0], c[1], c[2]))));   // deposit-goal piece 3: the one reader
+        bb.fact(io.github.mojolowjo.entropybot.aa.brain.MainChestHold.FACT, chestHold);
         // job-own-aside-worker (worlds run 4): the trips' legs and the orders' own chains through the planner worker's path,
         // as the game resolves them (snapshot, PlannerWorker.resolve, the port's live check), synchronously
         bb.fact(BatchWay.PLANNER_FACT, planner);
@@ -275,7 +293,7 @@ final class SimGame {
         if (old != null && old.deposit > 0) {
             sense();
             LineDeposits.Out out = deposits.replaced(old, bb.in.bag, mainAt);
-            if (out != null && out.text() != null) { say(out.text()); if (out.kind() == LineDeposits.Kind.DUE) due.add(out.items()); }
+            if (out != null && out.text() != null) say(out.text());
         }
         Goals.Goal g = Goals.add(bb, r, n, 0, clock.now());
         g.batch = batch;
@@ -289,7 +307,14 @@ final class SimGame {
 
     double seconds() { return (clock.now() - t0) / 1000.0; }       // structural: milliseconds a second
 
-    void say(String line) { timeline.add(String.format(Locale.ROOT, "%7.1f s  %s", seconds(), line)); }
+    static final int TIMELINE_MAX = 100_000;     // sim: a game that says more lines than this is in a loop (ended, said)
+
+    void say(String line) {
+        if (timeline.size() >= TIMELINE_MAX) {
+            if (end == null) end = "sim: over " + TIMELINE_MAX + " lines said (a loop); the last: " + timeline.get(timeline.size() - 1);
+            return;
+        }
+        timeline.add(String.format(Locale.ROOT, "%7.1f s  %s", seconds(), line)); }
 
     /** aa cancel: the order leaves the goals and its line (the runtime's drop). */
     void drop(Goals.Goal g) {
@@ -300,13 +325,12 @@ final class SimGame {
         LineDeposits.Out out = deposits.dropped(g, bb.in.bag, mainAt);
         if (out == null || out.text() == null) return;
         say(out.text());
-        if (out.kind() == LineDeposits.Kind.DUE) due.add(out.items());
     }
 
     void tick() {
         sense();
         brain.tick(bb);
-        OrderEnds.tick(bb, brain, deposits, mainAt, false, "goal reached", new OrderEnds.Hooks() {
+        OrderEnds.Hooks hooks = new OrderEnds.Hooks() {
             @Override public boolean carriesOn(Goals.Goal g) { return false; }
 
             @Override public void got(String msg) { say(msg); }
@@ -314,9 +338,11 @@ final class SimGame {
             @Override public void deposit(LineDeposits.Out out) {
                 if (out == null || out.text() == null) return;
                 say(out.text());
-                if (out.kind() == LineDeposits.Kind.DUE) due.add(out.items());
             }
-        });
+        };
+        OrderEnds.tick(bb, brain, deposits, mainAt, false, "goal reached", hooks);
+        // deposit-goal stage 3: the line's deposit is a goal (its walk, its ways up, the put: SimSteps' Deposit actor)
+        OrderEnds.depositSync(bb, brain, deposits, hooks);
         for (; logRead < port.log.size(); logRead++) say("  log: " + port.log.get(logRead));
     }
 
@@ -325,13 +351,22 @@ final class SimGame {
         long idleSince = clock.now();
         while (end == null) {
             tick();
-            while (!due.isEmpty() && end == null) { deposits.gone(deposit(due.remove(0))); }     // as the game since af9e82fc: the -d amounts stay kept until the deposit run has ended
             if (end != null) break;
             if (Goals.of(bb).isEmpty()) { end = "done"; break; }
+            // deposit-goal stage 3: only the line's deposit is left, stopped, and nothing it waits on can change: the end names it
+            var dg = Goals.depositGoal(bb);
+            if (dg != null && dg.parked != null && Goals.of(bb).size() == 1 && port.started.size() == handled
+                    && Goals.stillChanges(Goals.of(bb), dg, false, false, false) == null) {
+                end = "deposit parked: " + dg.parked + "; owed " + deposits.owed();
+                break;
+            }
             if (seconds() > limitS) { end = "time limit: " + limitS + " s; orders left: " + orders(); break; }
             if (port.started.size() > handled) {
-                run(port.started.get(handled), port.nextId - 1);
+                // the newest run (an older one not handled was cancelled by it); counted before it runs, so a run the brain
+                // starts while this one runs is handled next, never skipped (deposit-goal stage 3: the deposit goal's run
+                // started in the tick that cancelled a dropped order's run)
                 handled = port.started.size();
+                run(port.started.get(handled - 1), handled);
                 idleSince = clock.now();
                 continue;
             }
@@ -380,6 +415,24 @@ final class SimGame {
         return best;
     }
 
+    /** deposit-goal stage 3: the deposit goal's steps as they ran ("walk", "walk up", "climb", "put", other: its text; "!": it failed). */
+    final List<String> depositLegs = new ArrayList<>();
+    /** deposit-goal stage 3: the deposit goal's runs started (more than one: re-planned). */
+    int depositRuns;
+
+    private static String leg(Step s) {
+        if (s instanceof Step.ToStation) return "walk";
+        if (s instanceof Step.ToSurface) return "walk up";
+        if (s instanceof Step.Climb) return "climb";
+        if (s instanceof Step.Deposit) return "put";
+        return s.text();
+    }
+
+    /** deposit-goal stage 3: the deposit column of the worlds' table - the legs taken and the re-plans; "none": no deposit goal ran. */
+    String depositColumn() {
+        return depositLegs.isEmpty() ? "none" : String.join(" > ", depositLegs) + " (runs " + depositRuns + ")";
+    }
+
     /** The running run's order (its desire id; null: no order's run), as AaRuntime's taskReplan. */
     private String runDesire;
 
@@ -389,6 +442,7 @@ final class SimGame {
     private void run(JobPort.TaskSpec t, long id) {
         say("run " + id + " (" + t.source() + "): " + t.steps().size() + " steps");
         runDesire = t.replan() == null ? null : t.replan().desire();
+        if (("goal." + Goals.DEPOSIT_KEY).equals(runDesire)) depositRuns++;
         runStartBag = new HashMap<>(bag);                // as AaRuntime.runTyped's typedStartBag: the bag at the run's start
         var steps = new io.github.mojolowjo.entropybot.aa.moves.Steps(new Hands());
         steps.start(t.chain(), t.steps(), t.uses(), clock.now() / TICK_MS, t.replan() == null ? null : t.replan().planner());
@@ -404,7 +458,7 @@ final class SimGame {
                 say("  run " + id + " cancelled: " + (port.cancelled.isEmpty() ? "?" : port.cancelled.get(port.cancelled.size() - 1)));
                 return;
             }
-            if (port.started.size() > handled + 1) { steps.cancel("the brain started another run"); return; }
+            if (port.started.size() > handled) { steps.cancel("the brain started another run"); return; }
             if (clock.now() == before) clock.advance(TICK_MS);
         }
         if (end != null) return;
@@ -432,6 +486,7 @@ final class SimGame {
             if (tr != null && s instanceof Step.ToSurface t) { io.github.mojolowjo.entropybot.aa.moves.FactChange.surface(t.x(), t.y(), t.z(), tr); fact = io.github.mojolowjo.entropybot.aa.moves.FactChange.take(); }
             if (tr != null && s instanceof Step.Climb) { io.github.mojolowjo.entropybot.aa.moves.FactChange.climb(tr); fact = io.github.mojolowjo.entropybot.aa.moves.FactChange.take(); }
             clock.advance(Math.round(last.seconds() * 1000));       // structural: milliseconds a second
+            if (("goal." + Goals.DEPOSIT_KEY).equals(runDesire)) depositLegs.add(leg(s) + (last.ok() ? "" : "!"));
             say("  " + s.text() + " -> " + last.text() + String.format(Locale.ROOT, " (%.1f s)", last.seconds()));
             return null;
         }
@@ -489,32 +544,6 @@ final class SimGame {
             };
         }
     }
-    /** The line's deposit came due: the walk to the main chest and exactly those items into it (the game's deposit job). */
-    private boolean deposit(Map<String, Integer> items) {
-        if (mainAt == null) { end = "deposit: no main chest set"; return false; }
-        String[] p = mainAt.split(" ");
-        int[] c = {Integer.parseInt(p[0]), Integer.parseInt(p[1]), Integer.parseInt(p[2])};
-        if (!"minecraft:chest".equals(world.at(c[0], c[1], c[2]))) { end = "deposit: no chest at " + mainAt + " (" + world.at(c[0], c[1], c[2]) + ")"; return false; }
-        // the deposit walk's lease, as the game's (AaRuntime.orderReserves with no running order): every -d amount in the
-        // bag is reserved, so the walk places none of it (the 100 worlds, 2026-11-22: 10 of 68 lines came up 1-10
-        // cobblestone short because the sim let the kept amounts go before the walk and placed them on the way)
-        sense();
-        lease = Goals.orderReserves(null, Goals.finished(bb), bb.in.bag, Goals.keptPer(bb));
-        SimSteps.Result w = SimSteps.apply(this, new Step.Walk(c[0], c[1], c[2], 2));
-        clock.advance(Math.round(w.seconds() * 1000));       // structural: milliseconds a second
-        if (!w.ok()) { say("deposit FAILED at " + mainAt + ": the walk there: " + w.text() + "; nothing put in, the items stay in the bag " + items); return false; }
-        List<String> put = new ArrayList<>(), short_ = new ArrayList<>();
-        for (var e : items.entrySet()) {
-            String id = e.getKey().contains(":") ? e.getKey() : "minecraft:" + e.getKey();
-            int n = Math.min(e.getValue(), bag.getOrDefault(id, 0));
-            if (n > 0) { take(id, n); chest.merge(id, n, Integer::sum); }
-            put.add(n + " " + e.getKey());
-            if (n < e.getValue()) short_.add(n + " of " + e.getValue() + " " + e.getKey());
-        }
-        say("deposit at " + mainAt + ": " + put + (short_.isEmpty() ? "" : "; SHORT: " + short_) + String.format(Locale.ROOT, " (walk %.1f s)", w.seconds()));
-        return true;
-    }
-
     /** The bag less every -d amount kept for a deposit (full item ids): what a step may use up first, as the planner counts it. */
     Map<String, Integer> freeItems() {
         Map<String, Integer> free = new HashMap<>(bag);

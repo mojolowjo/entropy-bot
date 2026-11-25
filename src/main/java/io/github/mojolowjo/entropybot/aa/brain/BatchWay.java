@@ -250,6 +250,7 @@ public final class BatchWay {
     /** The open orders of {@code g}'s trip (its batch's, not parked, not met, plain items, in the batch's order; alone: itself). */
     static List<Goals.Goal> open(Blackboard bb, Goals.Goal g) {
         List<Goals.Goal> out = new ArrayList<>();
+        if (g.depositGoal) return out;          // deposit-goal (stage 3): no trip of its own, no order's amounts set aside for it
         if (g.batch == null || !(bb.fact(Goals.FACT) instanceof List<?>)) {
             if (bb.in == null || Goals.have(Goals.free(bb, g), g) < g.n) out.add(g);
             return out;
@@ -265,7 +266,7 @@ public final class BatchWay {
     static String itemOf(Goals.Goal o) { return o.r.ids().isEmpty() ? o.r.key() : o.r.ids().get(0); }
 
     /** A trip is for plain-item orders only (a strip order or a group runs its own chain). */
-    static boolean tripOrder(Goals.Goal g) { return g.strip == null && !g.r.group(); }
+    static boolean tripOrder(Goals.Goal g) { return g.strip == null && !g.depositGoal && !g.r.group(); }
 
     /**
      * The trip's key (pure): the batch, its open orders, the place, the batch's holds (the bag's part: {@link #bagPart}). The

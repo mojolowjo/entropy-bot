@@ -92,7 +92,7 @@ class LineDepositsTest {
         OrderLineSim s = new OrderLineSim();
         Goals.Goal cob = s.order("cobblestone", 32, "b1", true), log = s.order("oak_log", 16, "b1", true);
         due(s, cob, log, 11);
-        s.deposits.started();
+        s.deposits.putStarted();
         assertTrue(s.deposits.dueNow().isEmpty(), "started: not due any more");
         assertEquals(32, s.deposits.kept(s.bag, List.of(), null, null).get("cobblestone"), "still kept until the run ends");
         log.parked = null;
@@ -154,7 +154,7 @@ class LineDepositsTest {
         Goals.Goal cob = s.order("cobblestone", 32, "b1", true), log = s.order("oak_log", 16, "b1", true);
         Goals.Goal stick = s.order("stick", 4, "b2", true);
         due(s, cob, log, 11);
-        s.deposits.started();
+        s.deposits.putStarted();
         s.bag.put("stick", 4);
         assertEquals(Kind.DUE, s.deposits.weigh(stick, "done", s.bag, AT).kind());
         s.deposits.gone(true);
@@ -178,7 +178,7 @@ class LineDepositsTest {
         LineDeposits.Out first = s.deposits.sweep(cob, s.bag, AT);
         assertEquals(Kind.DUE, first.kind(), first.text());
         assertEquals(Map.of("cobblestone", 20, "oak_log", 16), first.items());
-        s.deposits.started();
+        s.deposits.putStarted();
         s.bag.put("cobblestone", 32);                        // the run's way up dug through stone
         cob.parked = null;
         LineDeposits.Out again = s.deposits.weigh(cob, "done", s.bag, AT);
@@ -191,7 +191,7 @@ class LineDepositsTest {
         s.bag.remove("oak_log");
         assertEquals(Map.of("cobblestone", 12), s.deposits.dueNow(), "the remainder is still due: the -d amount goes whole");
         assertEquals(Map.of("cobblestone", 12), s.deposits.kept(s.bag, List.of(), null, null), "and still kept");
-        s.deposits.started();
+        s.deposits.putStarted();
         assertTrue(s.deposits.dueNow().isEmpty());
         s.deposits.gone(true);
         assertTrue(s.deposits.kept(s.bag, List.of(), null, null).isEmpty(), "the second run ended: nothing left behind");
@@ -205,7 +205,7 @@ class LineDepositsTest {
     void theEndOfARunSentWithNothingLeavesWhatCameDueMeanwhile() {
         OrderLineSim s = new OrderLineSim();
         Goals.Goal stick = s.order("stick", 4, "b2", true);
-        s.deposits.started();
+        s.deposits.putStarted();
         s.bag.put("stick", 4);
         assertEquals(Kind.DUE, s.deposits.weigh(stick, "done", s.bag, AT).kind());
         s.deposits.gone(true);
@@ -289,7 +289,7 @@ class LineDepositsTest {
     /**
      * Review 3: an order stopped earlier and met since is weighed again by its "done"; a due deposit of its line that had
      * not started is taken back by that weighing. Whatever the weighing answers, the line says so and nothing is due in
-     * the store any more (the runtime starts a queued deposit only from dueNow()).
+     * the store any more (the deposit goal puts only what owed() holds; dueNow() is its not-started part).
      */
     @Test
     void aTakeBackThroughAWeighingIsSaidAndNothingStaysDue() {
@@ -517,7 +517,7 @@ class LineDepositsTest {
             log.parked = "the explore from here froze";
             LineDeposits.Out out = s.deposits.sweep(log, s.bag, how.equals("no chest") ? null : AT);
             assertEquals(how.equals("no chest") ? Kind.NO_CHEST : Kind.DUE, out.kind(), out.text());
-            if (how.equals("failed")) { s.deposits.started(); s.deposits.gone(false); }
+            if (how.equals("failed")) { s.deposits.putStarted(); s.deposits.gone(false); }
             if (how.equals("refused")) s.deposits.gone(false);
             log.parked = null;                               // it woke; the 16 logs are still in the bag
             LineDeposits.Out woke = s.deposits.sweep(log, s.bag, AT);
@@ -536,7 +536,7 @@ class LineDepositsTest {
         OrderLineSim s = new OrderLineSim();
         Goals.Goal cob = s.order("cobblestone", 32, "b1", true), log = s.order("oak_log", 16, "b1", true);
         due(s, cob, log, 11);
-        s.deposits.started();
+        s.deposits.putStarted();
         s.deposits.gone(true);
         log.parked = null;
         assertEquals(Kind.WOKE_OPEN, s.deposits.sweep(log, s.bag, AT).kind());
@@ -557,16 +557,16 @@ class LineDepositsTest {
         Map<String, Integer> bag = Map.of("ingot_osmium", 2);
         assertEquals(Kind.DUE, d.weigh(g, "done", bag, AT).kind());
         assertEquals(Map.of("ingot_osmium", 2), d.dueNow(), "the weighing counts by the bag's key");
-        assertEquals(Map.of(osmium, 2), d.dueIds(), "the step is sent the full id");
+        assertEquals(Map.of(osmium, 2), d.owed(), "the step is sent the full id (owed, the one reader)");
         var stacks = List.of(new io.github.mojolowjo.entropybot.aa.brain.DepositRule.Item(osmium, 2, false, false, false, false));
-        assertEquals(Map.of(osmium, 2), io.github.mojolowjo.entropybot.aa.brain.DepositRule.onlyToPut(stacks, d.dueIds()), "the chest click finds the stack");
+        assertEquals(Map.of(osmium, 2), io.github.mojolowjo.entropybot.aa.brain.DepositRule.onlyToPut(stacks, d.owed()), "the chest click finds the stack");
         assertTrue(io.github.mojolowjo.entropybot.aa.brain.DepositRule.onlyToPut(stacks, d.dueNow()).isEmpty(), "the bare path names minecraft:ingot_osmium: the fault");
         // a vanilla item's full id is the minecraft one
         OrderLineSim s = new OrderLineSim();
         Goals.Goal cob = s.order("cobblestone", 32, null, true);
         s.bag.put("cobblestone", 32);
         assertEquals(Kind.DUE, s.deposits.weigh(cob, "done", s.bag, AT).kind());
-        assertEquals(Map.of("minecraft:cobblestone", 32), s.deposits.dueIds());
+        assertEquals(Map.of("minecraft:cobblestone", 32), s.deposits.owed());
     }
 
     /** A park with no wake (only the owner's word changes it) still ends its line: its bag goes to the chest as before. */
@@ -581,5 +581,225 @@ class LineDepositsTest {
         assertNotNull(cob.parked);
         assertEquals(List.of(Kind.NOTED, Kind.DUE), outs.stream().map(LineDeposits.Out::kind).toList(), String.valueOf(outs));
         assertEquals(Map.of("cobblestone", 11), outs.get(1).items());
+    }
+
+    // ---- deposit-goal plan, stage 1: the owed store (piece 2) ----
+
+    private static String id(Goals.Goal g, String counted) { return LineDeposits.fullId(g, counted); }
+
+    @Test
+    void owedFollowsTheDepositThroughDuePutAndEnd() {
+        OrderLineSim s = new OrderLineSim();
+        Goals.Goal cob = s.order("cobblestone", 32, "b1", true), log = s.order("oak_log", 16, "b1", true);
+        assertTrue(s.deposits.owed().isEmpty(), "nothing owed before the line ends");
+        due(s, cob, log, 11);
+        Map<String, Integer> all = Map.of(id(cob, "cobblestone"), 32, id(log, "oak_log"), 11);
+        assertEquals(all, s.deposits.owed(), "due: owed");
+        s.deposits.putStarted();
+        assertEquals(all, s.deposits.owed(), "on its way: still owed");
+        assertTrue(s.deposits.dueNow().isEmpty());
+        s.deposits.putEnded(false);
+        assertEquals(all, s.deposits.owed(), "failed: owed again");
+        assertFalse(cob.depositMissed || log.depositMissed, "a failed put marks no order missed");
+        assertEquals(Map.of("cobblestone", 32, "oak_log", 11), s.deposits.dueNow(), "due again, as before the put");
+        assertEquals(32, s.deposits.kept(s.bag, List.of(), null, null).get("cobblestone"), "the amounts still kept");
+        log.parked = null;                                   // a later take-back still works
+        LineDeposits.Out woke = s.deposits.sweep(log, s.bag, AT);
+        assertEquals(Kind.WOKE_TAKEN_BACK, woke.kind(), woke.text());
+        assertEquals(16, log.deposit, "nothing taken off its amount");
+        log.parked = "stopped again";
+        assertEquals(Kind.DUE, s.deposits.sweep(log, s.bag, AT).kind());
+        s.deposits.putStarted();
+        s.deposits.putEnded(true);
+        assertTrue(s.deposits.owed().isEmpty(), "reached: nothing owed");
+        assertTrue(s.deposits.owedOrders().isEmpty());
+    }
+
+    /**
+     * Review 6 (serious): the game's path - PutWatch counts at the clicks, the step's end (legEnded) notes depositPut, the
+     * task's end reads it reached. A stop with 20 of 32, the 20 reach the chest, a wake, then done: the 12 left are owed whole.
+     */
+    @Test
+    void aReachedPutThenAWakeOwesTheRestOnce() {
+        OrderLineSim s = new OrderLineSim();
+        Goals.Goal cob = s.order("cobblestone", 32, "b9", true);
+        s.bag.put("cobblestone", 20);
+        cob.parked = "stopped";
+        assertEquals(Kind.DUE, s.deposits.weigh(cob, "stopped", s.bag, AT).kind());
+        io.github.mojolowjo.entropybot.aa.brain.PutWatch w = new io.github.mojolowjo.entropybot.aa.brain.PutWatch(s.deposits);
+        w.started(7, false);
+        w.moved(Map.of("cobblestone", 20));                  // the count at the clicks
+        w.legEnded();                                        // StepHands: the Deposit step ended
+        assertNotNull(w.ended(7, true, null, "done"));
+        s.bag.remove("cobblestone");
+        assertTrue(s.deposits.owed().isEmpty(), "reached: nothing owed");
+        cob.parked = null;
+        LineDeposits.Out woke = s.deposits.sweep(cob, s.bag, AT);
+        assertEquals(Kind.WOKE_OPEN, woke.kind(), woke.text());
+        s.bag.put("cobblestone", 12);
+        LineDeposits.Out done = s.deposits.weigh(cob, "done", s.bag, AT);
+        assertEquals(Kind.DUE, done.kind(), done.text());
+        assertEquals(Map.of(id(cob, "cobblestone"), 12), s.deposits.owed(), "the 12 left, asked once");
+    }
+
+    @Test
+    void aWakeBeforeThePutTakesTheOwedDepositBack() {
+        OrderLineSim s = new OrderLineSim();
+        Goals.Goal cob = s.order("cobblestone", 32, "b1", true), log = s.order("oak_log", 16, "b1", true);
+        Goals.Goal stick = s.order("stick", 4, "b2", true);
+        due(s, cob, log, 11);
+        s.bag.put("stick", 4);
+        assertEquals(Kind.DUE, s.deposits.weigh(stick, "done", s.bag, AT).kind());
+        log.parked = null;
+        assertEquals(Kind.WOKE_TAKEN_BACK, s.deposits.sweep(log, s.bag, AT).kind());
+        assertEquals(Map.of(id(stick, "stick"), 4), s.deposits.owed(), "only the other line is owed now");
+    }
+
+    @Test
+    void aLineDueWhileThePutRunsStaysOwedAfterItReaches() {
+        OrderLineSim s = new OrderLineSim();
+        Goals.Goal cob = s.order("cobblestone", 32, "b1", true), log = s.order("oak_log", 16, "b1", true);
+        Goals.Goal stick = s.order("stick", 4, "b2", true);
+        due(s, cob, log, 11);
+        s.deposits.putStarted();
+        s.bag.put("stick", 4);
+        assertEquals(Kind.DUE, s.deposits.weigh(stick, "done", s.bag, AT).kind());
+        s.deposits.putEnded(true);
+        assertEquals(Map.of(id(stick, "stick"), 4), s.deposits.owed());
+        assertEquals(Map.of("stick", 4), s.deposits.dueNow());
+    }
+
+    /** Stage 4 review (a): a line came due between the plan and the put's start - the stale put does not start. */
+    @Test
+    void aLineDueAfterThePlanStopsTheStalePut() {
+        OrderLineSim s = new OrderLineSim();
+        Goals.Goal cob = s.order("cobblestone", 32, "b1", true), log = s.order("oak_log", 16, "b1", true);
+        Goals.Goal stick = s.order("stick", 4, "b2", true);
+        due(s, cob, log, 11);
+        Map<String, Integer> planned = s.deposits.owed();
+        assertNull(s.deposits.putDiffers(planned), "planned as owed: the put starts");
+        s.bag.put("stick", 4);
+        assertEquals(Kind.DUE, s.deposits.weigh(stick, "done", s.bag, AT).kind());
+        String why = s.deposits.putDiffers(planned);
+        assertNotNull(why, "owed grew: the stale put must not start");
+        assertTrue(why.contains("planning again"), why);
+        assertNull(s.deposits.putDiffers(s.deposits.owed()), "the new plan carries what is owed");
+    }
+
+    /** Stage 4 review (b): a take-back between the plan and the put's start - the stale put does not start. */
+    @Test
+    void aTakeBackAfterThePlanStopsTheStalePut() {
+        OrderLineSim s = new OrderLineSim();
+        Goals.Goal cob = s.order("cobblestone", 32, "b1", true), log = s.order("oak_log", 16, "b1", true);
+        due(s, cob, log, 11);
+        Map<String, Integer> planned = s.deposits.owed();
+        log.parked = null;
+        assertEquals(Kind.WOKE_TAKEN_BACK, s.deposits.sweep(log, s.bag, AT).kind());
+        assertNotNull(s.deposits.putDiffers(planned), "owed shrank: the stale put must not start");
+        assertTrue(s.deposits.owed().isEmpty());
+        assertNull(s.deposits.putDiffers(Map.of()));
+    }
+
+    /**
+     * Review 2 (fault 1): the put started in task 5 is cancelled mid-walk, then task 6 (a torch order) ends done - its end
+     * never counts the put reached; only task 5's end reads it. The cancel reads it not reached: the items stay owed.
+     */
+    @Test
+    void anotherTasksEndNeverCountsThePutReached() {
+        var dep = new io.github.mojolowjo.entropybot.aa.moves.Step.Deposit(null, Map.of("minecraft:cobblestone", 11), new int[]{0, 64, 0});
+        var craft = new io.github.mojolowjo.entropybot.aa.moves.Step.Craft("torch", 4, false);
+        assertFalse(LineDeposits.putReached(5, 6, true, null), "another task's done end");
+        assertFalse(LineDeposits.putReached(-1, -1, true, null), "no put");
+        assertTrue(LineDeposits.putReached(5, 5, true, null));
+        assertFalse(LineDeposits.putReached(5, 5, false, dep), "failed at the put itself");
+        assertTrue(LineDeposits.putReached(5, 5, false, craft), "failed at a step after the put");
+        assertFalse(LineDeposits.putReached(5, 5, false, null), "failed with no step known");
+
+        OrderLineSim s = new OrderLineSim();
+        Goals.Goal cob = s.order("cobblestone", 32, "b1", true), log = s.order("oak_log", 16, "b1", true);
+        due(s, cob, log, 11);
+        Map<String, Integer> owed = s.deposits.owed();
+        s.deposits.putStarted();
+        int reached = s.deposits.putsReached();
+        s.deposits.putEnded(LineDeposits.putReached(5, 6, true, null), Map.of());   // the cancel's read: not reached
+        assertEquals(owed, s.deposits.owed(), "the items stay owed and kept");
+        assertEquals(reached, s.deposits.putsReached());
+    }
+
+    /** Review 2 (fault 2): a put that failed after moving some stacks owes only the rest, never the whole amount twice. */
+    @Test
+    void aShortPutOwesOnlyTheRest() {
+        OrderLineSim s = new OrderLineSim();
+        Goals.Goal cob = s.order("cobblestone", 32, "b1", true), log = s.order("oak_log", 16, "b1", true);
+        due(s, cob, log, 11);
+        Map<String, Integer> owed = s.deposits.owed();
+        assertFalse(owed.isEmpty());
+        String k = owed.keySet().iterator().next();
+        int n = owed.get(k);
+        s.deposits.putStarted();
+        s.deposits.putEnded(false, Map.of(k, 1));
+        Map<String, Integer> want = new java.util.TreeMap<>(owed);
+        if (n == 1) want.remove(k); else want.put(k, n - 1);
+        assertEquals(want, s.deposits.owed(), "what went in is not owed again");
+        // everything went in though the leg failed late: counted reached
+        int reached = s.deposits.putsReached();
+        s.deposits.putStarted();
+        s.deposits.putEnded(false, s.deposits.owed());
+        assertTrue(s.deposits.owed().isEmpty());
+        assertEquals(reached + 1, s.deposits.putsReached());
+    }
+
+    /** Review 2 (fault 4): the planned put's keys carry "minecraft:" (NeedChain.id); owed's bare fallback key still matches. */
+    @Test
+    void putDiffersComparesByOneNormalisation() {
+        OrderLineSim s = new OrderLineSim();
+        Goals.Goal cob = s.order("cobblestone", 32, "b1", true), log = s.order("oak_log", 16, "b1", true);
+        due(s, cob, log, 11);
+        Map<String, Integer> bare = new java.util.TreeMap<>(), full = new java.util.TreeMap<>();
+        for (var e : s.deposits.owed().entrySet()) {
+            bare.put(e.getKey().replaceFirst("^minecraft:", ""), e.getValue());
+            full.put(io.github.mojolowjo.entropybot.aa.NeedChain.id(e.getKey()), e.getValue());
+        }
+        assertNull(s.deposits.putDiffers(bare));
+        assertNull(s.deposits.putDiffers(full));
+    }
+
+    /** Stage 4 review: an escape resume starts the same put again - nothing changed, it still matches. */
+    @Test
+    void aResumedPutStillMatches() {
+        OrderLineSim s = new OrderLineSim();
+        Goals.Goal cob = s.order("cobblestone", 32, "b1", true), log = s.order("oak_log", 16, "b1", true);
+        due(s, cob, log, 11);
+        Map<String, Integer> planned = s.deposits.owed();
+        s.deposits.putStarted();
+        assertNull(s.deposits.putDiffers(planned));
+        s.deposits.putStarted();
+        assertEquals(planned, s.deposits.owed(), "a second start moves nothing twice");
+    }
+
+    @Test
+    void aFailedPutJoinsALineThatCameDueMeanwhile() {
+        OrderLineSim s = new OrderLineSim();
+        Goals.Goal cob = s.order("cobblestone", 32, "b1", true), log = s.order("oak_log", 16, "b1", true);
+        Goals.Goal stick = s.order("stick", 4, "b2", true);
+        due(s, cob, log, 11);
+        s.deposits.putStarted();
+        s.bag.put("stick", 4);
+        assertEquals(Kind.DUE, s.deposits.weigh(stick, "done", s.bag, AT).kind());
+        s.deposits.failed();
+        assertEquals(Map.of("cobblestone", 32, "oak_log", 11, "stick", 4), s.deposits.dueNow());
+    }
+
+    @Test
+    void owedOrdersCountTheOrdersThatNotedNothing() {
+        OrderLineSim s = new OrderLineSim();
+        Goals.Goal cob = s.order("cobblestone", 32, "b1", true), log = s.order("oak_log", 16, "b1", true);
+        due(s, cob, log, 0);
+        assertEquals(Map.of(id(cob, "cobblestone"), 32), s.deposits.owed());
+        var orders = s.deposits.owedOrders();
+        assertEquals(2, orders.size());
+        assertTrue(orders.contains(cob) && orders.contains(log), "oak_log noted nothing, it is still behind the deposit");
+        s.deposits.putStarted();
+        assertEquals(2, s.deposits.owedOrders().size(), "on its way: the same orders");
     }
 }

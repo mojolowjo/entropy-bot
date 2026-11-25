@@ -53,7 +53,53 @@ final class SimSteps {
         if (s instanceof Step.Climb) return climb(g, null);
         if (s instanceof Step.ToSurface t) return climb(g, new int[]{t.x(), t.y(), t.z()});       // the game: done there, or as soon as the feet stand under open sky
         if (s instanceof Step.Explore e) return explore(g, e);
+        if (s instanceof Step.Deposit d && d.chest() != null) return deposit(g, d.chest(), d);
         return Result.NOT_SIMULATED;
+    }
+
+    static final double PUT_S = 2;               // sim: the chest opened and the items moved (not measured)
+    static final int PUT_REACH = 2;              // sim: the feet within this of the chest (ToStation stands within 2)
+
+    /**
+     * deposit-goal stage 3: the put (the planned Step.Deposit with its chest cell). The feet within {@link #PUT_REACH} of
+     * the chest; moves exactly min(owed, bag) of each owed item (LineDeposits.owed, the one store) and says SHORT for less.
+     * No chest block there: fails with the deposit's words, and the owed items stay owed (putEnded false).
+     */
+    private static Result deposit(SimGame g, int[] c, Step.Deposit step) {
+        if (SimWorld.dist(c, g.feet) > PUT_REACH + 0.5)        // structural: a cell's half
+            return Result.fail(0, "deposit: the chest at " + c[0] + " " + c[1] + " " + c[2] + " is " + Math.round(SimWorld.dist(c, g.feet)) + " blocks from the feet");
+        var owed = g.deposits.owed();
+        // review 6: the game's path - PutWatch.started (putStarted), the count at the clicks (moved), the step's end
+        // (StepHands: putMoved + putLegEnded) and the task's end (AaRuntime: PutWatch.ended); one sim task per put
+        long task = ++g.putTask;                 // review 7: per game, no static that outlives a test
+        g.put.started(task, false);
+        if (!"minecraft:chest".equals(g.world.at(c[0], c[1], c[2]))) {
+            g.put.legEnded();
+            g.put.ended(task, false, step, "sim: no chest");
+            // review 4: the game's words (DepositLeg: "chest at x y z gone"), the ones the main chest's hold reads
+            return Result.fail(PUT_S, "deposit: " + io.github.mojolowjo.entropybot.aa.brain.DepositRule.gone(c) + " (" + g.world.at(c[0], c[1], c[2]) + " there)");
+        }
+        java.util.List<String> put = new java.util.ArrayList<>(), short_ = new java.util.ArrayList<>();
+        Map<String, Integer> moved = new java.util.TreeMap<>();
+        int left = 0;
+        for (var e : owed.entrySet()) {
+            String id = full(e.getKey());
+            int n = Math.min(e.getValue(), g.bag.getOrDefault(id, 0));
+            // review 4: a chest with an end takes what fits; the rest stays in the bag (the game's QUICK_MOVE)
+            if (g.chestRoom != null) { int fits = Math.min(n, g.chestRoom); left += n - fits; n = fits; g.chestRoom -= fits; }
+            if (n > 0) { g.take(id, n); g.chest.merge(id, n, Integer::sum); moved.put(e.getKey(), n); }
+            put.add(n + " " + e.getKey());
+            if (n < e.getValue()) short_.add(n + " of " + e.getValue() + " " + e.getKey());
+        }
+        g.put.moved(moved);                      // the count at the clicks
+        g.put.legEnded();                        // StepHands: the Deposit step ended (done or failed)
+        if (left > 0) {
+            g.put.ended(task, false, step, "sim: the chest is full");
+            return Result.fail(PUT_S, "deposit: " + moved.values().stream().mapToInt(Integer::intValue).sum() + " items went in at " + c[0] + " " + c[1] + " " + c[2]
+                    + ": " + io.github.mojolowjo.entropybot.aa.brain.DepositRule.full(c, left));
+        }
+        g.put.ended(task, true, null, "sim: put done");
+        return Result.ok(PUT_S, "deposit at " + c[0] + " " + c[1] + " " + c[2] + ": " + put + (short_.isEmpty() ? "" : "; SHORT: " + short_));
     }
 
     /**

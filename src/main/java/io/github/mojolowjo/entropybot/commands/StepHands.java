@@ -541,6 +541,8 @@ public final class StepHands implements Steps.Hands {
             if (fishing != null) fishing.end();
             if (vein != null) vein.stop();
             if (deposit != null) {
+                // review 4 (point 2): a cancel between the clicks and the count still hands over what went in
+                if (c.aaRuntime != null) c.aaRuntime.putMoved(deposit.putItems());
                 LocalPlayer dp = Minecraft.getInstance().player;
                 if (dp != null && Gui.open(dp)) Gui.close(dp);
                 io.github.mojolowjo.entropybot.aa.moves.JobHands.get().stop(why);
@@ -750,15 +752,37 @@ public final class StepHands implements Steps.Hands {
                 return follow("walk", () -> c.stepJob("walk " + x + " " + y + " " + z, () -> c.walkNearTo(p, x, y, z)));
             }
         }, this::requestStatus);
+        // deposit-goal stage 4: the planned put (a chest given: the deposit goal's step) starts here - what is owed goes on
+        // its way (the take-back cutoff); its end is read with the task's (AaRuntime.putOver). The strip order's deposit
+        // and the plain aa deposit carry no chest and are unchanged
+        if (d.chest() != null) {
+            if (c.aaRuntime == null) return "error: deposit: the put to the chest at " + d.chestText() + " has no owed store (aa not loaded)";
+            // stage 4 review: the step's items were fixed at the plan; what is owed may have changed since (a line came due,
+            // a take-back) - then the put does not start, said, and the goal plans again from what is owed; never send on
+            // its way what is not put. Review 2 (fault 3): not a failed step - a failed Deposit charges the chest's key
+            // (NeedChain.sourceKey), and a stale plan is not the chest's fault. The step ends with nothing put; the owed
+            // amount is untouched, so the deposit goal stays and the run's nothing-gained end is counted failed (FastEnd)
+            String differs = c.aaRuntime.putDiffers(d.only());
+            if (differs != null) { deposit = null; instant = "ok: no put - " + differs; return null; }
+        }
         String[] inst = new String[1];
         String r = deposit.start(p, inst);
+        // review 3 (fault 1): the put goes on its way only when the leg really starts - an instant end ("none of X in the
+        // bag": nothing is put) sends nothing on its way, the owed amount stays owed and the goal's run is a nothing-gained
+        // end (FastEnd, said); never a put counted as in the chest that moved nothing
+        if (d.chest() != null && r == null && inst[0] == null) c.aaRuntime.putStarted();
         if (inst[0] != null) { instant = inst[0]; deposit = null; }
         return r;
     }
 
     private Car.Status depositStatus(LocalPlayer p) {
         Car.Status st = deposit.tick(p);
-        if (st.state() != Car.State.RUNNING) deposit = null;
+        if (st.state() != Car.State.RUNNING) {
+            // review 2 (fault 2): what the planned put moved, so a failed put owes only the rest (AaRuntime.putOver)
+            // review 5: and that part comes off the owed amount now, so an in-run re-plan never asks for it again
+            if (c.aaRuntime != null) { c.aaRuntime.putMoved(deposit.putItems()); c.aaRuntime.putLegEnded(); }
+            deposit = null;
+        }
         return st;
     }
 

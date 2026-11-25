@@ -84,17 +84,4 @@ public final class RunnerOwner {
         said = mark;
         return line;
     }
-
-    /**
-     * Why the line's due deposit does not start now, null: the slot is free. {@code taskOpen}: the brain's task has not been
-     * read to its end (a run that ended in this tick is still the task's until its end is read - starting the deposit there
-     * is what mixed the two runs up). Each reason is a fact of the slot, said by the caller when it changes.
-     */
-    public String depositWaits(boolean taskOpen, boolean runnerBusy, boolean jobBusy, boolean chainBusy) {
-        if (runnerBusy) return "the step runner holds " + name;
-        if (jobBusy) return "a job holds the slot";
-        if (chainBusy) return "AA's own chain runs";
-        if (taskOpen) return "the brain's task has not been read to its end (its run's end comes first, then the deposit)";
-        return null;
-    }
 }

@@ -28,7 +28,11 @@ public final class OwnStations {
         return io.github.mojolowjo.entropybot.aa.brain.ItemWorth.station(s);
     }
 
-    /** 0.33.0 review: the stations that hold items (the game's Container block entities); one is picked up only when it is known to be empty. */
+    /**
+     * 0.33.0 review: the stations that hold items (the game's Container block entities); one is picked up only when it is
+     * known to be empty. Review 7: true only when known (ItemWorth.containerOf YES); a reader that must tell "no" from "not
+     * loaded" asks ItemWorth.containerOf itself.
+     */
     public static boolean container(String id) {
         return id != null && io.github.mojolowjo.entropybot.aa.brain.ItemWorth.container(id.toLowerCase());
     }
@@ -45,6 +49,9 @@ public final class OwnStations {
         if (recordedKind == null || nowKind == null || !recordedKind.replaceFirst("^minecraft:", "").equals(nowKind.replaceFirst("^minecraft:", "")))
             return "the " + nowKind + " at " + at + " is not the one I placed";
         if (removedSince) return "the " + nowKind + " at " + at + " was broken and put back since I placed it: not mine any more";
+        // review 7 (rule 15): before the item data is in, whether the block holds items is not known: never picked up then
+        if (id != null && io.github.mojolowjo.entropybot.aa.brain.ItemWorth.containerOf(id.toLowerCase()) == io.github.mojolowjo.entropybot.aa.brain.ItemWorth.Container.NOT_LOADED)
+            return "the " + nowKind + " at " + at + " may hold items (the item data is not loaded yet, so whether it is a container is not known)";
         if (container(id)) {
             if (contents == null) return "the " + nowKind + " at " + at + " may hold items (I haven't looked inside since I placed it): open it or take its items first";
             if (contents > 0) return "the " + nowKind + " at " + at + " holds " + contents + " items: take them first (take all " + at + ")";

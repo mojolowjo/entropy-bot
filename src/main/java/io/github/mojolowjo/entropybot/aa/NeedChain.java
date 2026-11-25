@@ -900,7 +900,7 @@ public final class NeedChain {
 
     static String s(double seconds) { return String.format(Locale.ROOT, "%.1f s", seconds); }
 
-    static String id(String w) { return w == null ? null : w.indexOf(':') < 0 ? "minecraft:" + w : w; }
+    public static String id(String w) { return w == null ? null : w.indexOf(':') < 0 ? "minecraft:" + w : w; }
 
     /** The id as the lines and steps write it ("minecraft:torch" -> "torch"; a modded id stays whole). */
     static String sh(String id) { return id == null ? "?" : id.startsWith("minecraft:") ? id.substring(10) : id; }
@@ -1313,6 +1313,7 @@ public final class NeedChain {
         double partWalk, partDig;   // job-est: running sums of the source walks and digs (debug.wayProbe reads a way's share as a difference; never restored)
         boolean bandPick;     // 0.39.z69 item 1: a band walk's pickaxe-first is being priced (no second one inside it)
         boolean lending;      // pickaxe price review 3 item 6: a lend's collect again is being priced (no second lend inside it)
+        boolean climbPick;    // deposit-goal stage 4 review 3: a climb's "make a pickaxe first" is being priced (no second one inside it)
         /**
          * 0.39.z61 (D1 J2): a craft / smelt step (this very object) -> what the simulated bag took for it, by the recipe slot's
          * need word. Keyed by identity: a dropped way's steps simply never reach the chain (no restore needed).
@@ -1964,7 +1965,7 @@ public final class NeedChain {
                          boolean tableReady, boolean furnaceReady, boolean stuck, String unknown, String pickItem, int pickTier, boolean tableWalked,
                          boolean furnaceWalked, int pickWorn, boolean pickMade, boolean pickOut, boolean atRoom, String down, int downAt,
                          boolean tableDown, boolean furnaceDown, Map<String, Integer> upBag, List<String> path, int pathsWaiting, Map<String, Integer> aside,
-                         boolean hoisting, boolean bandPick, Burn burned, String fail, String loopOn, Set<String> keptFuel) {}
+                         boolean hoisting, boolean bandPick, boolean climbPick, boolean lending, Burn burned, String fail, String loopOn, Set<String> keptFuel) {}
 
     /** A cheap hash of an entry state (its sizes and scalars; equal entries hash equal, a clash is settled by Deep.equal). */
     private static int hashOf(Entry e) {
@@ -1973,7 +1974,7 @@ public final class NeedChain {
                 e.down(), e.downAt(), e.path(), e.pathsWaiting(), e.fail(), e.loopOn(), e.unknown(), e.leafAt().size(), e.taken().size());
         int flags = (e.tableReady() ? 1 : 0) | (e.furnaceReady() ? 2 : 0) | (e.stuck() ? 4 : 0) | (e.tableWalked() ? 8 : 0) | (e.furnaceWalked() ? 16 : 0)    // structural: bits
                 | (e.pickMade() ? 32 : 0) | (e.pickOut() ? 64 : 0) | (e.atRoom() ? 128 : 0) | (e.tableDown() ? 256 : 0) | (e.furnaceDown() ? 512 : 0)       // structural: bits
-                | (e.hoisting() ? 1024 : 0) | (e.bandPick() ? 2048 : 0);                                                                                    // structural: bits
+                | (e.hoisting() ? 1024 : 0) | (e.bandPick() ? 2048 : 0) | (e.climbPick() ? 4096 : 0) | (e.lending() ? 8192 : 0);                                                         // structural: bits
         return 31 * h + flags;                                                                                                                              // structural: a hash's multiplier
     }
 
@@ -1987,7 +1988,7 @@ public final class NeedChain {
         private final List<String> path;
         private final int pathsWaiting;
         private final Map<String, Integer> aside;
-        private final boolean hoisting, bandPick;
+        private final boolean hoisting, bandPick, climbPick, lending;
         private final Burn burned;
         private final String fail, loopOn;
         private final Set<String> kept;
@@ -2000,6 +2001,8 @@ public final class NeedChain {
             aside = new LinkedHashMap<>(c.aside);
             hoisting = c.hoisting;
             bandPick = c.bandPick;
+            climbPick = c.climbPick;          // stage 4 review 3: a node priced inside a climb's pickaxe-first is not reused outside it
+            lending = c.lending;              // review 4: a node priced inside a lend's collect again (no lend there) is not reused outside it
             burned = c.burned;
             fail = c.fail;
             loopOn = c.loopOn;
@@ -2012,7 +2015,7 @@ public final class NeedChain {
             if (e[i] == null) e[i] = new Entry(fullSteps ? s.steps() : (Object) s.steps().size(), s.leafAt(), s.taken(), awayRead ? s.away() : null,
                     s.tableReady(), s.furnaceReady(), s.stuck(), s.unknown(), s.pickItem(), s.pickTier(), s.tableWalked(), s.furnaceWalked(), s.pickWorn(),
                     s.pickMade(), s.pickOut(), s.atRoom(), s.down(), s.downAt(), s.tableDown(), s.furnaceDown(), s.upBag(), path, pathsWaiting, aside,
-                    hoisting, bandPick, burned, fail, loopOn, kept);
+                    hoisting, bandPick, climbPick, lending, burned, fail, loopOn, kept);
             return e[i];
         }
 
@@ -2674,6 +2677,127 @@ public final class NeedChain {
     private static Chain resolveToolIn(Ctx c, int tier) {
         String phrase = tier > c.pickTier ? cheapestPickaxe(c, tier) : null;
         return finish(c, "pickaxe", phrase == null ? "a pickaxe of tier " + tier + " is in the bag" : "pickaxe <- " + phrase);
+    }
+
+    /**
+     * deposit-goal plan, stage 2 (pieces 3, 5, 8 folded in; owner 2026-11-23: the line's deposit is a planned, priced goal
+     * with its own ways out of the ground): the chain that puts {@code owedIds} (full id -> count, LineDeposits.owed) into the
+     * main chest ({@code chest}, MainChest.of). The ways are options for {@link #choose} (rule 1): the walk to the chest and
+     * the put (Step.ToStation + Step.Deposit), and under ground the walk up ({@link #surfaceWalk}) and the climb
+     * ({@link #climbUp}, with its pickaxe-first and lend ways). A way out is one leg: the chain ends after it, the goal stays
+     * unmet and is priced again from the new feet. Under ground (or the surface not known, rule 15) only a PRICED walk to the
+     * chest is offered (rule 22); on the surface an estimate is ranked (rule 18 amended, run JAC). A walk still computing is
+     * the chain's wait (PathPrice.NOT_KNOWN: the bot stands). No way: the failure names every way's reason (rule 7).
+     * The world is the planner's world ({@code Goals.keptOff}, its reserves from {@code Goals.plannerReserves}); for the
+     * deposit goal every kept amount, the owed ones included, is off its bag (stage 4 review 3: the runner holds them all
+     * from the run's crafts, Goals.keptForRun with consume), so no way crafts, places or lends what is owed - only the put
+     * uses it; nothing here reserves them a second time (counted once, the -d amount reaches the chest whole). The world
+     * is used as given.
+     */
+    public static Chain deposit(Map<String, Integer> owedIds, io.github.mojolowjo.entropybot.aa.brain.MainChest.Answer chest, World w) {
+        Map<String, Integer> owed = new TreeMap<>();
+        if (owedIds != null) for (var e : owedIds.entrySet()) if (e.getValue() != null && e.getValue() > 0) owed.merge(id(e.getKey()), e.getValue(), Integer::sum);
+        return root("deposit", java.util.Arrays.asList(owed, chest), w, c -> depositIn(c, owed, chest), NeedChain::fresh);
+    }
+
+    /** deposit-goal stage 2: the words of a chest walk not offered from under ground (rule 22). */
+    public static final String CHEST_NOT_PRICED = "the walk to the main chest is not a priced path";
+
+    private static Chain depositIn(Ctx c, Map<String, Integer> owed, io.github.mojolowjo.entropybot.aa.brain.MainChest.Answer chest) {
+        final String name = "deposit";
+        if (owed.isEmpty()) { c.fail = "nothing owed to the main chest"; return finish(c, name, name); }
+        if (chest == null) chest = new io.github.mojolowjo.entropybot.aa.brain.MainChest.None("no main chest reader answered");
+        int x, y, z;
+        switch (chest) {
+            case io.github.mojolowjo.entropybot.aa.brain.MainChest.None n -> {
+                c.fail = "no main chest set (" + n.why() + ")";
+                return finish(c, name, name);
+            }
+            case io.github.mojolowjo.entropybot.aa.brain.MainChest.NotLoaded n -> { x = n.x(); y = n.y(); z = n.z(); }
+            case io.github.mojolowjo.entropybot.aa.brain.MainChest.Known k -> { x = k.x(); y = k.y(); z = k.z(); }
+            // review 4 (point 1): full or gone, held while it is true (MainChestHold): no way, the reason said
+            case io.github.mojolowjo.entropybot.aa.brain.MainChest.Held h -> {
+                c.fail = h.why();
+                return finish(c, name, name);
+            }
+        }
+        Surface over = c.w.where().surface().get();
+        boolean under = over != null && (over.depth() >= AaLadder.surfaceDepth() || over.hole() && over.depth() > 0);   // the explore's test (rule 22)
+        String overWhy = over == null ? "the surface over the bot is not known (its column is not loaded; rule 15: not known is never on the surface)" : null;
+        String key = stationKey(x, y, z);
+        String held = heldExact(c, key);
+        List<Alt> ways = new ArrayList<>();
+        List<String> notOffered = new ArrayList<>();
+        if (held != null) notOffered.add("the walk to the main chest at " + x + " " + y + " " + z + " is held (" + held + ")");
+        else {
+            final String strict = under ? "not offered from under ground (rule 22)" : over == null ? "not offered while the surface is not known (rules 15, 22)" : null;
+            ways.add(new Alt("walk to the main chest", () -> {
+                String walked = stationWalk(c, "container", "main chest", x, y, z, strict);
+                if (walked == null) return null;
+                c.steps.add(new Step.Deposit(null, Map.copyOf(owed), new int[]{x, y, z}));
+                return "put " + counted(owed) + " into the main chest: " + walked;
+            }));
+        }
+        if (overWhy != null) notOffered.add(overWhy);
+        if (under) {
+            ways.add(new Alt("walk up", () -> {
+                String up = surfaceWalk(c);
+                if (up == null && c.fail == null) {
+                    String why = heldLine(c, SURFACE_AT);
+                    if (why == null) for (var e : c.unreachableRead().entrySet()) if (e.getKey().startsWith(SURFACE_AT)) { why = e.getKey() + ": " + e.getValue(); break; }
+                    c.fail = "no walk up (" + (why == null ? SURFACE_IS_HERE : why) + ")";
+                }
+                return up;
+            }));
+            ways.add(new Alt("climb", () -> climbUp(c, over)));
+        }
+        int d0 = c.dropped.size();
+        Trial win = choose(c, ways, null);
+        if (win == null) {
+            if (c.fail != null && c.fail.startsWith(PathPrice.NOT_KNOWN)) return finish(c, name, name);     // rule 22: the bot stands
+            List<String> why = new ArrayList<>(notOffered);
+            for (int i = d0; i < c.dropped.size(); i++) why.add(c.dropped.get(i));
+            if (c.fail != null && !why.contains(c.fail)) why.add(c.fail);
+            c.fail = "no way to the main chest at " + x + " " + y + " " + z + " (" + String.join("; ", why) + ")";
+            return finish(c, name, name);
+        }
+        String head = name + " <- " + win.phrase();
+        if (!notOffered.isEmpty()) head += " (not offered: " + String.join("; ", notOffered) + ")";
+        return finish(c, name, head);
+    }
+
+    /**
+     * deposit-goal stage 2: the walk to a station cell as a step - {@link #walk} (the one walk pricer, rule 23) and a
+     * Step.ToStation when it takes more than 0 s (knownWalk's two lines, without its table/furnace marks). {@code strict}
+     * (under ground, or the surface not known: the words why): an estimate or chunks not loaded fail with them (rule 22); a
+     * walk with no path fails with walk()'s own words. Else an estimate is ranked (at least the straight metres,
+     * estimateFloor) and chunks not loaded on Baritone's estimate (floored the same), or with none the straight metres (rule 18
+     * amended, run JAC), said. A walk still computing fails with PathPrice.NOT_KNOWN (the wait). Null with {@code c.fail}.
+     */
+    private static String stationWalk(Ctx c, String kind, String label, int x, int y, int z, String strict) {
+        int[] feet = c.w.where().feet() == null ? null : c.w.where().feet().get();
+        double dist = feet != null && feet.length >= 3 ? dist3(new int[]{x, y, z}, feet) : 0;    // structural: x y z; no feet: no floor
+        Walked wk = walk(c, x, y, z, dist);
+        if (strict != null && (wk.kind() == PathPrice.Kind.ESTIMATED || wk.kind() == PathPrice.Kind.CHUNKS)) {
+            c.fail = CHEST_NOT_PRICED + " (" + wk.kind().name().toLowerCase(java.util.Locale.ROOT) + (wk.fail() == null ? "" : ": " + wk.fail())
+                    + "): " + strict;
+            return null;
+        }
+        if (strict == null && wk.kind() == PathPrice.Kind.CHUNKS && feet != null) {
+            c.fail = null;
+            PathPrice pp = c.w.path();
+            double be = pp == null ? Double.NaN : pp.estimate(x, y, z);        // rule 18 amended (run JAC): Baritone's heuristic first
+            if (!Double.isNaN(be) && be >= 0)
+                wk = estimateFloor(new Walked(be, "walk ~" + s(be) + " (" + RANKED + ", not priced: chunks not loaded, Baritone's estimate)", null, PathPrice.Kind.ESTIMATED), dist);
+            else {
+                double es = io.github.mojolowjo.entropybot.aa.brain.Unit.seconds(dist);   // rule 15: no estimate here - the straight metres, said
+                wk = new Walked(es, "walk ~" + s(es) + " (" + RANKED + ", not priced: chunks not loaded, no Baritone estimate, the straight " + Math.round(dist) + " m)", null, PathPrice.Kind.ESTIMATED);
+            }
+        }
+        if (c.fail != null) return null;
+        if (wk.seconds() > 0) c.steps.add(new Step.ToStation(kind, label, x, y, z));
+        c.addS(wk.seconds());
+        return noted("at the " + label + " " + x + " " + y + " " + z, wk);
     }
 
     // ---- 0.39.z77 J2: the playbook way (D5 J2; SHAPE CHANGE 2026-10-26: every plain-item order's one trip, BatchWay) ----
@@ -5313,6 +5437,9 @@ public final class NeedChain {
         if (s instanceof Step.Collect k) return "collect " + k.item();
         if (s instanceof Step.TakeStation t) return "take at " + t.x() + " " + t.y() + " " + t.z();   // 0.39.z48
         if (s instanceof Step.ToStation t) return stationKey(t.x(), t.y(), t.z());                  // 0.39.z65 review 1
+        // deposit-goal stage 2 (piece 5): the put's own faults (no chest block, nothing opened) hold the chest's cell, the
+        // key the chest walk reads (StationHolds, lifted by distance); a put with no chest cell has no key as before
+        if (s instanceof Step.Deposit d && d.chest() != null && d.chest().length >= 3) return stationKey(d.chest()[0], d.chest()[1], d.chest()[2]);   // structural: x y z
         if (s instanceof Step.ToBand b) return io.github.mojolowjo.entropybot.aa.moves.FactChange.bandKey(b.minY(), b.maxY());   // 0.39.z42
         // 0.39.z43 / z46: a strip that ended (lava, no path, no pickaxe) or the walk down to it; 0.39.z78 strip: held by its
         // heading at its Y, the one strip key every reader asks (stripHold)
@@ -6694,11 +6821,7 @@ public final class NeedChain {
     }
 
     /** A source key held for the order (World.held's "key: why" lines). */
-    private static boolean heldKey(Ctx c, String key) {
-        if (c.w.held() == null) return false;
-        for (String h : c.w.held()) if (h.startsWith(key + ": ")) return true;
-        return false;
-    }
+    private static boolean heldKey(Ctx c, String key) { return heldExact(c, key) != null; }
 
     /**
      * The strip way's price (rule 14, rough; STRIP_MINING "third version"): the pickaxe the ores ask for first (StepNeeds'
@@ -7540,6 +7663,13 @@ public final class NeedChain {
         return null;
     }
 
+    /** The held line of exactly {@code key} ("key" or "key: why"; "station at 1 2 3" never matches "station at 1 2 30"), null: none. */
+    private static String heldExact(Ctx c, String key) {
+        if (c.w.held() == null) return null;
+        for (String h : c.w.held()) if (h.equals(key) || h.startsWith(key + ":")) return h;
+        return null;
+    }
+
     /**
      * 0.39.z77 answers (2) (manager 2026-10-26: "walk up failed" is followed by "climb with N blocks from the bag" as a way):
      * under ground with no priced walk up (held for the order or unreachable), the climb verb's way up (Step.Climb: Baritone's
@@ -7584,9 +7714,21 @@ public final class NeedChain {
         int lendN = Math.max(0, depth - blocks);
         if (lendN > 0 && placeable >= depth) addLendWays(c, ways, fbag, lendN, sec, "climb with ",
                 (lend, back) -> "climb up " + depth + " with " + blocks + " spare blocks and " + lendN + " kept " + shw(lend) + " lent: " + s(sec) + ", collected again after: " + back + " (the walk up out: " + w + ")");
-        if (!pick && blocks < depth) ways.add(new Alt("make a pickaxe first", () -> {
+        // deposit-goal stage 4 review 3 (the deposit goal under ground with nothing but owed items in the bag, no source known:
+        // the pickaxe's planks had no source, their explore leaf asked this climb again from under ground, whose pickaxe-first
+        // asked them again - an unbounded recursion, the test JVM out of heap): no pickaxe-first inside another one's pricing
+        // (c.climbPick, the recursion bounded by structure as c.lending and c.bandPick); the inner climb keeps its other ways
+        String nested = !pick && blocks < depth && c.climbPick ? "make a pickaxe first: not inside another climb's pickaxe-first (its materials need this way up first)" : null;
+        if (!pick && blocks < depth && !c.climbPick) ways.add(new Alt("make a pickaxe first", () -> {
             // (b) a bot under ground without a pickaxe: the cheapest pickaxe the free bag and the recipes pay, then the climb
-            String p = cheapestPickaxe(c, 1);           // structural: tier 1 = the least pickaxe
+            String p;
+            boolean was = c.climbPick;
+            c.climbPick = true;
+            try {
+                p = cheapestPickaxe(c, 1);           // structural: tier 1 = the least pickaxe
+            } finally {
+                c.climbPick = was;
+            }
             if (p == null || c.fail != null || c.stuck) { if (c.fail == null) c.fail = "no pickaxe to be made here (its materials are not known yet)"; return null; }
             // review: the spare blocks counted again after the pickaxe took its share of the bag
             int left = spareBlocks(forecastBag(c), c.w.reserves(), c.asked, c.askedN);
@@ -7604,6 +7746,7 @@ public final class NeedChain {
             List<String> why = new ArrayList<>();
             if (c.fail != null) why.add(c.fail);
             for (int i = d0; i < c.dropped.size(); i++) why.add(c.dropped.get(i));
+            if (nested != null) why.add(nested);
             if (ways.isEmpty()) why.add("no way offered");
             c.fail = noWalkUp(over) + " - the walk up: " + walk + "; no climb either: " + (pick ? "the " + sh(c.pickItem) : "no pickaxe") + " and " + blocks + " spare blocks of " + placeable
                     + " in the bag (the rest reserved) for " + depth + " up (" + String.join("; ", why) + ")";

@@ -104,17 +104,9 @@ class RunnerOwnerTest {
         assertFalse(r.taskHolds());
     }
 
-    /** w053-200-2 03:53:09.796 -> .806: the order's run ended and the deposit started before the brain read that end. */
+    /** deposit-goal stage 4: the line's deposit is the brain's task now - one runner owner, no separate deposit wait. */
     @Test
-    void theDueDepositWaitsWithItsReason() {
-        RunnerOwner r = new RunnerOwner();
-        r.taskStarts("EXPLORE owner goal");
-        assertEquals("the step runner holds EXPLORE owner goal", r.depositWaits(true, true, false, false));
-        String open = r.depositWaits(true, false, false, false);
-        assertNotNull(open, "the run ended, the task is not read to its end: the deposit waits");
-        assertTrue(open.contains("has not been read to its end"), open);
-        assertEquals("a job holds the slot", r.depositWaits(false, false, true, false));
-        assertEquals("AA's own chain runs", r.depositWaits(false, false, false, true));
-        assertNull(r.depositWaits(false, false, false, false), "the slot is free");
+    void noDepositWaitBesideTheTask() {
+        for (var m : RunnerOwner.class.getMethods()) assertFalse(m.getName().startsWith("deposit"), "no deposit reader on the runner owner: " + m.getName());
     }
 }
