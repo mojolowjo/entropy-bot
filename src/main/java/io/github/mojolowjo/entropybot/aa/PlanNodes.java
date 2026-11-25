@@ -167,6 +167,8 @@ public final class PlanNodes {
         final List<Object[]> unreach = new ArrayList<>();
         final Map<Object, Object> uses = new IdentityHashMap<>();
         int entryTrials, maxOff = -1, chooses, waitedAt, size = 1;
+        /** job-plan-budget: the resolve's way count when this node opened (NeedChain's planner.maxWays count). */
+        int entryWays;
         boolean bound, keep = true;
         /** False: its bag record is not consistent (a snapshot of another node's restored): not even the root is kept. */
         boolean sound = true;
