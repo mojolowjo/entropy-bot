@@ -108,7 +108,11 @@ public final class OrderEnds {
         } else if (owed.isEmpty() && g != null) {
             final Goals.Goal gone = g;
             Goals.of(bb).removeIf(x -> x == gone);
-            String why = deposits.putsReached() > g.depositPutsAtStart ? "in the chest" : "taken back (nothing is owed now)";
+            // short-wake: "nothing is owed now" only when no -d order is open; a wake opened the line again, its deposit follows
+            var open = deposits.openOrders();
+            String why = deposits.putsReached() > g.depositPutsAtStart ? "in the chest"
+                    : open.isEmpty() ? "taken back (nothing is owed now)"
+                    : "taken back (the line is open again: its deposit follows when " + String.join(", ", open) + (open.size() == 1 ? " ends)" : " end)");
             brain.remove(g.id(), "the line's deposit: " + why);
             h.deposit(new LineDeposits.Out(LineDeposits.Kind.NOTED, "the line's deposit goal ended: " + why, null));
         }
