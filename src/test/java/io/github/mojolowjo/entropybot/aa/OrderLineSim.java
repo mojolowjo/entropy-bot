@@ -161,6 +161,8 @@ final class OrderLineSim {
                 if (out.kind() == LineDeposits.Kind.WOKE_TAKEN_BACK) takenBack.add(out.text());
             }
         };
+        // merge review 2026-11-25 (2): the runtime's goals tick returns here when it has nothing to do (the one test)
+        if (OrderEnds.idle(bb, deposits)) return;
         OrderEnds.tick(bb, brain, deposits, mainAt, underGround, "goal reached", hooks);
         // deposit-goal stage 3: the line's deposit is a goal (OrderEnds.depositSync), as the sim's game
         OrderEnds.depositSync(bb, brain, deposits, hooks);

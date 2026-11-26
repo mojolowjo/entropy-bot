@@ -341,9 +341,12 @@ final class SimGame {
                 say(out.text());
             }
         };
-        OrderEnds.tick(bb, brain, deposits, mainAt, false, "goal reached", hooks);
-        // deposit-goal stage 3: the line's deposit is a goal (its walk, its ways up, the put: SimSteps' Deposit actor)
-        OrderEnds.depositSync(bb, brain, deposits, hooks);
+        // merge review 2026-11-25 (2): as the runtime's goals tick, nothing to do when no goal and nothing owed (the one test)
+        if (!OrderEnds.idle(bb, deposits)) {
+            OrderEnds.tick(bb, brain, deposits, mainAt, false, "goal reached", hooks);
+            // deposit-goal stage 3: the line's deposit is a goal (its walk, its ways up, the put: SimSteps' Deposit actor)
+            OrderEnds.depositSync(bb, brain, deposits, hooks);
+        }
         for (; logRead < port.log.size(); logRead++) say("  log: " + port.log.get(logRead));
     }
 

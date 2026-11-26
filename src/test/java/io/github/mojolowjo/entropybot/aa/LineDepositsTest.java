@@ -629,7 +629,7 @@ class LineDepositsTest {
         io.github.mojolowjo.entropybot.aa.brain.PutWatch w = new io.github.mojolowjo.entropybot.aa.brain.PutWatch(s.deposits);
         w.started(7, false);
         w.moved(Map.of("cobblestone", 20));                  // the count at the clicks
-        w.legEnded();                                        // StepHands: the Deposit step ended
+        w.legEnded(true);                                    // StepHands: the Deposit step ended done
         assertNotNull(w.ended(7, true, null, "done"));
         s.bag.remove("cobblestone");
         assertTrue(s.deposits.owed().isEmpty(), "reached: nothing owed");

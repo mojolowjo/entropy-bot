@@ -29,6 +29,16 @@ public final class OrderEnds {
     }
 
     /**
+     * Merge review 2026-11-25 (2, serious): the goals pass has nothing to do - no goal among the goals AND nothing owed.
+     * The deposit goal is only added by {@link #depositSync}, so a line that came due with no goal left (the owner dropped
+     * the line's last open -d order after its others were met) must still reach it; the runtime's goals tick and the
+     * order-line replays ask this one test.
+     */
+    public static boolean idle(Blackboard bb, LineDeposits deposits) {
+        return Goals.of(bb).isEmpty() && deposits.owed().isEmpty();
+    }
+
+    /**
      * {@code mainAt}: the main chest's cell as text, null: none set. {@code underGround}: the feet are under the surface
      * depth. {@code reachedWhy}: the caller's words for a met order's desire leaving the brain (the runtime's log text;
      * NoChainTextTest keeps such literals out of aa/).
@@ -41,11 +51,19 @@ public final class OrderEnds {
         if (bb.in != null && bb.in.bag != null)
             for (var e : deposits.lostAfterDone(bb.in.bag)) {
                 Goals.Goal g = e.getKey();
-                if (Goals.reopen(bb, g)) brain.add(io.github.mojolowjo.entropybot.aa.AaDesires.ownerGoal(g));
-                else {
-                    // rule 7: the newer order of the same item holds the key; the old one stays out of the goals, its line
-                    // waits on it - aa cancel ends that line (said)
-                    h.deposit(new LineDeposits.Out(e.getValue().kind(), e.getValue().text() + " (not put back: a newer order of " + g.r.key() + " is among the goals)", e.getValue().items()));
+                if (Goals.reopen(bb, g)) {
+                    // merge review 2026-11-25 (7): put back with no stop (Goals.reopen); the brain's holds on it go too, so
+                    // the planner prices the rest as the REOPENED line says
+                    brain.failures.forget(g.id());
+                    brain.add(io.github.mojolowjo.entropybot.aa.AaDesires.ownerGoal(g));
+                } else {
+                    // merge review 2026-11-25 (3, 5; rule 7): a newer order of the same item holds the key, so the old one
+                    // cannot be among the goals again and nothing would ever end it on its line (aa cancel finds goals
+                    // only): it leaves its line as an order placed again does (LineDeposits.replaced) - the line ends
+                    // now when it was its last open order, else when the others end; both said
+                    h.deposit(new LineDeposits.Out(LineDeposits.Kind.NOTED, g.r.key() + " was done and the bag lost its amount, but a newer order of " + g.r.key()
+                            + " is among the goals: it is not put back and leaves its line", null));
+                    h.deposit(deposits.replaced(g, bb.in.bag, mainAt));
                     continue;
                 }
                 h.deposit(e.getValue());

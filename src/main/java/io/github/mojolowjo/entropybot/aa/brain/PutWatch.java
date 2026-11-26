@@ -47,7 +47,7 @@ public final class PutWatch {
         // never "lost"
         boolean again = on && (!pending && !starting && task == current || pending && starting && pendingStart == starts);
         String line = null;
-        if (again) legEnded();                       // review 5: a leg whose end was not read comes off the owed amount now
+        if (again) legEnded(false);                  // review 5: a leg whose end was not read comes off the owed amount now
         else if (on) {
             // review 7 (point 3, rule 7): a put still on for another task (or still pending) whose end was never read: it
             // ends here as lost, with what it moved (that part counts for its orders), the rest owed again and carried by
@@ -61,6 +61,7 @@ public final class PutWatch {
         pendingStart = starts;
         task = starting ? -1 : current;
         moved = Map.of();
+        lastLegDone = false;                         // merge review 2026-11-25 (1): this leg has not finished yet
         deposits.putStarted();
         return line;
     }
@@ -114,24 +115,54 @@ public final class PutWatch {
     /**
      * Review 5: the put's leg (its Deposit step) ended inside its running task (done or failed; the task runs on, it may
      * re-plan and start the put again). What the leg moved comes off what is owed now (LineDeposits.legEnded), so a
-     * re-plan inside the task never asks again for it; it is kept in the earlier legs' sum for the end's line. No put on,
-     * or pending: nothing.
+     * re-plan inside the task never asks again for it; it is kept in the earlier legs' sum for the end's line.
+     * {@code done}: the leg's Deposit step itself ended done (its count said every asked item the bag held went in);
+     * false: it failed, or it was cancelled or paused before its count. No put on, or pending: nothing.
      */
-    public void legEnded() {
-        if (!on || moved.isEmpty()) return;
+    public void legEnded(boolean done) {
+        if (!on) return;
+        lastLegDone = done;
+        if (moved.isEmpty()) return;
         deposits.legEnded(moved);
         earlier = sum(earlier, moved);
         moved = Map.of();
     }
 
     /**
+     * Merge review 2026-11-25 (14): the hands' one hand-over at a leg's end - its count ({@link #moved}), then
+     * {@link #legEnded}. StepHands calls it from the step's end and from its cancel (a pause cancels the hands between
+     * the clicks and the count; the resume's putDiffers must see what already went in, or the leg puts it again).
+     */
+    public void legOver(Map<String, Integer> items, boolean done) {
+        moved(items);
+        legEnded(done);
+    }
+
+    /**
+     * Merge review 2026-11-25 (1): the put's last leg (its Deposit step) ended done; false: no leg ended yet since the put
+     * (re)started, or the last one failed, was cancelled, or was paused.
+     */
+    private boolean lastLegDone;
+
+    /**
      * Task {@code endedTask}'s run ended ({@code done}, else failed at {@code failedAt}): the put of that task reached the
-     * chest when the run ended done or failed at a step after the put (LineDeposits.putReached). Another task's end reads
-     * nothing.
+     * chest when the run ended done or failed at a step after the put (LineDeposits.putReached) AND the put's own last
+     * leg ended done. Merge review 2026-11-25 (1, serious): the deposit goal's run re-plans inside its task, so a run can
+     * end done on another step (a walk up after a stalled put, or a put whose step found the owed amount changed and put
+     * nothing) - that run's put did not reach the chest; it ends not reached, said, and what is still on its way is owed
+     * again (what its legs moved stays counted; when they moved all of it, it is reached after all, {@link #over}).
+     * Another task's end reads nothing.
      */
     public String ended(long endedTask, boolean done, Step failedAt, String msg) {
         if (!on || pending || task != endedTask) return null;
-        return over(LineDeposits.putReached(task, endedTask, done, failedAt), msg);
+        boolean reached = LineDeposits.putReached(task, endedTask, done, failedAt);
+        if (reached && !lastLegDone) {
+            Map<String, Integer> still = deposits.onItsWay();
+            legEnded(false);                         // a count not handed over yet comes off first
+            return over(false, "the run ended " + (done ? "done" : "at a step after the put") + " but the put's own step did not finish"
+                    + (still.isEmpty() ? "" : " (on its way still: " + Step.Deposit.onlyText(still) + ")") + " - " + msg);
+        }
+        return over(reached, msg);
     }
 
     /** Task {@code taskId} was cancelled ({@code why}): its put did not reach the chest whole. */

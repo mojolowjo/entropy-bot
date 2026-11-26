@@ -542,7 +542,9 @@ public final class StepHands implements Steps.Hands {
             if (vein != null) vein.stop();
             if (deposit != null) {
                 // review 4 (point 2): a cancel between the clicks and the count still hands over what went in
-                if (c.aaRuntime != null) c.aaRuntime.putMoved(deposit.putItems());
+                // merge review 2026-11-25 (14): and the leg ends there, so a pause's resume (putDiffers) sees what went in
+                // and never puts it again; a task cancel read the put first, so this is nothing then
+                if (c.aaRuntime != null) c.aaRuntime.putLegOver(deposit.putItems(), false);
                 LocalPlayer dp = Minecraft.getInstance().player;
                 if (dp != null && Gui.open(dp)) Gui.close(dp);
                 io.github.mojolowjo.entropybot.aa.moves.JobHands.get().stop(why);
@@ -790,7 +792,8 @@ public final class StepHands implements Steps.Hands {
         if (st.state() != Car.State.RUNNING) {
             // review 2 (fault 2): what the planned put moved, so a failed put owes only the rest (AaRuntime.putOver)
             // review 5: and that part comes off the owed amount now, so an in-run re-plan never asks for it again
-            if (c.aaRuntime != null) { c.aaRuntime.putMoved(deposit.putItems()); c.aaRuntime.putLegEnded(); }
+            // merge review 2026-11-25 (1): and whether the step itself ended done (the task's end counts the put reached only then)
+            if (c.aaRuntime != null) c.aaRuntime.putLegOver(deposit.putItems(), st.state() == Car.State.DONE);
             deposit = null;
         }
         return st;

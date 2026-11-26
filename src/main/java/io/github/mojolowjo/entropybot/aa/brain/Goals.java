@@ -2142,11 +2142,27 @@ public final class Goals {
      * lost-after-done (tester-2 w064; LineDeposits#lostAfterDone): a met order is among the goals again - not met, off the
      * finished list (its items are no longer there to keep), its "have" read from the bag like any open order's. The same
      * key already among the goals (a new aa want of it) wins: false, nothing changed.
+     *
+     * <p>Merge review 2026-11-25 (7): put back with no stop - done() meets parked orders too, and a park kept from before
+     * it was met would be weighed "stopped" by the same pass's sweep on the bag that just lost its items, never priced.
+     * Its park, its wake state and its tries go (the caller forgets the brain's holds on it); a park that still applies
+     * comes back from its next run with a fresh reason.
      */
     public static boolean reopen(Blackboard bb, Goal g) {
         if (find(bb, g.r.key()) != null) return false;
         g.met = false;
         g.playbookRun = false;
+        g.parked = null;
+        g.park = null;
+        g.loopPark = null;
+        g.loopAttempt = null;
+        g.wakeSaid = null;
+        g.wakeAsked = null;
+        g.looked = false;
+        g.lookAround = false;
+        g.climbRetried = false;
+        g.awayLeg = null;
+        g.tries.clear();
         finished(bb).removeIf(x -> x.key.equals(g.r.key()));
         of(bb).add(g);
         return true;
