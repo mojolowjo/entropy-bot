@@ -178,9 +178,9 @@ final class BaritoneHand implements JobHands.Hand {
                 // when the feet are on it (rule 2: the fork picks the cell); a fork without placeStation is said, then placeNear
                 BlockPos f = p.blockPosition();
                 int[] feet = {f.getX(), f.getY(), f.getZ()};
-                // job-review-leftovers (3, w005): the ground round the feet too, so an open shaft's column is not the surface
-                StationPlace.Ask a = StationPlace.ask(feet, io.github.mojolowjo.entropybot.world.SurfaceHeightLive.noLeaves(lv, feet[0], feet[2]),
-                        StationPlace.ringSurface((x, z) -> io.github.mojolowjo.entropybot.world.SurfaceHeightLive.noLeaves(lv, x, z), feet[0], feet[2]), StationPlace.base);
+                // merge review 11/16 (rule 23 (2)): the planner's own surface fact at the feet (the rock over the head, the hole
+                // round them over the ground under any tree), not a reader of the place step's own
+                StationPlace.Ask a = StationPlace.ask(feet, io.github.mojolowjo.entropybot.commands.Jobs.feetSurface(lv, feet[0], feet[1], feet[2]), StationPlace.base);
                 try {
                     builder.placeStation("place " + rl.getPath() + " " + a.why(), bi.getBlock().defaultBlockState(),
                             new baritone.api.process.StationCell(new BlockPos(a.center()[0], a.center()[1], a.center()[2]), a.radius(), a.surface()), timeoutTicks, g);

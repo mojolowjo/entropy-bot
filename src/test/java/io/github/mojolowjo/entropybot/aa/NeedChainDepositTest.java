@@ -218,10 +218,14 @@ class NeedChainDepositTest {
 
     @Test
     void underGround_aChestWalkStillComputing_nextToAPricedWalkUp() {
-        // choose(): the priced walk up wins at once; the chest walk's pending answer is not the wait here (stage 3 settles it)
+        // merge review 2026-11-25 finding 10: the walk up is a leg only (the chain ends after it), so it is not picked while the
+        // chest walk has no answer yet - the bot stands; once the chest walk is answered (here dearer) the walk up wins
         Chain c = NeedChain.deposit(OWED, CHEST, world(Map.of("minecraft:dirt", 64), under(), PathPrice.Answer.computing("queued"), priced(10), List.of()));
-        assertTrue(c.ok(), c.why());
-        assertEquals(List.of(new Step.ToSurface(0, 70, 0)), c.steps(), c.why());
+        assertFalse(c.ok(), c.why());
+        assertTrue(c.missing().startsWith(PathPrice.NOT_KNOWN), c.missing());
+        assertTrue(c.steps().isEmpty(), c.steps().toString());
+        Chain landed = NeedChain.deposit(OWED, CHEST, world(Map.of("minecraft:dirt", 64), under(), priced(200), priced(10), List.of()));
+        assertEquals(List.of(new Step.ToSurface(0, 70, 0)), landed.steps(), landed.why());
     }
 
     @Test

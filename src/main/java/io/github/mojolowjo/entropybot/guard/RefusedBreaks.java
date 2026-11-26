@@ -57,6 +57,20 @@ public final class RefusedBreaks {
         return false;
     }
 
+    /**
+     * Merge review 2026-11-25 finding 17 (the flight recorder's "guard refusal streak" went quiet on a one-cell loop once the
+     * repeats stopped reaching its event ring): a repeat refusal of the cell that the recorder still hears. True when the
+     * cell's count since its last saying ({@link #take}) is a power of two (2, 4, 8, 16 ...): a hot cell gives the ring a
+     * few events, never thousands, and the streak (5 enforced refusals within a minute) still fires on it; a step that
+     * stalls on the cell again after its count was said starts over from 1. False for a cell not held (counted only).
+     */
+    public synchronized boolean echo(String dim, int x, int y, int z) {
+        Rec r = map.get(key(dim, x, y, z));
+        if (r == null) return false;
+        int n = r.count - r.told;
+        return n > 1 && (n & (n - 1)) == 0;          // structural: log-spaced echoes (each doubling of the unsaid count)
+    }
+
     private final List<String> pending = new ArrayList<>();
     private int foldedLines, foldedCount;   // review sent back again (6): lines folded, one cell may fold more than once
 

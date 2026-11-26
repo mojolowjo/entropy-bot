@@ -876,9 +876,18 @@ public final class Jobs {
      * "below the surface" reader ({@link #belowSurface}: the rock over the head or the hole round the feet).
      */
     public static boolean underGround(net.minecraft.world.level.Level lv, int x, int y, int z) {
-        int rock = rockOverHead(lv, x, y, z), hole = holeDepth(lv, x, y, z);
-        int depth = io.github.mojolowjo.entropybot.world.SurfaceHeight.belowSurface(rock, hole);
-        return new io.github.mojolowjo.entropybot.aa.NeedChain.Surface(depth, x, y, z, 0, hole > 0 && hole >= rock).under();
+        return io.github.mojolowjo.entropybot.aa.NeedChain.Surface.atFeet(new int[]{x, y, z}, rockOverHead(lv, x, y, z), holeDepth(lv, x, y, z)).under();
+    }
+
+    /**
+     * Merge review 2026-11-25 findings 11 and 16 (rule 23 (2)): the feet's surface fact for a step that must never read "not
+     * known" as "on the surface" (the station place step): NeedChain.Surface.atFeet on the one reading, or null when
+     * the surface over the column is not known (rule 15, as {@link #rockOverHeadKnown}).
+     */
+    public static io.github.mojolowjo.entropybot.aa.NeedChain.Surface feetSurface(net.minecraft.world.level.Level lv, int x, int y, int z) {
+        int rock = rockOverHeadKnown(lv, x, y, z);
+        if (rock < 0) return null;
+        return io.github.mojolowjo.entropybot.aa.NeedChain.Surface.atFeet(new int[]{x, y, z}, rock, holeDepth(lv, x, y, z));
     }
 
     public static int rockOverHeadKnown(net.minecraft.world.level.Level lv, int x, int y, int z) {

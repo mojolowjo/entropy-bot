@@ -133,8 +133,7 @@ public final class Guard {
         // the exemption needs a running job and a terrain block (what the ledger can put back; logs and crops keep the fence)
         boolean jobRunning = false;
         try { jobRunning = io.github.mojolowjo.entropybot.Core.INSTANCE.commands.jobs.running(); } catch (Throwable caught) { Quiet.warn("Guard.vetoTravelBreak failed, carrying on with the fallback", caught); }
-        boolean terrain = io.github.mojolowjo.entropybot.restore.RestoreRules.natural(BuiltInRegistries.BLOCK.getKey(level.getBlockState(pos).getBlock()).toString());
-        if (t.travel().allowed() && jobRunning && terrain) {
+        if (GuardCore.travelClickLets(t.travel(), jobRunning, BuiltInRegistries.BLOCK.getKey(level.getBlockState(pos).getBlock()).toString())) {
             pr.logTravelOverride(PolicyStats.SITE_CLICK, x, y, z, t.travel(), v.reason());
             pr.markTravelBreak(dim + " " + x + " " + y + " " + z, facts.surface());     // surface: only a surface break counts toward the cap
             return false;
@@ -248,9 +247,16 @@ public final class Guard {
         // job-refusal-fact (worlds run 3 w072: 8,115 such lines on one rail): an enforced refused break is counted per cell
         // (RefusedBreaks, a count store, never a price); said once per cell, block and reason, the rest counted and said
         // when the step ends (Steps.next / failOrReplan)
+        // merge review 2026-11-25 finding 17: a repeat still reaches the recorder's ring at each doubling of its count
+        // (RefusedBreaks.echo), so the recorder's refusal streak fires on a one-cell loop; the log line stays once per cell
+        boolean repeat = false;
         if ("break".equals(action) && !v.allowed() && level != null) {
-            if (!RefusedBreaks.INSTANCE.note(dimOf(level), pos.getX(), pos.getY(), pos.getZ(), block, v.reason())) return true;
-            line += " (said once for this cell; the count is said when the step ends)";
+            String dim = dimOf(level);
+            if (!RefusedBreaks.INSTANCE.note(dim, pos.getX(), pos.getY(), pos.getZ(), block, v.reason())) {
+                if (!RefusedBreaks.INSTANCE.echo(dim, pos.getX(), pos.getY(), pos.getZ())) return true;
+                repeat = true;
+                line += " (refused again at this cell; the count is said when the step ends)";
+            } else line += " (said once for this cell; the count is said when the step ends)";
         }
         EventRing ring = events;
         if (ring != null) {
@@ -262,7 +268,7 @@ public final class Guard {
             d.addProperty("enforced", !v.allowed());
             ring.push("guard", line, d);
         }
-        if (!v.allowed()) LOG.info("[entropybot] guard {}", line);
+        if (!v.allowed() && !repeat) LOG.info("[entropybot] guard {}", line);
         return !v.allowed();
     }
 

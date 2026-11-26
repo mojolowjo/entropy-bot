@@ -493,6 +493,17 @@ public final class NeedChain {
          */
         public boolean under() { return depth >= AaLadder.surfaceDepth() || hole && depth > 0; }
 
+        /**
+         * Merge review 2026-11-25 findings 11 and 16 (rule 23 (2): the station place step kept its own leaf-free ring test):
+         * the feet's own surface fact from the one "below the surface" reading - {@code rock} over the head
+         * (Jobs.rockOverHead) and the {@code hole} round the feet (Jobs.holeDepth, SurfaceHeight.pitDepth over Jobs.ground).
+         * The planner's surface (AaRuntime.surfaceAt), Jobs.underGround and the station place step build it here. Pure.
+         */
+        public static Surface atFeet(int[] feet, int rock, int hole) {
+            int depth = io.github.mojolowjo.entropybot.world.SurfaceHeight.belowSurface(rock, hole);
+            return new Surface(depth, feet[0], feet[1], feet[2], 0, hole > 0 && hole >= rock);
+        }
+
         /** Run EM: the feet (no leg needed), with the ring's top kept for a boxed-in explore's way out ({@code top}, {@code topDist}). */
         public static Surface noLeg(int depth, int[] feet, boolean hole, int[] top, double topDist) { return new Surface(depth, feet[0], feet[1], feet[2], 0, hole, top == null ? null : top.clone(), topDist); }
     }
@@ -2881,6 +2892,7 @@ public final class NeedChain {
             }));
         }
         if (overWhy != null) notOffered.add(overWhy);
+        int outFrom = ways.size();
         if (under) {
             ways.add(new Alt("walk up", () -> {
                 String up = surfaceWalk(c);
@@ -2893,6 +2905,9 @@ public final class NeedChain {
             }));
             ways.add(new Alt("climb", () -> climbUp(c, over)));
         }
+        // merge review 2026-11-25 finding 10: the ways out are one leg each (the chain ends after them), so a priced one is
+        // not picked over the chest walk while that walk has no answer yet (choose holds it; the bot stands, rule 22)
+        for (int i = outFrom; i < ways.size(); i++) ways.get(i).legOnly = true;
         int d0 = c.dropped.size();
         Trial win = choose(c, ways, null);
         if (win == null) {
@@ -3692,6 +3707,12 @@ public final class NeedChain {
         boolean strip;
         /** 0.39.z78 D6: the rank budget the way runs under ({@link Ranks}; null: none) - part of its node's key. */
         Ranks rk;
+        /**
+         * Merge review 2026-11-25 finding 10: a leg only - the chain ends after it and the goal is priced again from its end
+         * (the deposit's walk up and climb), so its seconds are not the whole goal's. Such a priced winner is not picked
+         * while another way has no answer yet ({@link #choose}): standing waits for the whole way's answer.
+         */
+        boolean legOnly;
         Alt(String label, Supplier<String> run) { this.label = label; this.run = run; }
         double value(double seconds) { return rate == null ? seconds : rate.applyAsDouble(seconds); }
     }
@@ -3727,6 +3748,12 @@ public final class NeedChain {
             if (s instanceof Step.Explore e) { if (!e.priced()) return false; any = true; }
         }
         return any;
+    }
+
+    /** Why a priced way was held while another had no answer yet: a leg only (Alt.legOnly), or dearer than the stand's wait. */
+    private static String heldWhy(Trial t) {
+        return t.alt().legOnly ? ", a leg only (the chain ends after it, priced again from its end)"
+                : ", over the stand's wait " + s(Tuning.get("pathCost.firstAnswerWaitS"));
     }
 
     private static Trial choose(Ctx c, List<Alt> alts, String self) {
@@ -3821,7 +3848,10 @@ public final class NeedChain {
         // costs more than the stand's own wait (pathCost.firstAnswerWaitS) is not picked while another
         // way has no answer yet - standing costs at most that wait, the winner more; past the wait the walks still not known
         // go by Baritone's estimate (rule 18 amended, rule 23 (1)) and compete with it
-        if (!win.stuck() && win.seconds() > Tuning.get("pathCost.firstAnswerWaitS") && !stands(win, stepsAt) && digsDown(c, win, stepsAt)) {
+        // merge review 2026-11-25 finding 10 (a roofed base read as under ground: the deposit's climb, priced by formula, won
+        // at once over the walk to the main chest still computing, and its price was the leg out only): a priced winner that
+        // is a leg only (Alt.legOnly) is held the same way, at any price
+        if (!win.stuck() && !stands(win, stepsAt) && (win.alt().legOnly || win.seconds() > Tuning.get("pathCost.firstAnswerWaitS") && digsDown(c, win, stepsAt))) {
             for (Trial t : trials) if (t != win && noAnswerYet(t, stepsAt)) { pendingOverPriced = true; break; }
         }
         boolean holdPick = pendingOverPriced;
@@ -3836,7 +3866,7 @@ public final class NeedChain {
                 for (Trial t : open) if (t.fail() == null && (stand == null || best.compare(t, stand) < 0)) stand = t;
                 if (stand == null) {
                     for (Trial t : trials) {
-                        String why = t.fail() != null ? t.fail() : !t.stuck() ? PRICED_HELD + s(t.seconds()) + ", over the stand's wait " + s(Tuning.get("pathCost.firstAnswerWaitS")) + heldBack
+                        String why = t.fail() != null ? t.fail() : !t.stuck() ? PRICED_HELD + s(t.seconds()) + heldWhy(t) + heldBack
                                 : EXPLORE_HELD + shw(t.unknown()) + heldBack;
                         drop(c, t.alt().label, why);
                         verdict(nodes, t, "dropped: " + why);
@@ -3858,8 +3888,8 @@ public final class NeedChain {
             String why;
             if (t.fail() != null) why = t.fail();
             else if (heldBack != null && t.stuck() && !stands(t, stepsAt)) why = EXPLORE_HELD + shw(t.unknown()) + heldBack;
-            else if (heldBack != null && pendingOverPriced && !t.stuck() && t.seconds() > Tuning.get("pathCost.firstAnswerWaitS"))
-                why = PRICED_HELD + s(t.seconds()) + ", over the stand's wait " + s(Tuning.get("pathCost.firstAnswerWaitS")) + heldBack;
+            else if (heldBack != null && pendingOverPriced && !t.stuck() && (t.alt().legOnly || t.seconds() > Tuning.get("pathCost.firstAnswerWaitS")))
+                why = PRICED_HELD + s(t.seconds()) + heldWhy(t) + heldBack;
             else if (t.stuck()) why = "no known source for " + shw(t.unknown()) + (win.stuck() ? " (the explore ends when one is known too)" : "");
             else if (t.alt().rate != null) why = s(t.seconds()) + String.format(Locale.ROOT, ", %.2f s a point with the eating (dearer a point than %s, %.2f)", t.alt().value(t.seconds()), win.alt().label, win.alt().value(win.seconds()));
             else why = s(t.seconds()) + " (dearer than " + win.alt().label + (t.seconds() > horizonS ? ", past the horizon" : "") + ")";
@@ -6280,7 +6310,8 @@ public final class NeedChain {
      */
     static int spareBlocks(Map<String, Integer> bag, List<baritone.api.process.Reserves.Reserve<String>> reserves, String asked, int askedN) {
         // reserves-once (plan step 1, the id forms): the bag counts by the item's path, a reserve names the full id (a modded
-        // item's "mod:x" against the bag's "x" read as "minecraft:x" never matched); every side is matched by its path here
+        // item's "mod:x" against the bag's "x" read as "minecraft:x" never matched); every side is matched by the bag's one key
+        // here (Thing.path; merge review 2026-11-25 finding 13: a modded item keeps its namespace, another mod's item is another item)
         List<baritone.api.process.Reserves.Reserve<String>> rs = new ArrayList<>();
         if (reserves != null) for (var r : reserves) {
             List<String> ms = new ArrayList<>();

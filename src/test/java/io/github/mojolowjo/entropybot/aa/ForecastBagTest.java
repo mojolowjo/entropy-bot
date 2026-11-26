@@ -421,8 +421,9 @@ class ForecastBagTest {
         // the id forms: a path-keyed bag against full-id reserves, and a modded reserve against its path
         assertEquals(3, NeedChain.spareBlocks(Map.of("cobblestone", 35), List.of(order(32)), null, 0));
         assertEquals(3, NeedChain.spareBlocks(Map.of("cobblestone", 35), List.of(), "minecraft:cobblestone", 32));
-        // a reserve by a namespaced id other than minecraft's against the path-keyed bag (was: no match, 35 spare)
-        assertEquals(3, NeedChain.spareBlocks(Map.of("cobblestone", 35), List.of(Reservations.order("x", List.of("othermod:cobblestone"), 32)), null, 0));
+        // merge review 2026-11-25 finding 13 (rule 4): the bag keeps a modded item's namespace, so a reserve of another
+        // mod's cobblestone is another item and holds none of the minecraft cobblestone (it once matched by the path alone)
+        assertEquals(35, NeedChain.spareBlocks(Map.of("cobblestone", 35), List.of(Reservations.order("x", List.of("othermod:cobblestone"), 32)), null, 0));
     }
 
     /** reserves-once (b): the smelt burns the fuel its plan priced when the free bag covers it, else the pick stands, said. */

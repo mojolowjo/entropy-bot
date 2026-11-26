@@ -387,8 +387,9 @@ class Z61ReservationsTest {
     @Test
     void aModdedKeptAmountIsReservedByItsOwnId() {
         String osmium = "mekanism:ingot_osmium";
-        Goals.Goal g = new Goals.Goal(new Thing.Result(osmium, osmium, false, List.of(osmium), List.of("ingot_osmium"), 0, null, null, null), 2, 0, 0);
-        var rs = Goals.orderReserves(null, new ArrayList<>(), Map.of("ingot_osmium", 2), List.of(new LineDeposits.Kept(g, Map.of("ingot_osmium", 2))));
+        String key = Thing.path(osmium);          // merge review 2026-11-25 finding 13: the bag's one key keeps the namespace
+        Goals.Goal g = new Goals.Goal(new Thing.Result(osmium, osmium, false, List.of(osmium), List.of(key), 0, null, null, null), 2, 0, 0);
+        var rs = Goals.orderReserves(null, new ArrayList<>(), Map.of(key, 2), List.of(new LineDeposits.Kept(g, Map.of(key, 2))));
         assertEquals(1, rs.size());
         assertEquals(List.of(osmium), rs.get(0).members);
         assertEquals(0, Reserves.spareThrowaway(rs, Map.of(osmium, 2), List.of(osmium)));
