@@ -129,11 +129,11 @@ final class SimSteps {
         if (differs != null) return Result.ok(0, "ok: no put - " + differs);
         var owed = g.deposits.owed();
         // review 6: the game's path - PutWatch.started (putStarted), the count at the clicks (moved), the step's end
-        // (StepHands: putMoved + putLegEnded) and the task's end (AaRuntime: PutWatch.ended); one sim task per put
+        // (StepHands: putLegOver) and the task's end (AaRuntime: PutWatch.ended); one sim task per put
         long task = ++g.putTask;                 // review 7: per game, no static that outlives a test
         g.put.started(task, false);
         if (!"minecraft:chest".equals(g.world.at(c[0], c[1], c[2]))) {
-            g.put.legEnded();
+            g.put.legEnded(false);
             g.put.ended(task, false, step, "sim: no chest");
             // review 4: the game's words (DepositLeg: "chest at x y z gone"), the ones the main chest's hold reads
             return Result.fail(PUT_S, "deposit: " + io.github.mojolowjo.entropybot.aa.brain.DepositRule.gone(c) + " (" + g.world.at(c[0], c[1], c[2]) + " there)");
@@ -151,7 +151,7 @@ final class SimSteps {
             if (n < e.getValue()) short_.add(n + " of " + e.getValue() + " " + e.getKey());
         }
         g.put.moved(moved);                      // the count at the clicks
-        g.put.legEnded();                        // StepHands: the Deposit step ended (done or failed)
+        g.put.legEnded(left == 0);               // StepHands: the Deposit step ended (done, or failed on a full chest)
         if (left > 0) {
             g.put.ended(task, false, step, "sim: the chest is full");
             return Result.fail(PUT_S, "deposit: " + moved.values().stream().mapToInt(Integer::intValue).sum() + " items went in at " + c[0] + " " + c[1] + " " + c[2]

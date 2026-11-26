@@ -50,6 +50,7 @@ class PutWatchTest {
         w.taskStarted(TASK);                                // current = ++seq
         assertEquals(TASK, w.task());
         assertNull(w.ended(OTHER, true, null, "done"), "another task's end never reads it");
+        w.legOver(l.s().deposits.onItsWay(), true);         // StepHands: the step ended done with its count
         String line = w.ended(TASK, true, null, "ok: deposited 43 items");
         assertNotNull(line);
         assertTrue(line.contains("reached the chest"), line);
@@ -148,7 +149,7 @@ class PutWatchTest {
         int reached = d.putsReached();
         w.started(TASK, false);
         w.moved(Map.of(k, 1));                              // the clicks: one went in
-        w.legEnded();                                       // StepHands.depositStatus: the step failed after it
+        w.legEnded(false);                                       // StepHands.depositStatus: the step failed after it
         Map<String, Integer> replan = d.owed();             // Goals.chain for the deposit goal: what the re-plan asks
         Map<String, Integer> want = new java.util.TreeMap<>(owed);
         if (all == 1) want.remove(k); else want.put(k, all - 1);
@@ -158,7 +159,7 @@ class PutWatchTest {
         assertEquals(Map.of(k, 1), w.movedSoFar());
         Map<String, Integer> second = new java.util.TreeMap<>(replan);
         w.moved(second);
-        w.legEnded();
+        w.legEnded(true);
         String line = w.ended(TASK, true, null, "ok");
         assertNotNull(line);
         assertTrue(line.contains("reached the chest"), line);
@@ -178,7 +179,7 @@ class PutWatchTest {
         PutWatch w = new PutWatch(d);
         w.started(TASK, false);
         w.moved(owed);
-        w.legEnded();
+        w.legEnded(false);                                  // the step failed after its clicks
         w.ended(TASK, false, new Step.Deposit(null, owed, new int[]{0, 64, 0}), "deposit: the chest closed");
         assertTrue(d.owed().isEmpty(), "all went in: nothing owed again");
     }
@@ -286,6 +287,7 @@ class PutWatchTest {
         Map<String, Integer> want = new java.util.TreeMap<>(owed);
         if (owed.get(k) == 1) want.remove(k); else want.put(k, owed.get(k) - 1);
         assertEquals(want, d.owed(), "the one that went in is not owed again; the rest rides with the new put");
+        w.legOver(d.onItsWay(), true);                      // the new put's step ended done with the rest
         assertNotNull(w.ended(OTHER, true, null, "ok"));
         assertTrue(d.owed().isEmpty());
     }
@@ -317,6 +319,7 @@ class PutWatchTest {
         assertEquals(Map.of("cobblestone", 32), w.movedSoFar(), "its first leg's count kept");
         w.taskStarted(TASK);
         assertEquals(TASK, w.task());
+        w.legOver(l.s().deposits.onItsWay(), true);         // the step ended done (StepHands: the count of the whole put)
         String end = w.ended(TASK, true, null, "ok");
         assertTrue(end.contains("reached the chest"), end);
         assertTrue(l.s().deposits.owed().isEmpty());
@@ -340,7 +343,7 @@ class PutWatchTest {
         int chest = 0;
         w.started(TASK, false);
         w.moved(Map.of("cobblestone", 10));                 // the first leg: 10 went in, 10 still on its way
-        w.legEnded();
+        w.legEnded(false);
         chest += 10;
         s.bag.put("cobblestone", 10);
         // the order wakes while its remainder is on its way, gathers the rest and is met: its line comes due again
@@ -353,7 +356,7 @@ class PutWatchTest {
         w.started(TASK, false);                             // the second leg in the same task
         assertEquals(Map.of("minecraft:cobblestone", 22), d.owed(), "the remainder 10 and the 12 due again, added, nothing replaced");
         w.moved(Map.of("cobblestone", 22));
-        w.legEnded();
+        w.legEnded(true);
         chest += 22;
         assertNotNull(w.ended(TASK, true, null, "ok"));
         assertTrue(d.owed().isEmpty());
@@ -375,7 +378,7 @@ class PutWatchTest {
         PutWatch w = new PutWatch(d);
         w.started(TASK, false);
         w.moved(Map.of("cobblestone", 10));
-        w.legEnded();
+        w.legEnded(false);
         s.bag.put("cobblestone", 10);
         cob.parked = null;
         assertEquals(Kind.WOKE_OPEN, d.reopen(cob).kind());
@@ -399,7 +402,7 @@ class PutWatchTest {
         assertEquals(Kind.DUE, again.kind(), again.text());
         assertEquals(Map.of("minecraft:cobblestone", 22), k.d().owed());
         k.w().started(OTHER, false);
-        k.w().moved(Map.of("cobblestone", 22));
+        k.w().legOver(Map.of("cobblestone", 22), true);
         assertNotNull(k.w().ended(OTHER, true, null, "ok"));
         assertTrue(k.d().owed().isEmpty());
         assertEquals(32, 10 + 22, "the -d amount reached the chest whole, once");
@@ -415,7 +418,7 @@ class PutWatchTest {
         assertEquals(Map.of("minecraft:cobblestone", 22), k.d().owed(), "the 10 back beside the 12, added");
         assertEquals(22, k.cob().deposit);
         k.w().started(OTHER, false);
-        k.w().moved(Map.of("cobblestone", 22));
+        k.w().legOver(Map.of("cobblestone", 22), true);
         assertNotNull(k.w().ended(OTHER, true, null, "ok"));
         assertTrue(k.d().owed().isEmpty());
         // a later wake of it (the line's deposit went) takes what went off its amount: nothing more is asked
@@ -460,8 +463,106 @@ class PutWatchTest {
         w.ended(TASK, false, put, "deposit: the chest closed");
         assertFalse(l.s().deposits.owed().isEmpty(), "failed at the put itself: owed again");
         w.started(TASK, false);
+        w.legOver(l.s().deposits.owed(), true);             // the put step ended done, a later step failed
         w.ended(TASK, false, new Step.Craft("torch", 4, false), "craft failed");
         assertTrue(l.s().deposits.owed().isEmpty(), "failed after the put: the put reached the chest");
+    }
+
+    /** The runtime's goals-pass hooks with nothing to say (the deposit goal's sync is what is read). */
+    static final io.github.mojolowjo.entropybot.aa.brain.OrderEnds.Hooks QUIET = new io.github.mojolowjo.entropybot.aa.brain.OrderEnds.Hooks() {
+        @Override public boolean carriesOn(Goals.Goal g) { return false; }
+        @Override public void got(String msg) { }
+        @Override public void deposit(LineDeposits.Out out) { }
+    };
+
+    static void sync(OrderLineSim s) { io.github.mojolowjo.entropybot.aa.brain.OrderEnds.depositSync(s.bb, s.brain, s.deposits, QUIET); }
+
+    /**
+     * Merge review 2026-11-25 (1a, serious): the put stalls (its Deposit step fails on a no-progress fact, nothing moved),
+     * the in-run re-plan holds the chest and offers the walk up, and the task ends done on [ToSurface]. The put did not
+     * reach the chest: the 32 stay owed, the deposit goal stays, nothing counts as in the chest.
+     */
+    @Test
+    void aRunEndingDoneOnAWalkUpAfterAStalledPut_isNotReached() {
+        OrderLineSim s = new OrderLineSim();
+        LineDeposits d = s.deposits;
+        Goals.Goal cob = s.order("cobblestone", 32, "b1", true);
+        s.bag.put("cobblestone", 32);
+        assertEquals(Kind.DUE, d.weigh(cob, "done", s.bag, AT).kind());
+        sync(s);
+        assertNotNull(s.depositGoal(), "the line's deposit is a goal");
+        Map<String, Integer> owed = d.owed();
+        int reached = d.putsReached();
+        PutWatch w = new PutWatch(d);
+        w.started(TASK, false);                             // [ToStation, Deposit]: the Deposit starts
+        w.legOver(Map.of(), false);                         // StepHands.depositStatus: the step failed, nothing moved
+        String line = w.ended(TASK, true, null, "ok: on the surface");   // the re-plan's [ToSurface] ended done
+        assertNotNull(line);
+        assertTrue(line.contains("did not reach the chest whole") && line.contains("did not finish"), line);
+        assertEquals(owed, d.owed(), "still owed, and kept");
+        assertEquals(reached, d.putsReached());
+        sync(s);
+        assertNotNull(s.depositGoal(), "the deposit goal stays (never 'in the chest')");
+    }
+
+    /**
+     * Merge review 2026-11-25 (1b, serious): leg 1 fails and moves nothing; during the re-plan's walk another line comes
+     * due, so the second Deposit start finds the owed amount changed and ends "ok: no put", and the task ends done. Both
+     * lines stay owed: the 32 cobblestone are never dropped from the way.
+     */
+    @Test
+    void aRunEndingDoneOnANoPutStep_isNotReached_bothLinesStayOwed() {
+        OrderLineSim s = new OrderLineSim();
+        LineDeposits d = s.deposits;
+        Goals.Goal cob = s.order("cobblestone", 32, "b1", true);
+        s.bag.put("cobblestone", 32);
+        assertEquals(Kind.DUE, d.weigh(cob, "done", s.bag, AT).kind());
+        Map<String, Integer> planned = d.owed();
+        PutWatch w = new PutWatch(d);
+        w.started(TASK, false);
+        w.legOver(Map.of(), false);                         // leg 1 failed with a fact, nothing moved
+        Goals.Goal log = s.order("oak_log", 4, "b2", true);
+        s.bag.put("oak_log", 4);
+        assertEquals(Kind.DUE, d.weigh(log, "done", s.bag, AT).kind(), "another line comes due during the walk");
+        assertNotNull(d.putDiffers(planned), "the second Deposit start: owed changed, 'ok: no put'");
+        assertNotNull(w.ended(TASK, true, null, "ok: no put"));
+        assertEquals(Map.of("minecraft:cobblestone", 32, "minecraft:oak_log", 4), d.owed(), "both owed, nothing dropped");
+        sync(s);
+        assertNotNull(s.depositGoal());
+    }
+
+    /**
+     * Merge review 2026-11-25 (14, serious): the line owes 32 and the bag holds 64. The leg clicks 32 in; before its count a
+     * pause cancels the hands (StepHands.cancel's hand-over ends the leg there); the resume's put finds nothing owed and
+     * puts nothing; the task's end counts the 32 reached. The chest gets 32, once.
+     */
+    @Test
+    void aPauseBetweenTheClicksAndTheCount_theResumeNeverPutsItAgain() {
+        OrderLineSim s = new OrderLineSim();
+        LineDeposits d = s.deposits;
+        Goals.Goal cob = s.order("cobblestone", 32, "b1", true);
+        s.bag.put("cobblestone", 64);
+        assertEquals(Kind.DUE, d.weigh(cob, "done", s.bag, AT).kind());
+        Map<String, Integer> only = d.owed();               // the plan's Deposit(only)
+        assertEquals(Map.of("minecraft:cobblestone", 32), only);
+        PutWatch w = new PutWatch(d);
+        w.started(TASK, false);
+        w.moved(Map.of("cobblestone", 32));                 // DepositLeg.putOnly: the clicks
+        w.legOver(Map.of("cobblestone", 32), false);        // the pause: StepHands.cancel's hand-over
+        assertNotNull(d.putDiffers(only), "the resume of the same Deposit step finds nothing owed: no second put");
+        String end = w.ended(TASK, true, null, "ok: no put");
+        assertTrue(end.contains("reached the chest"), end);
+        assertTrue(d.owed().isEmpty());
+        assertEquals(32, cob.depositPut.values().stream().mapToInt(Integer::intValue).sum(), "32 in the chest for it, once");
+    }
+
+    /** Merge review 2026-11-25 (14): the hands' cancel and the step's end hand the leg over the one way (PutWatch.legOver). */
+    @Test
+    void theHandsHandTheLegOverTheOneWay() throws java.io.IOException {
+        String src = java.nio.file.Files.readString(java.nio.file.Path.of("src/main/java/io/github/mojolowjo/entropybot/commands/StepHands.java"));
+        assertFalse(src.contains("putMoved("), "no hand-over of the count alone: the leg ends with it");
+        assertEquals(2, src.split("putLegOver\\(", -1).length - 1, "the cancel and the step's end");
+        assertTrue(src.contains("putLegOver(deposit.putItems(), false)"), "the cancel ends the leg not done");
     }
 
     @Test

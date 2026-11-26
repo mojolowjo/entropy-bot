@@ -4258,8 +4258,12 @@ public final class AaRuntime implements JobPort {
     /** Review 2: the put's leg ended having moved {@code items} (empty: nothing). */
     void putMoved(java.util.Map<String, Integer> items) { put.moved(items); }
 
-    /** Review 5: the put's Deposit step ended inside its task: what it moved comes off the owed amount now (PutWatch.legEnded). */
-    void putLegEnded() { put.legEnded(); }
+    /**
+     * Review 5: the put's Deposit step ended inside its task ({@code done}: the step itself ended done), or its hands were
+     * cancelled (a pause, merge review 2026-11-25 (14): done false): what it moved comes off the owed amount now
+     * (PutWatch.legOver, the one hand-over).
+     */
+    void putLegOver(java.util.Map<String, Integer> items, boolean done) { put.legOver(items, done); }
 
     /** Review 5: what the line's deposit owes now, by full id (the one reader, LineDeposits.owed). */
     java.util.Map<String, Integer> depositOwed() { return lineDeposits.owed(); }
@@ -4284,8 +4288,8 @@ public final class AaRuntime implements JobPort {
                 tree.brain.remove(id, "goal reached (its batch's playbook run ended)");
             }
         }
-        var goals = io.github.mojolowjo.entropybot.aa.brain.Goals.of(bb);
-        if (goals.isEmpty()) return;
+        // merge review 2026-11-25 (2): a line due with no goal left still reaches depositSync (the one test, OrderEnds.idle)
+        if (io.github.mojolowjo.entropybot.aa.brain.OrderEnds.idle(bb, lineDeposits)) return;
         if (tick % 200 != 7 && !knownDue) return;  // structural: periodic cadence in ticks (20 ticks = 1 s)
         knownDue = false;
         lootCtx();
@@ -4721,6 +4725,8 @@ public final class AaRuntime implements JobPort {
             // deposit-kept (owner 2026-11-13): a dropped -d order leaves its line; the orders that ended before it still deposit
             if (bb.in != null && bb.in.bag != null) depositSaid(lineDeposits.dropped(g, bb.in.bag, mainChestAt()));
         }
+        // merge review 2026-11-25 (2): a line a drop made due gets its deposit goal on the next goals pass, not up to 10 s later
+        if (!lineDeposits.owed().isEmpty()) knownDue = true;
         // deposit-goal stage 4: aa cancel deposit (or all, after the orders: their drops may make a line due) ends the
         // line's deposit - its run halted, the put on its way not counted as in the chest, every owed order marked missed
         // (LineDeposits.gone false: a wake takes nothing off its amount) and the items free; then the goal leaves. Said

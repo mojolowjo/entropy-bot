@@ -417,6 +417,9 @@ public final class LineDeposits {
     /** Review 5: nothing of the put on its way is left in {@link #way} (every leg's part reached the chest). */
     public boolean wayEmpty() { return onWay && way.isEmpty(); }
 
+    /** Merge review 2026-11-25 (1): the part of {@link #owed} that is on its way (by full id; empty: none), for the put's end line. */
+    public Map<String, Integer> onItsWay() { return sum(java.util.List.of(way), true); }
+
     /** {@code put} off {@link #way}, order by order, each order's part noted in its depositPut; true: some of the way is left. */
     private boolean takeOff(Map<String, Integer> put) {
         Map<String, Integer> left = new TreeMap<>(normal(put));
