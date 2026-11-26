@@ -4,6 +4,7 @@ import io.github.mojolowjo.entropybot.aa.NeedChain;
 import io.github.mojolowjo.entropybot.aa.PathPrice;
 import io.github.mojolowjo.entropybot.aa.PlanNodes;
 import io.github.mojolowjo.entropybot.aa.brain.GenWhere;
+import io.github.mojolowjo.entropybot.aa.brain.MiningTiers;
 import io.github.mojolowjo.entropybot.aa.brain.StripAreas;
 import io.github.mojolowjo.entropybot.aa.brain.ToolUses;
 
@@ -75,6 +76,14 @@ public final class PlannerSnapshot {
     public static PlannerSnapshot take(NeedChain.World live, Collection<PlanNodes.Fact> keys, Map<PlanNodes.Fact, Object> known, long version, long takenAt) {
         Map<PlanNodes.Fact, Object> a = new HashMap<>();
         for (PlanNodes.Fact f : keys) a.put(f, known != null && known.containsKey(f) ? known.get(f) : PlannerPort.timedAsk(live, f));
+        // merge review 2026-11-25 (12; the reviewer: a 'uses' fact not copied answers UNLIMITED below, and the pickaxe readers
+        // stop at the first one - NeedChain.pickUsesBefore, bagPickUses - so each round fetched one more pickaxe's uses and
+        // every pickaxe kind in the bag cost one more worker resolve, dropped, while the bot stood): the uses of every pickaxe
+        // in the bag are copied from the first round on (the same tier test as the planner's, MiningTiers; no name read)
+        for (String id : live.bag().keySet()) {
+            PlanNodes.Fact f = new PlanNodes.Fact("uses", id);
+            if (!a.containsKey(f) && MiningTiers.toolTier(id, "pickaxe") > 0) a.put(f, known != null && known.containsKey(f) ? known.get(f) : PlannerPort.timedAsk(live, f));
+        }
         NeedChain.World w = new NeedChain.World(live.bag(), live.tableNear(), live.furnaceNear(),
                 // second review of w058-2 (rule 23 (2)): the frozen lookup is a Lookup as the live one is, so the "source
                 // refused" fact (Lookup#refused, the owner's logs kind) reaches the worker from its copy - a plain function

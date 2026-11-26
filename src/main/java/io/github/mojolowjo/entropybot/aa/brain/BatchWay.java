@@ -95,20 +95,41 @@ public final class BatchWay {
      */
     public static boolean pricing(Blackboard bb, Goals.Goal g) {
         if (g == null || g.wakeAsked == null || !(bb.fact(PLANNER_FACT) instanceof Planner port)) return false;
-        return port.asking(OWN_KEY + g.id()) || port.asking(tripKey(g));
+        // merge review 2026-11-25 (4): a parked asker's trip is asked under its own wake key (slotKey), never the batch's
+        return port.asking(OWN_KEY + g.id()) || port.asking(slotKey(g));
+    }
+
+    /**
+     * merge review 2026-11-25 (finding 8): the deposit goal's request as the worker resolves it - NeedChain.deposit of
+     * {@code owed} (full id to count, LineDeposits.owed) into {@code chest} (MainChest.of). Immutable (a copy).
+     */
+    public record DepositAsk(Map<String, Integer> owed, MainChest.Answer chest) {
+        public DepositAsk {
+            owed = owed == null ? Map.of() : Map.copyOf(new TreeMap<>(owed));
+        }
     }
 
     /**
      * 0.39.z78 D6 (run DT): an order's own chain as the worker resolves it - NeedChain.resolveAll({@code what}, {@code ids},
      * {@code n}) for a group, else NeedChain.resolve({@code what}, {@code n}) - Goals' own supplier as a request.
+     * Merge review 2026-11-25 (finding 8: the deposit goal's chain, with its climb's pickaxe-first and lend ways, resolved on
+     * the client tick): {@code deposit} not null - the deposit goal's request (NeedChain.deposit), off the render thread as
+     * every order's own chain; {@code what}, {@code ids} and {@code n} are then its words only.
      */
-    public record OwnAsk(String what, List<String> ids, int n, boolean group, Map<String, Integer> aside) {
+    public record OwnAsk(String what, List<String> ids, int n, boolean group, Map<String, Integer> aside, DepositAsk deposit) {
         public OwnAsk {
             ids = ids == null ? List.of() : List.copyOf(ids);
             aside = aside == null ? Map.of() : Map.copyOf(aside);
         }
 
+        public OwnAsk(String what, List<String> ids, int n, boolean group, Map<String, Integer> aside) { this(what, ids, n, group, aside, null); }
+
         public OwnAsk(String what, List<String> ids, int n, boolean group) { this(what, ids, n, group, Map.of()); }
+
+        /** Finding 8: the deposit goal's request (nothing set aside: every kept amount is already off its world, Goals.keptOff). */
+        public static OwnAsk deposit(Map<String, Integer> owed, MainChest.Answer chest) {
+            return new OwnAsk("deposit", List.of(), 0, false, Map.of(), new DepositAsk(owed, chest));
+        }
 
         /**
          * The chain on {@code w} (the worker's resolve, or Goals' own on the tick). job-review-leftovers review: {@code aside}
@@ -125,7 +146,8 @@ public final class BatchWay {
          */
         public NeedChain.Chain resolve(NeedChain.World w, Map<String, Integer> liveOrder) {
             NeedChain.World on = pricedOn(w);
-            java.util.function.Supplier<NeedChain.Chain> run = () -> group ? NeedChain.resolveAll(what, ids, n, on) : NeedChain.resolve(what, n, on);
+            java.util.function.Supplier<NeedChain.Chain> run = () -> deposit != null ? NeedChain.deposit(deposit.owed(), deposit.chest(), on)
+                    : group ? NeedChain.resolveAll(what, ids, n, on) : NeedChain.resolve(what, n, on);
             if (aside.isEmpty() || liveOrder == null) return run.get();
             return NeedChain.startingFrom(bagLess(liveOrder), run);
         }
@@ -246,6 +268,7 @@ public final class BatchWay {
     /** The batch's kept trip is priced again on its next ask (a re-price: the stand's estimates, a landed path). */
     static void forget(Goals.Goal g) {
         TRIPS.remove(tripKey(g));
+        TRIPS.remove(WAKE_KEY + g.id());
         OWN.remove(g.id());
     }
 
@@ -256,6 +279,25 @@ public final class BatchWay {
 
     /** The trip's key: the batch ("b1"), or the order alone ("order goal.torch"). */
     public static String tripKey(Goals.Goal g) { return g.batch != null ? g.batch : "order " + g.id(); }
+
+    /** Merge review 2026-11-25 (4): the start of a parked asker's own trip key ("wake goal.torch"). */
+    public static final String WAKE_KEY = "wake ";
+
+    /**
+     * Merge review 2026-11-25 (4; the reviewer: two parked orders of one batch priced their wakes under the batch's one key,
+     * each with its own playbook - open() keeps the parked asker and leaves out its parked siblings - so each ask replaced the
+     * other's request on the planner worker and dropped the other's answer; neither landed, wakeAsked stayed and the line's
+     * deposit was held with no end): where {@code g}'s trip is kept and asked - the batch's key, or for a parked asker
+     * (its wake's price) its own key, so one key always carries one asker's playbook and its answer lands.
+     */
+    static String slotKey(Goals.Goal g) { return g.parked != null ? WAKE_KEY + g.id() : tripKey(g); }
+
+    /** Finding 4: the wake slot of {@code id} is let go (the order is no longer parked, or it is forgotten). */
+    private static void dropWake(String id) {
+        String k = WAKE_KEY + id;
+        if (TRIPS.remove(k) == null) return;
+        LEGS.remove(k); FUELS.remove(k); ANCHOR_SURFACE.remove(k); HOLDS.remove(k); SAID.remove(k); TOLD.remove(k); PRICED.remove(k);
+    }
 
     /** The leg starts of the trip last priced for {@code key} (by identity of its steps); empty: none. */
     public static Map<Step, String> legs(String key) {
@@ -377,6 +419,19 @@ public final class BatchWay {
     /** 0.39.z78 D6: the planner key of an order's own chain ("own " + the order's id), apart from the trips' keys. */
     public static final String OWN_KEY = "own ";
 
+    /**
+     * Merge review 2026-11-25 (finding 8; the reviewer: the deposit goal's chain was resolved only on the client tick, so the
+     * D6 guard did not hold for it - under ground its climb prices a worn pickaxe's spare, a lend's collect-again or a whole
+     * cheapest-pickaxe tree, on the render thread at each fact change): the deposit goal's chain {@code ask} on {@code w},
+     * asked of the planner worker under the goal's own key as an order's own chain is (the port's applied result while its
+     * facts hold, else the thinking stand: the bot stands, rule 22); no worker installed: resolved here as before.
+     */
+    static NeedChain.Chain depositChain(Blackboard bb, Goals.Goal g, OwnAsk ask, NeedChain.World w) {
+        if (!(bb.fact(PLANNER_FACT) instanceof Planner port)) return ask.resolve(w);
+        NeedChain.Chain c = port.own(OWN_KEY + g.id(), ask, w);
+        return NeedChain.thinking(c) ? ownStand(c) : c;
+    }
+
     private static NeedChain.Chain own(Blackboard bb, Goals.Goal g, String key, long landed, java.util.function.Supplier<NeedChain.Chain> own,
                                        OwnAsk ask, NeedChain.World w) {
         // wait-not-park (sim, OrderLineScenariosTest: the chain kept "the mining data is not loaded yet" after the data had
@@ -423,6 +478,9 @@ public final class BatchWay {
         List<Goals.Goal> open = open(bb, g);
         if (open.isEmpty()) open = List.of(g);
         String tk = tripKey(g);
+        // merge review 2026-11-25 (4): the trip is kept and asked under the slot - the batch's, or a parked asker's own wake key
+        String sk = slotKey(g);
+        if (g.parked == null) dropWake(g.id());
         Run run = bb.fact(RUN_FACT) instanceof Run r ? r : null;
         Goals.Goal runner = runner(bb, tk, run);
         // 0.39.z77 trip (run CU 20:52-21:05: "playbook 2" on every AA tick exactly while a met order carried the run on): the
@@ -443,14 +501,14 @@ public final class BatchWay {
         if (pos == feet) {
             // D11 fix review: no anchor (no running step, a step that moves the bot nowhere known, a cancelled run) - the held
             // anchor surface goes; a later anchor at the same cell reads the surface again (a shaft may have been dug there)
-            ANCHOR_SURFACE.remove(tk);
+            ANCHOR_SURFACE.remove(sk);
         } else {
             NeedChain.World at = Goals.chainWorld(bb, g, pos);
             if (at != null) {
                 // D11 fix (run FF): the surface fact at the anchor too, read once per anchor (the live one moved every block)
                 @SuppressWarnings("unchecked")
                 var read = bb.fact(SURFACE_AT_FACT) instanceof java.util.function.Function<?, ?> f ? (java.util.function.Function<int[], NeedChain.Surface>) f : null;
-                NeedChain.Surface s = anchorSurface(ANCHOR_SURFACE, tk, pos, read);
+                NeedChain.Surface s = anchorSurface(ANCHOR_SURFACE, sk, pos, read);
                 anchored = at.withFeetAt(pos, s == null ? null : () -> s);
             }
         }
@@ -464,16 +522,16 @@ public final class BatchWay {
         held.addAll(WorldFacts.of(bb).heldAt(bb.in, pos, WorldFacts.fluid(bb)).keySet());     // 0.39.z77 world 3: by state (hysteresis), never the raw distance
         held.addAll(Goals.stationHolds(bb, pos).keySet());           // 0.39.z78 J5 slice 1: the stations held (the one store)
         boolean under = anchorUnder(runningStep, under(bb.in));
-        String base = tripKeyOf(tk, open, pos, under, held);
-        Trip kept = TRIPS.get(tk);
-        Held h = waitTest ? hold(bb, tk, run, runner, kept) : Held.NONE;
+        String base = tripKeyOf(sk, open, pos, under, held);
+        Trip kept = TRIPS.get(sk);
+        Held h = waitTest ? hold(bb, sk, run, runner, kept) : Held.NONE;
         if (h == Held.KEEP) return kept.chain();
         // 0.39.z77 carry 2: the kept trip's own band Ys say whether the feet crossed one (its legs placed again)
         // 0.39.z77 seen: and its own references say which of the bag's counts it depends on
         // 0.39.z78 D6: a kept thinking stand is priced again as soon as the planner's result for it has arrived
         boolean answered = kept != null && kept.chain() != null && kept.chain().why().startsWith(STAND + NeedChain.NOT_PRICED + NeedChain.THINKING)
-                && bb.fact(PLANNER_FACT) instanceof Planner pp && pp.ready(tk);
-        Trip t = h != Held.AGAIN && !answered && kept != null && kept.holds(base + bagPart(kept.refs(), w.bag()) + bandPlace(kept.pb(), pos, under), landed(w)) ? kept : price(bb, g, tk, base, pos, under, open, w);
+                && bb.fact(PLANNER_FACT) instanceof Planner pp && pp.ready(sk);
+        Trip t = h != Held.AGAIN && !answered && kept != null && kept.holds(base + bagPart(kept.refs(), w.bag()) + bandPlace(kept.pb(), pos, under), landed(w)) ? kept : price(bb, g, sk, base, pos, under, open, w);
         // 0.39.z77 noway (run BU 13:34:23: the helmet's band leg had no way and ended the PICKAXE's order, never made): a leg's
         // no-way ends only the orders whose own items need it (with the leg's reasons, as an order's no-way always did); every
         // other order of the batch derives its trip again without them and runs on

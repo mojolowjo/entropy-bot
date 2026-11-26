@@ -81,23 +81,27 @@ final class FirstAnswerClock {
         if (np != null && (feet == null || !java.util.Arrays.equals(np, feet) || !PricedAnswers.waits(a))) { noProgress.remove(key); np = null; }
         int[] sp = spentAt.get(key);
         if (sp != null && (feet == null || !java.util.Arrays.equals(sp, feet))) { spentAt.remove(key); sp = null; }
+        long wait = (long) Math.max(0, waitS) * GameTimes.TPS;
         if (PricedAnswers.noProgress(a) || np != null) {
             if (feet != null) {
                 if (noProgress.size() >= max) noProgress.clear();
                 noProgress.put(key, feet.clone());
             }
             PathPrice.Answer e = PricedAnswers.noProgressEstimate(a, estimateS.getAsDouble(), feet);
-            if (e != null) { clocks.remove(key); return e; }
-        }        if (!PricedAnswers.waits(a)) { clocks.remove(key); return a; }
+            // merge review 2026-11-25 (9; the reviewer: the clock was removed here, so after a move the fresh search from the new
+            // cell started a new wait and a walk already past its wait was "not known" again, each search cycle): an estimate is
+            // no answer - the walk's clock runs on (started here when none runs), wherever the bot stands (0.39.z78 ea)
+            if (e != null) { onClock(key, now, wait); return e; }
+        }
+        if (!PricedAnswers.waits(a)) { clocks.remove(key); return a; }
         // 0.39.z78 J6c run EU (1a; 10:39:58-10:40:37: two lip walks "chunks not loaded" stood 30 s on nothing - 0 walks
         // computing): a walk into chunks not loaded has no search to wait on - it is ranked at once by Baritone's own goal
         // heuristic (the fork's IPathEstimate: no world read, valid without the chunks), "estimate, chunks not loaded",
-        // never a price (rule 18 as amended); no estimate: the wait as before
+        // never a price (rule 18 as amended); no estimate: the wait as before. Merge review 2026-11-25 (9): the clock runs on
         if (a.kind() == PathPrice.Kind.CHUNKS) {
             PathPrice.Answer e = PricedAnswers.chunksEstimate(a, estimateS.getAsDouble());
-            if (e != null) { clocks.remove(key); return e; }
+            if (e != null) { onClock(key, now, wait); return e; }
         }
-        long wait = (long) Math.max(0, waitS) * GameTimes.TPS;
         // job-stand2 item 3 (run JAS: 6 stands of 30 s in one order): a walk this order's stand already waited its full wait
         // on is past its wait for the rest of the order - the estimate at once, never a second stand on it
         if (spent.contains(key) || sp != null) return PricedAnswers.afterWait(a, wait, waitS, estimateS.getAsDouble());
@@ -110,5 +114,18 @@ final class FirstAnswerClock {
         c[1] = now;
         if (now - c[0] < wait) return a;
         return PricedAnswers.afterWait(a, now - c[0], waitS, estimateS.getAsDouble());
+    }
+
+    /**
+     * Merge review 2026-11-25 (9): {@code key} was asked at {@code now} and answered by an estimate (no progress, chunks not
+     * loaded) - its clock runs on as for any waiting ask: a new one when none runs or it was not asked for longer than the
+     * wait, else its last ask is now.
+     */
+    private void onClock(String key, long now, long wait) {
+        long[] c = clocks.get(key);
+        if (c == null || now - c[1] > wait) {
+            if (clocks.size() >= max) clocks.clear();
+            clocks.put(key, new long[]{now, now});
+        } else c[1] = now;
     }
 }
