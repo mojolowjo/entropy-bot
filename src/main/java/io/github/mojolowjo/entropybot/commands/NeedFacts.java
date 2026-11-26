@@ -53,11 +53,13 @@ public final class NeedFacts {
         return s.get() instanceof ThreatFacts tf && tf.ways() != null && tf.ways().burrow();
     }
 
-    /** The bag by item path (Inputs.bag: "chest" -> 1); a namespaced id is looked up by its path. */
+    /**
+     * The bag by its one key (Inputs.bag: "chest" -> 1, a modded item by its full id; Thing.path). Merge review 2026-11-25
+     * send-back (finding 13, rule 23 (2)): a modded junk id read by its bare path counted 0, so it was never dropped.
+     */
     static int count(Map<String, Integer> bag, String id) {
-        if (bag == null) return 0;
-        int c = id.indexOf(':');
-        return bag.getOrDefault(c >= 0 ? id.substring(c + 1) : id, 0);
+        if (bag == null || id == null) return 0;
+        return bag.getOrDefault(io.github.mojolowjo.entropybot.aa.brain.Thing.path(id), 0);
     }
 
     /**
@@ -93,7 +95,7 @@ public final class NeedFacts {
             int n = count(bag, id);
             if (n <= 0) continue;
             junkSlots += (n + 63) / 64;
-            drops.add(new io.github.mojolowjo.entropybot.aa.moves.Step.DropJunk(id.indexOf(':') >= 0 ? id.substring(id.indexOf(':') + 1) : id, n));
+            drops.add(new io.github.mojolowjo.entropybot.aa.moves.Step.DropJunk(io.github.mojolowjo.entropybot.aa.brain.Thing.path(id), n));
         }
         return new BagOptions.BagFacts(in.freeSlots, want, in.baseChests, in.baseDist, in.basePos, count(bag, "minecraft:chest") > 0,
                 in.planks, in.wood, in.pos, junkSlots, drops);

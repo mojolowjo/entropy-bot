@@ -52,6 +52,31 @@ public final class IncidentText {
 
     /** Guard refusals within a window (ms): due() is true once the count reaches the limit, then quiet for the cool-down. */
     public static final class GuardStreak {
+        /**
+         * The recorder's streak count (Tuning recorder.guardStreakN): FlightRecorder's streak and RefusedBreaks.echo, which
+         * lets a held cell's first refusals through to the ring by the same count, read this one value.
+         */
+        public static int limit() { return io.github.mojolowjo.entropybot.aa.brain.Tuning.i("recorder.guardStreakN"); }
+
+        /**
+         * Send-back (finding 17): the recorder's scan of new ring events ({@code json}: EventRing.since) - each enforced
+         * "guard" event is one refusal to {@code streak}; the text of the last such event when a streak fires, else null.
+         */
+        public static String scan(GuardStreak streak, String json, long now) {
+            if (json == null || !json.contains("\"kind\":\"guard\"")) return null;
+            String lastText = null;
+            boolean fire = false;
+            for (com.google.gson.JsonElement e : com.google.gson.JsonParser.parseString(json).getAsJsonArray()) {
+                com.google.gson.JsonObject o = e.getAsJsonObject();
+                if (!"guard".equals(o.get("kind").getAsString())) continue;
+                com.google.gson.JsonObject d = o.has("data") && o.get("data").isJsonObject() ? o.getAsJsonObject("data") : null;
+                if (d == null || !d.has("enforced") || !d.get("enforced").getAsBoolean()) continue;
+                lastText = o.get("text").getAsString();
+                if (streak.refused(now)) fire = true;
+            }
+            return fire ? lastText : null;
+        }
+
         final int limit;
         final long window, cooldown;
         private final ArrayDeque<Long> times = new ArrayDeque<>();

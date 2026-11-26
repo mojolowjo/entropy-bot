@@ -41,9 +41,9 @@ public final class Blueprint {
         return SKIP.contains(blockId.startsWith("minecraft:") ? blockId.substring(10) : blockId.contains(":") ? "" : blockId);
     }
 
-    /** The bag's key for an item id: the path for minecraft items (as Inputs.bag), else the path too (the bag has no namespace). */
+    /** The bag's key for an item id: the one key ({@link Thing#path}: the path for minecraft items, a modded item's full id). */
     public static String bagKey(String itemId) {
-        return itemId == null ? "" : itemId.replaceFirst("^.*:", "");
+        return itemId == null ? "" : Thing.path(itemId);
     }
 
     /** {@code aa build} words: name, origin (null = here), here flag, priority. */

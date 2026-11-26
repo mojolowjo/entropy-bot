@@ -698,8 +698,9 @@ public final class AaRuntime implements JobPort {
         if (!lv.hasChunkAt(new net.minecraft.core.BlockPos(me[0], me[1], me[2]))) return null;
         // run EH (rule 23): the one "below the surface" reader - rock over the head or the hole round the feet
         int rock = Jobs.rockOverHead(lv, me[0], me[1], me[2]), hole = Jobs.holeDepth(lv, me[0], me[1], me[2]);
-        int depth = io.github.mojolowjo.entropybot.world.SurfaceHeight.belowSurface(rock, hole);
-        boolean inHole = hole > 0 && hole >= rock;
+        var feet = io.github.mojolowjo.entropybot.aa.NeedChain.Surface.atFeet(me, rock, hole);     // merge review 11/16: one build of the fact
+        int depth = feet.depth();
+        boolean inHole = feet.hole();
         // run EI (the manager's fix): no rock over the head - the surface leg's target is the ring's highest standable
         // surface cell, nearest (SurfaceHeight.ringTarget): on flat ground the feet's own cell (no leg), in a pit the rim
         if (rock == 0) {

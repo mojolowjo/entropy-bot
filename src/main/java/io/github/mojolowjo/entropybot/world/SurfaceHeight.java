@@ -67,6 +67,16 @@ public final class SurfaceHeight {
      * same cell (rule 23 (2)). Pure.
      */
     public static int pitDepth(int[] feet, java.util.function.IntBinaryOperator surface) {
+        int d = walledIn(feet, surface);
+        return known(d) ? d : 0;
+    }
+
+    /**
+     * Merge review 2026-11-25 send-back (rule 15): {@link #pitDepth}, but {@link #NOT_KNOWN} when no column round the feet is
+     * known (pitDepth's 0 there is "no depth claimed", never "no hole") - for a step that must not read it as the surface
+     * (the station place step, Jobs.feetSurface). Pure.
+     */
+    public static int pitDepthKnown(int[] feet, java.util.function.IntBinaryOperator surface) {
         return walledIn(feet, surface);
     }
 
@@ -115,7 +125,7 @@ public final class SurfaceHeight {
                     if (!in[n] && read[n] && known(h[n])) lowest = Math.min(lowest, h[n]);     // every neighbour of a reached cell was read
                 }
         }
-        if (lowest == Integer.MAX_VALUE) return 0;
+        if (lowest == Integer.MAX_VALUE) return NOT_KNOWN;      // no known column round the feet (pitDepth: 0, no depth claimed)
         int d = lowest - feet[1];
         return d > 1 ? d : 0;                                    // structural: a 1-block step walks out
     }

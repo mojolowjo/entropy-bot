@@ -552,15 +552,18 @@ class LineDepositsTest {
     void aModdedItemsDepositIsSentByItsFullId() {
         String osmium = "mekanism:ingot_osmium";
         LineDeposits d = new LineDeposits();
-        Goals.Goal g = new Goals.Goal(new io.github.mojolowjo.entropybot.aa.brain.Thing.Result(osmium, osmium, false, List.of(osmium), List.of("ingot_osmium"), 0, null, null, null), 2, 0, 0);
+        // merge review 2026-11-25 finding 13: the bag's one key (Thing.path) keeps a modded item's namespace
+        String key = io.github.mojolowjo.entropybot.aa.brain.Thing.path(osmium);
+        assertEquals(osmium, key);
+        Goals.Goal g = new Goals.Goal(new io.github.mojolowjo.entropybot.aa.brain.Thing.Result(osmium, osmium, false, List.of(osmium), List.of(key), 0, null, null, null), 2, 0, 0);
         d.add(g, null, true);
-        Map<String, Integer> bag = Map.of("ingot_osmium", 2);
+        Map<String, Integer> bag = Map.of(key, 2);
         assertEquals(Kind.DUE, d.weigh(g, "done", bag, AT).kind());
-        assertEquals(Map.of("ingot_osmium", 2), d.dueNow(), "the weighing counts by the bag's key");
+        assertEquals(Map.of(key, 2), d.dueNow(), "the weighing counts by the bag's key");
         assertEquals(Map.of(osmium, 2), d.owed(), "the step is sent the full id (owed, the one reader)");
         var stacks = List.of(new io.github.mojolowjo.entropybot.aa.brain.DepositRule.Item(osmium, 2, false, false, false, false));
         assertEquals(Map.of(osmium, 2), io.github.mojolowjo.entropybot.aa.brain.DepositRule.onlyToPut(stacks, d.owed()), "the chest click finds the stack");
-        assertTrue(io.github.mojolowjo.entropybot.aa.brain.DepositRule.onlyToPut(stacks, d.dueNow()).isEmpty(), "the bare path names minecraft:ingot_osmium: the fault");
+        assertEquals(Map.of(osmium, 2), io.github.mojolowjo.entropybot.aa.brain.DepositRule.onlyToPut(stacks, d.dueNow()), "the bag's key names the modded item too: the old fault cannot come back");
         // a vanilla item's full id is the minecraft one
         OrderLineSim s = new OrderLineSim();
         Goals.Goal cob = s.order("cobblestone", 32, null, true);

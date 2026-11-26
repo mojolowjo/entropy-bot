@@ -1,8 +1,7 @@
 package io.github.mojolowjo.entropybot.aa.moves;
 
+import io.github.mojolowjo.entropybot.aa.NeedChain;
 import io.github.mojolowjo.entropybot.aa.brain.Tuning;
-
-import java.util.List;
 
 /**
  * D14 (stations placed once, on the surface or at a base spot): what the place step asks the fork's
@@ -11,11 +10,15 @@ import java.util.List;
  * <ul>
  * <li>Centre: the base spot when the feet are within {@code station.baseReachM} of it (its walk stays the place step's
  *     own short leg, so the place price holds), else the feet.</li>
- * <li>Surface: the feet stand on the leaf-free surface (MOTION_BLOCKING_NO_LEAVES' meaning, {@code world.SurfaceHeight});
- *     a bot under a tree is on the surface (runs JAC, JAD, JAF misjudged this with WORLD_SURFACE). Under ground the cell
- *     stays within a block of the feet's height, in a cave chamber with room.</li>
+ * <li>Surface: the feet are not under ground by the planner's own test ({@link NeedChain.Surface#under} on the one
+ *     reading, {@link NeedChain.Surface#atFeet}: the rock over the head and the hole round the feet over the ground
+ *     under any tree). Merge review 2026-11-25 findings 11 and 16 (rule 23 (2)): the place step's own leaf-free column and
+ *     ring test (job-review-leftovers, run 3 w005) is gone, so the plan and the place step never disagree in one cell (a
+ *     1-3 deep shaft open to the sky, a grove of trunks round the feet). A hole whose rim is within the place reach
+ *     ({@code steps.placeNearR}) asks the surface: its rim is where the cells with room are. Under ground the cell stays
+ *     within a block of the feet's height, in a cave chamber with room.</li>
  * </ul>
- * Pure (JUnit: D14StationsTest). Loader notes: none here; the live surface is {@code world.SurfaceHeightLive.noLeaves}.
+ * Pure (JUnit: D14StationsTest). Loader notes: none here; the live fact is {@code commands.Jobs.feetSurface}.
  */
 public final class StationPlace {
     private StationPlace() {}
@@ -27,62 +30,26 @@ public final class StationPlace {
     public record Ask(int[] center, int radius, boolean surface, String why) {}
 
     /**
-     * On the surface: the feet at or above the leaf-free surface of their column, less one step ({@code noLeavesY}: the first
-     * cell over the top non-leaf blocking block; {@link io.github.mojolowjo.entropybot.world.SurfaceHeight#NOT_KNOWN}: not
-     * known - never claimed, rule 15).
+     * The request for a station placed from {@code feet} whose surface fact is {@code at} (Jobs.feetSurface; null: the
+     * surface over the column is not known - never claimed, rule 15: the under-ground request stands).
      */
-    public static boolean onSurface(int feetY, int noLeavesY) {
-        if (!io.github.mojolowjo.entropybot.world.SurfaceHeight.known(noLeavesY)) return false;
-        return feetY >= noLeavesY - 1;                                        // structural: a 1-block step
-    }
-
-    /**
-     * job-review-leftovers (item 3, run 3 w005: the feet 28 blocks down the bot's own open shaft at 20 28 -10; the shaft's
-     * column is open to the sky, so its leaf-free height is the shaft floor and the feet read "on the surface"; a table was
-     * asked 22 times for a surface cell 36 blocks up with nothing spare to pillar with): the cell asked from is judged by
-     * the ground round it, not its own column only. On the surface: {@link #onSurface(int, int)} for the feet column AND
-     * the feet within {@code station.shaftDepth} below {@code ringY}, the middle (median) leaf-free height of the columns
-     * round the feet ({@link #ringSurface}). Not known ring: never claimed (rule 15), the under-ground request stands.
-     */
-    public static boolean onSurface(int feetY, int noLeavesY, int ringY) {
-        if (!onSurface(feetY, noLeavesY)) return false;
-        if (!io.github.mojolowjo.entropybot.world.SurfaceHeight.known(ringY)) return false;
-        return feetY >= ringY - Tuning.i("station.shaftDepth");
-    }
-
-    /**
-     * The median leaf-free height of the ring (Tuning station.ring: the bot's own shaft width, run 3 w005) of columns round {@code x z} ({@code heightAt}: a column's
-     * leaf-free height, {@link io.github.mojolowjo.entropybot.world.SurfaceHeight#NOT_KNOWN} when not loaded); NOT_KNOWN
-     * when fewer than half the ring is known (rule 15). Pure.
-     */
-    public static int ringSurface(java.util.function.IntBinaryOperator heightAt, int x, int z) {
-        int ring = Math.max(1, Tuning.i("station.ring"));     // structural: a ring at least one column out
-        List<Integer> hs = new java.util.ArrayList<>();
-        int all = 0;
-        for (int dx = -ring; dx <= ring; dx++)
-            for (int dz = -ring; dz <= ring; dz++) {
-                if (Math.max(Math.abs(dx), Math.abs(dz)) != ring) continue;
-                all++;
-                int h = heightAt.applyAsInt(x + dx, z + dz);
-                if (io.github.mojolowjo.entropybot.world.SurfaceHeight.known(h)) hs.add(h);
-            }
-        if (hs.size() * 2 < all) return io.github.mojolowjo.entropybot.world.SurfaceHeight.NOT_KNOWN;   // structural: half
-        java.util.Collections.sort(hs);
-        return hs.get(hs.size() / 2);                                              // structural: the median
-    }
-
-    /** The request for a station placed from {@code feet} with the column's leaf-free surface {@code noLeavesY} and the ring's {@code ringY}. */
-    public static Ask ask(int[] feet, int noLeavesY, int ringY, int[] baseSpot) {
+    public static Ask ask(int[] feet, NeedChain.Surface at, int[] baseSpot) {
         int r = Tuning.i("steps.placeNearR");
         if (baseSpot != null && baseSpot.length >= 3 && feet != null) {      // structural: x y z
             double dx = baseSpot[0] - feet[0], dy = baseSpot[1] - feet[1], dz = baseSpot[2] - feet[2];
             if (Math.sqrt(dx * dx + dy * dy + dz * dz) <= Tuning.get("station.baseReachM"))
                 return new Ask(baseSpot.clone(), r, true, "near the base spot " + baseSpot[0] + " " + baseSpot[1] + " " + baseSpot[2] + " on the surface");
         }
-        boolean up = onSurface(feet[1], noLeavesY, ringY);
-        boolean shaft = !up && onSurface(feet[1], noLeavesY);
+        boolean up = at != null && !at.under();
+        boolean shaft = at != null && !up && at.hole();
+        // merge review 2026-11-25 send-back (findings 11/16): under ground in a hole whose rim is within the place step's own
+        // reach (the hole's depth, the one reading, at most steps.placeNearR), the cells with room are on the rim the surface
+        // leg targets, not round the feet (the walls of a 1x1 shaft: the fork found 0 free cells there) - the request is the
+        // surface, as it was before the one reader; deeper, the plain under-ground request (the fork's cell or its named end)
+        if (shaft && at.depth() <= r) return new Ask(feet.clone(), r, true, "near me on the surface (the rim of the hole I stand in, " + at.depth() + " up, within the place reach " + r + ")");
         return new Ask(feet.clone(), r, up, up ? "near me on the surface"
-                : shaft ? "near me under ground (a cell with room at my height; my column is open to the sky but the ground round it is at " + ringY + ")"
+                : at == null ? "near me under ground (a cell with room at my height; the surface over me is not known)"
+                : shaft ? "near me under ground (a cell with room at my height; my column is open to the sky but I am " + at.depth() + " below the ground round it)"
                 : "near me under ground (a cell with room at my height)");
     }
 }

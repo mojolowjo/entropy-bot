@@ -617,6 +617,7 @@ reconnectRules.perHour	3.0
 reconnectRules.timeoutDefaultS	60.0
 reconnectRules.timeoutMaxS	600.0
 reconnectRules.timeoutMinS	15.0
+recorder.guardStreakN	5.0
 reflex.air.burrowUp	3.0
 reflex.air.pullUp	24.0
 reflex.creeper.burrow	2.0
@@ -1029,8 +1030,6 @@ pathCost.pricedTop	2.0
 pathCost.askFactor	2.0
 station.materialS	10.0
 station.baseReachM	16.0
-station.shaftDepth	3.0
-station.ring	2.0
 band.legCarryS	600.0
 tunnel.heldNearM	8.0
 tunnel.legBlocks	6.0

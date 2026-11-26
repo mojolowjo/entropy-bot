@@ -359,6 +359,37 @@ public final class GuardCore {
      */
     public record TravelCheck(Verdict guard, BreakPolicy.Verdict travel, boolean allowed) {}
 
+    /**
+     * Mining plan phase 1, the travel click's exemption where the fence alone would refuse (no lease): the policy allows the
+     * break (the same BreakPolicy answer Baritone's path cost asked, CostAdvisorHook), a job runs, and the block is terrain
+     * the restore ledger can put back (RestoreRules.natural; logs and crops keep the fence). Merge review 2026-11-25 finding
+     * 15 (rules 4 and 11): the terrain test has no namespace rule, so a modded world-gen stone the path was priced through is
+     * let through by the click as well. Pure (JUnit: MergeReviewToolsTest).
+     */
+    public static boolean travelClickLets(BreakPolicy.Verdict travel, boolean jobRunning, String blockId) {
+        return travel != null && travel.allowed() && jobRunning && io.github.mojolowjo.entropybot.restore.RestoreRules.natural(blockId);
+    }
+
+    /**
+     * Guard.refuse's event for a refusal (merge review 2026-11-25 finding 17, send-back: one pure path from the guard's
+     * decision to the recorder's ring, JUnit-replayed): the line with the held cell's words ({@code say}: the first line,
+     * an echo, null when not a held break), pushed to {@code ring} (null: no ring) as a "guard" event. Returns the line.
+     */
+    public static String refusalEvent(io.github.mojolowjo.entropybot.events.EventRing ring, String action, int x, int y, int z, Verdict v, String line, RefusedBreaks.Say say) {
+        if (say == RefusedBreaks.Say.LINE) line += " (said once for this cell; the count is said when the step ends)";
+        else if (say == RefusedBreaks.Say.ECHO) line += " (refused again at this cell; the count is said when the step ends)";
+        if (ring != null) {
+            com.google.gson.JsonObject d = new com.google.gson.JsonObject();
+            d.addProperty("action", action);
+            d.addProperty("pos", x + " " + y + " " + z);
+            d.addProperty("reason", v.reason());
+            d.addProperty("floor", v.floor());
+            d.addProperty("enforced", !v.allowed());
+            ring.push("guard", line, d);
+        }
+        return line;
+    }
+
     public TravelCheck checkTravelBreak(String dim, int x, int y, int z, BlockInfo block, BreakPolicy.Snapshot s,
                                         BreakPolicy.BlockFacts facts, BreakPolicy.Where me) {
         return checkPolicy(dim, x, y, z, "break", block, s, facts, me, BreakPolicy.Intent.TRAVEL);

@@ -82,8 +82,9 @@ public final class SenseRuntime {
             if (st.is(net.minecraft.tags.ItemTags.COALS)) coal += st.getCount();      // 0.26.1 R2
             if (st.is(net.minecraft.tags.ItemTags.LOGS)) logs += st.getCount();
             if (st.is(net.minecraft.tags.ItemTags.BEDS)) bedBag = true;
-            bag.merge(id.substring(id.indexOf(':') + 1), st.getCount(), Integer::sum);
-            if (id.endsWith("_pickaxe")) {
+            // merge review 13 (rule 4): the bag's one key (Thing.path: a modded item keeps its namespace, so its tier and uses are read)
+            bag.merge(io.github.mojolowjo.entropybot.aa.brain.Thing.path(id), st.getCount(), Integer::sum);
+            if (st.is(net.minecraft.tags.ItemTags.PICKAXES)) {          // the game's pickaxes tag, never the name
                 picks++;
                 int left = st.isDamageableItem() ? st.getMaxDamage() - st.getDamageValue() : 1000;
                 dur += left;
@@ -204,7 +205,7 @@ public final class SenseRuntime {
             io.github.mojolowjo.entropybot.sense.Feasibility.Facts f = s.feas;
             f.bag.putAll(bag);
             if (lastTotals != null) for (Map.Entry<String, Integer> e : lastTotals.entrySet()) {
-                String k = e.getKey().substring(e.getKey().indexOf(':') + 1);
+                String k = io.github.mojolowjo.entropybot.aa.brain.Thing.path(e.getKey());       // the bag's one key
                 int n = e.getValue() - bag.getOrDefault(k, 0);
                 if (n > 0) f.stock.merge(k, n, Integer::sum);
             }
@@ -275,10 +276,10 @@ public final class SenseRuntime {
     /** The hash of what storage holds (the stock totals less the bag), so a change counts on a scan or deposit, never on the bag alone. */
     static int storageHash(java.util.Map<String, Integer> totals, java.util.Map<String, Integer> bag) {
         java.util.Map<String, Integer> b = new java.util.HashMap<>();
-        if (bag != null) bag.forEach((k, v) -> b.merge(k.substring(k.indexOf(':') + 1), v == null ? 0 : v, Integer::sum));
+        if (bag != null) bag.forEach((k, v) -> b.merge(io.github.mojolowjo.entropybot.aa.brain.Thing.path(k), v == null ? 0 : v, Integer::sum));
         java.util.TreeMap<String, Integer> out = new java.util.TreeMap<>();
         if (totals != null) totals.forEach((k, v) -> {
-            String s = k.substring(k.indexOf(':') + 1);
+            String s = io.github.mojolowjo.entropybot.aa.brain.Thing.path(k);
             int n = (v == null ? 0 : v) - b.getOrDefault(s, 0);
             if (n > 0) out.merge(s, n, Integer::sum);
         });

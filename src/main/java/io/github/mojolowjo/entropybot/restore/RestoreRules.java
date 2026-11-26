@@ -46,9 +46,15 @@ public final class RestoreRules {
         return false;
     }
 
-    /** Terrain: stone-like blocks (base-stone tags, soft pickaxe blocks), soft blocks, terracotta (the terracotta tag, never the glazed kind: it is built). */
+    /**
+     * Terrain: stone-like blocks (base-stone tags, soft pickaxe blocks), soft blocks, terracotta (the terracotta tag, never the glazed kind: it is built).
+     * Merge review 2026-11-25 finding 15 (rule 4: no namespace rule; rule 11: the click and the path cost give one answer):
+     * a modded block is judged by the same tags and data as a vanilla one - its world-gen stone is terrain to the travel
+     * click (Guard.vetoTravelBreak) as it is to Baritone's path cost (BreakPolicy through CostAdvisorHook), and a built
+     * modded block stays out through BreakPolicy's structure fact (the jars' world-gen), which both ask first.
+     */
     public static boolean natural(String blockId) {
-        if (blockId == null || (blockId.contains(":") && !blockId.startsWith("minecraft:"))) return false;
+        if (blockId == null) return false;
         String id = full(blockId);
         return ItemWorth.stoneLike(id) || soft(id) || ItemWorth.hasTag(id, "terracotta");
     }

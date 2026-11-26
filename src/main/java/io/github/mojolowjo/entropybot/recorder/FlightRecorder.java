@@ -76,7 +76,7 @@ public final class FlightRecorder implements Recorder, RecorderCommand.Controls 
     private final ChangeFilter.Limiter limiter = new ChangeFilter.Limiter(8, 10_000L, 2000);
     private final Map<Block, String> blockIds = new ConcurrentHashMap<>();
     private final Map<BlockState, String> stateIds = new ConcurrentHashMap<>();
-    private final IncidentText.GuardStreak guardStreak = new IncidentText.GuardStreak(5, 60_000L, 5 * 60_000L);
+    private final IncidentText.GuardStreak guardStreak = new IncidentText.GuardStreak(IncidentText.GuardStreak.limit(), 60_000L, 5 * 60_000L);
 
     // game-thread state
     private volatile boolean on;
@@ -328,20 +328,10 @@ public final class FlightRecorder implements Recorder, RecorderCommand.Controls 
         if (last <= guardSeq) return;
         String json = events.since(guardSeq, EventRing.CAPACITY);
         guardSeq = last;
-        if (!json.contains("\"kind\":\"guard\"")) return;
-        String lastText = null;
-        boolean fire = false;
-        for (JsonElement e : JsonParser.parseString(json).getAsJsonArray()) {
-            JsonObject o = e.getAsJsonObject();
-            if (!"guard".equals(o.get("kind").getAsString())) continue;
-            JsonObject d = o.has("data") && o.get("data").isJsonObject() ? o.getAsJsonObject("data") : null;
-            if (d == null || !d.has("enforced") || !d.get("enforced").getAsBoolean()) continue;
-            lastText = o.get("text").getAsString();
-            if (guardStreak.refused(now)) fire = true;
-        }
-        if (fire) {
+        String lastText = IncidentText.GuardStreak.scan(guardStreak, json, now);     // send-back (17): one pure scan, JUnit-replayed
+        if (lastText != null) {
             int[] target = IncidentText.coords(lastText);
-            autoIncident(now, "guard refusal streak: 5 refusals within a minute, the last: " + cut(lastText, 160), jobText(), target);
+            autoIncident(now, "guard refusal streak: " + guardStreak.limit + " refusals within a minute, the last: " + cut(lastText, 160), jobText(), target);
         }
     }
 

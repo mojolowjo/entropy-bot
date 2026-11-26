@@ -78,18 +78,28 @@ class D14StationsTest {
         // ground top block at 63, feet at 64, air 64-66, leaves 67-68: MOTION_BLOCKING's first cell over its top = 69
         int noLeaves = SurfaceHeight.noLeaves(true, 69, -64, y -> y >= 64);
         assertEquals(64, noLeaves);
-        assertTrue(StationPlace.onSurface(64, noLeaves), "under the tree: on the surface");
-        assertFalse(StationPlace.onSurface(64, 69), "WORLD_SURFACE's reading (the leaves' top) would call it under ground");
-        assertFalse(StationPlace.onSurface(40, noLeaves), "24 under: under ground");
-        assertFalse(StationPlace.onSurface(64, SurfaceHeight.NOT_KNOWN), "not known: never claimed");
+        int[] feet = {0, 64, 0};
+        NeedChain.Surface tree = at(feet, false, noLeaves, (x, z) -> 64);
+        assertFalse(tree.under(), "under the tree: on the surface");
+        assertTrue(at(feet, false, 69, (x, z) -> 64).under(), "WORLD_SURFACE's reading (the leaves' top) would call it under ground");
+        assertTrue(at(new int[]{0, 40, 0}, false, noLeaves, (x, z) -> 64).under(), "24 under: under ground");
 
-        StationPlace.Ask up = StationPlace.ask(new int[]{0, 64, 0}, noLeaves, 64, null);
+        StationPlace.Ask up = StationPlace.ask(feet, tree, null);
         assertTrue(up.surface());
-        StationPlace.Ask base = StationPlace.ask(new int[]{0, 64, 0}, noLeaves, 64, new int[]{10, 64, 0});
+        assertFalse(StationPlace.ask(feet, null, null).surface(), "not known: never claimed (rule 15)");
+        StationPlace.Ask base = StationPlace.ask(feet, tree, new int[]{10, 64, 0});
         assertArrayEquals(new int[]{10, 64, 0}, base.center());
-        StationPlace.Ask farBase = StationPlace.ask(new int[]{0, 40, 0}, noLeaves, 64, new int[]{100, 64, 0});
+        StationPlace.Ask farBase = StationPlace.ask(new int[]{0, 40, 0}, at(new int[]{0, 40, 0}, false, noLeaves, (x, z) -> 64), new int[]{100, 64, 0});
         assertArrayEquals(new int[]{0, 40, 0}, farBase.center());
         assertFalse(farBase.surface());
+    }
+
+    /**
+     * The feet's surface fact as the live readers build it (Jobs.feetSurface): the rock over the head (RestoreRules.rockOverHead
+     * on the leaf-free top) and the hole round the feet (SurfaceHeight.pitDepth over the ground under any tree). Pure.
+     */
+    static NeedChain.Surface at(int[] feet, boolean sky, int noLeaves, java.util.function.IntBinaryOperator ground) {
+        return NeedChain.Surface.atFeet(feet, io.github.mojolowjo.entropybot.restore.RestoreRules.rockOverHead(sky, noLeaves, feet[1]), SurfaceHeight.pitDepth(feet, ground));
     }
 
     /**
@@ -98,15 +108,13 @@ class D14StationsTest {
      */
     @Test
     void w005_anOpenShaftsColumnIsNotTheSurface() {
-        int ring = StationPlace.ringSurface((x, z) -> x == 20 && z == -10 ? 28 : 64, 20, -10);
-        assertEquals(64, ring);
-        assertTrue(StationPlace.onSurface(28, 28), "the column alone reads the shaft floor as the surface (the w005 misreading)");
-        assertFalse(StationPlace.onSurface(28, 28, ring), "36 under the ground round it: under ground");
-        StationPlace.Ask a = StationPlace.ask(new int[]{20, 28, -10}, 28, ring, null);
+        int[] feet = {20, 28, -10};
+        NeedChain.Surface s = at(feet, true, 28, (x, z) -> x == 20 && z == -10 ? 28 : 64);
+        assertTrue(s.under() && s.hole() && s.depth() == 36, "36 under the ground round it: under ground, " + s);
+        StationPlace.Ask a = StationPlace.ask(feet, s, null);
         assertFalse(a.surface(), a.why());
         assertTrue(a.why().contains("open to the sky"), a.why());
-        assertTrue(StationPlace.onSurface(63, 64, 65), "a step lower than the ground round: still the surface");
-        assertEquals(SurfaceHeight.NOT_KNOWN, StationPlace.ringSurface((x, z) -> SurfaceHeight.NOT_KNOWN, 0, 0), "not loaded: not known");
-        assertFalse(StationPlace.onSurface(64, 64, SurfaceHeight.NOT_KNOWN), "not known: never claimed (rule 15)");
+        int[] step = {0, 63, 0};
+        assertTrue(StationPlace.ask(step, at(step, true, 63, (x, z) -> x == 0 && z == 0 ? 63 : 64), null).surface(), "a step lower than the ground round: still the surface");
     }
 }

@@ -179,7 +179,13 @@ public final class Thing {
         return w == null ? "" : w.trim().toLowerCase(Locale.ROOT).replaceAll("\\s+", "_").replaceFirst("^minecraft:", "");
     }
 
-    public static String path(String id) { return id.contains(":") ? id.substring(id.indexOf(':') + 1) : id; }
+    /**
+     * The bag's key for an item id (merge review 2026-11-25 finding 13, rule 4 and rule 23 (2): one key, one reader): a
+     * minecraft item by its path ("minecraft:torch" -> "torch"), a modded item by its full id ("mod:x_pickaxe" stays whole;
+     * its path alone read back as "minecraft:x_pickaxe", an item with no data, so a modded pickaxe in the bag had no tier).
+     * The sensed bag (SenseRuntime), an order's counts and every bag lookup read it.
+     */
+    public static String path(String id) { return id.startsWith("minecraft:") ? id.substring(10) : id; }
 
     static String shortId(String id) { return id.startsWith("minecraft:") ? id.substring(10) : id; }
 }
