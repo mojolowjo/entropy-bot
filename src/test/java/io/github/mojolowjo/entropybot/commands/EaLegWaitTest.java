@@ -56,6 +56,40 @@ class EaLegWaitTest {
         assertEquals(PathPrice.Kind.ESTIMATED, clock.answer("k", RESEARCH, 601 + (long) WAIT * GameTimes.TPS, WAIT, () -> 5).kind());
     }
 
+    /**
+     * Merge review 2026-11-25 (9): a walk past its wait, then a budget stop at cell A (the no-progress estimate), then the
+     * fresh search from cell B (computing): the walk's clock ran on - B is the estimate at once, never a new 30 s wait.
+     */
+    @Test
+    void aNoProgressEstimate_keepsTheWalksClock_theNextCellIsTheEstimate() {
+        FirstAnswerClock clock = new FirstAnswerClock(1024);
+        PathPrice.Answer np = PathPrice.Answer.computing(PricedAnswers.NO_PROGRESS_WAIT + " (test)");
+        int[] a = {10, 64, 0}, b = {11, 64, 0};
+        long t = 0;
+        for (; t < (long) WAIT * GameTimes.TPS; t += 5) clock.answer("w", RESEARCH, t, WAIT, () -> 9, a);
+        assertEquals(PathPrice.Kind.ESTIMATED, clock.answer("w", RESEARCH, t, WAIT, () -> 9, a).kind(), "past the wait");
+        t += 5;
+        PathPrice.Answer atA = clock.answer("w", np, t, WAIT, () -> 9, a);
+        assertEquals(PathPrice.Kind.ESTIMATED, atA.kind(), atA.toString());
+        t += 5;
+        PathPrice.Answer atB = clock.answer("w", RESEARCH, t, WAIT, () -> 9, b);
+        assertEquals(PathPrice.Kind.ESTIMATED, atB.kind(), "the clock is the walk's: no new wait from B: " + atB);
+    }
+
+    /** Merge review 2026-11-25 (9): a no-progress estimate as the first answer starts the walk's clock; B waits only its rest. */
+    @Test
+    void aNoProgressEstimateFirst_startsTheClock() {
+        FirstAnswerClock clock = new FirstAnswerClock(1024);
+        PathPrice.Answer np = PathPrice.Answer.computing(PricedAnswers.NO_PROGRESS_WAIT + " (test)");
+        int[] a = {10, 64, 0}, b = {11, 64, 0};
+        assertEquals(PathPrice.Kind.ESTIMATED, clock.answer("w", np, 0, WAIT, () -> 9, a).kind());
+        assertEquals(PathPrice.Kind.COMPUTING, clock.answer("w", RESEARCH, 5, WAIT, () -> 9, b).kind(), "inside the wait: not known (rule 15)");
+        long t = 5;
+        while (t < (long) WAIT * GameTimes.TPS - 5) { t += 5; clock.answer("w", RESEARCH, t, WAIT, () -> 9, b); }
+        assertEquals(PathPrice.Kind.ESTIMATED, clock.answer("w", RESEARCH, (long) WAIT * GameTimes.TPS, WAIT, () -> 9, b).kind(),
+                "the wait counted from the first estimate's ask, not from B");
+    }
+
     /** A walk not asked for longer than the wait starts its own wait when asked again (never an old clock's estimate). */
     @Test
     void aWalkAskedAgainLaterWaitsItsOwnWait() {

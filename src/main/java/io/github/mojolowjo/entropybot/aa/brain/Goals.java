@@ -1898,6 +1898,23 @@ public final class Goals {
         return w.withBag(bag);
     }
 
+    /**
+     * Merge review 2026-11-25 (6; the reviewer: a group order's chain priced its stone tools from a plain -d sibling's held
+     * cobblestone - BatchWay.open of a group asker keeps the batch's open plain orders, so keptFromOthers leaves their
+     * amounts on the planner's bag, and ownAsk sets aside the group's own members only - while the runner's keptFromUse holds
+     * them through ownKeptHeld, and the first craft failed "missing"): the part of {@code held} ({@link #ownKeptHeld}, by
+     * item path) that is not {@code g}'s own items - taken off the group's world ({@link #heldOff}) as the repair path takes
+     * every held word off, so the planner prices what the runner leaves free (rule 23: one answer, ownKeptHeld). Pure.
+     */
+    static Map<String, Integer> notOwn(Map<String, Integer> held, Goal g) {
+        if (held == null || held.isEmpty()) return Map.of();
+        java.util.Set<String> own = new java.util.HashSet<>();
+        if (g.r.ids().isEmpty()) own.add(Thing.path(g.r.key())); else for (String id : g.r.ids()) own.add(Thing.path(id));
+        Map<String, Integer> out = new java.util.HashMap<>();
+        for (var e : held.entrySet()) if (!own.contains(e.getKey()) && e.getValue() != null && e.getValue() > 0) out.put(e.getKey(), e.getValue());
+        return out;
+    }
+
     public static Map<String, Integer> keptFromOthers(Blackboard bb, Goal g) {
         return kept(bb, g, g == null ? null : BatchWay.open(bb, g));
     }
@@ -2041,7 +2058,9 @@ public final class Goals {
         var world = chainWorld(bb, g);
         if (world == null) return null;
         // deposit-goal plan, stage 3 (piece 4): the deposit goal's chain - its ways priced by NeedChain.deposit from the feet
-        if (g.depositGoal) return io.github.mojolowjo.entropybot.aa.NeedChain.deposit(owed(bb), MainChest.of(bb), world);
+        // merge review 2026-11-25 (finding 8): asked of the planner worker when one is installed, as every order's own chain
+        // (its climb prices a pickaxe-first or a lend tree: never on the render thread, D6); without it, here as before
+        if (g.depositGoal) return BatchWay.depositChain(bb, g, BatchWay.OwnAsk.deposit(owed(bb), MainChest.of(bb)), world);
         var laps = io.github.mojolowjo.entropybot.aa.core.TickLaps.AA;    // 0.39.z62 item 4: resolves counted while the probe is on
         // 0.39.z77 SHAPE CHANGE (owner 2026-10-26 10:30: playbook first): a plain-item order runs its trip (alone or with its
         // batch), kept per batch, bag and place (R3); the order's own chain only where no trip is derived (said) or for a group
@@ -2049,10 +2068,14 @@ public final class Goals {
         // (one answer, ownAside), so the runner's keptFromUse never refuses what this chain priced
         // review (worker path): the aside rides in the ask, so the planner worker (BatchWay.own, port.own) prices the same
         // world and count as the tick's own supplier: one answer whoever resolves
-        var ask = ownAsk(world.bag(), ownKeptHeld(bb, g, null), g.r.ids(), g.r.key(), g.r.group(), g.n);
+        // merge review 2026-11-25 (6): a group order's world has the batch siblings' held -d amounts off too (notOwn), the
+        // part of ownKeptHeld its own aside does not take - the runner's keptFromUse holds all of it
+        var heldNow = ownKeptHeld(bb, g, null);
+        var ownWorld = g.r.group() ? heldOff(world, notOwn(heldNow, g)) : world;
+        var ask = ownAsk(ownWorld.bag(), heldNow, g.r.ids(), g.r.key(), g.r.group(), g.n);
         java.util.function.Supplier<io.github.mojolowjo.entropybot.aa.NeedChain.Chain> own = () -> {
             long t0 = laps.now();
-            var c = ask.resolve(world);
+            var c = ask.resolve(ownWorld);
             if (t0 != 0) {
                 laps.resolved(laps.now() - t0);
                 var st = io.github.mojolowjo.entropybot.aa.PlanNodes.last();      // 0.39.z78 D6 (run DT): this thread's node counts

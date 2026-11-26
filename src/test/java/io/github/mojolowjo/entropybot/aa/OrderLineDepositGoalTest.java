@@ -237,13 +237,14 @@ class OrderLineDepositGoalTest {
     }
 
     /**
-     * Stage 4 review 3 (point 2, the worker path since job-own-aside-worker): the deposit goal's chain is priced on the
-     * tick only (Goals.chain: no ask reaches the planner worker for it), and an order's ask on the worker - its trip's legs
+     * Stage 4 review 3 (point 2, the worker path since job-own-aside-worker): the deposit goal's chain (since the merge
+     * review of 2026-11-25, finding 8: asked of the worker under its own key, from a bag with the owed amounts off), and an
+     * order's ask on the worker - its trip's legs
      * or its own chain (SyncPlanner: the snapshot, PlannerWorker.resolve, the port's live check) - starts from a bag with
      * the owed amounts off, as the tick's: no planner drop.
      */
     @Test
-    void theWorkerPath_theDepositIsPricedOnTheTick_andAnOrdersWorkerBagHoldsNoOwedAmount() {
+    void theWorkerPath_theDepositIsAskedOfTheWorker_andNoWorkerBagHoldsAnOwedAmount() {
         OrderLineSim s = lineDue();
         List<String> keys = new java.util.ArrayList<>();
         List<Map<String, Integer>> bags = new java.util.ArrayList<>();
@@ -265,7 +266,28 @@ class OrderLineDepositGoalTest {
         Goals.Goal dg = s.depositGoal();
         var c = Goals.chain(s.bb, dg);
         assertTrue(c.ok(), c.why());
-        assertTrue(keys.isEmpty(), "the deposit goal never asks the worker: " + keys);
+        // merge review 2026-11-25 (finding 8): the deposit goal's chain is asked of the worker too (never resolved on the
+        // client tick), under its own key, from a bag with the owed amounts off; the same chain as the tick's
+        assertEquals(List.of(io.github.mojolowjo.entropybot.aa.brain.BatchWay.OWN_KEY + dg.id()), keys, "the deposit goal asks the worker");
+        s.plannerOnTheTick();
+        var onTick = Goals.chain(s.bb, dg);
+        assertEquals(onTick.steps(), c.steps(), c.why() + " | " + onTick.why());
+        s.bb.fact(io.github.mojolowjo.entropybot.aa.brain.BatchWay.PLANNER_FACT, new io.github.mojolowjo.entropybot.aa.brain.BatchWay.Planner() {
+            @Override public NeedChain.Legs legs(String key, Playbook pb, java.util.Set<String> keptFuel, NeedChain.World w) {
+                keys.add(key);
+                bags.add(NeedChain.liveBag(w));
+                return s.sync.legs(key, pb, keptFuel, w);
+            }
+
+            @Override public boolean ready(String key) { return s.sync.ready(key); }
+
+            @Override public NeedChain.Chain own(String key, io.github.mojolowjo.entropybot.aa.brain.BatchWay.OwnAsk ask, NeedChain.World w) {
+                keys.add(key);
+                bags.add(ask.bagLess(NeedChain.liveBag(w)));
+                return s.sync.own(key, ask, w);
+            }
+        });
+        keys.clear();
         Goals.Goal stick = s.order("stick", 4, "b2", false);
         Goals.chain(s.bb, stick);
         assertFalse(keys.isEmpty(), "the order asks the worker");
