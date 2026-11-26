@@ -2907,7 +2907,16 @@ public final class NeedChain {
         }
         // merge review 2026-11-25 finding 10: the ways out are one leg each (the chain ends after them), so a priced one is
         // not picked over the chest walk while that walk has no answer yet (choose holds it; the bot stands, rule 22)
-        for (int i = outFrom; i < ways.size(); i++) ways.get(i).legOnly = true;
+        // send-back (a roofed room whose door is nearer than the chest: the walk up won on its leg alone against the whole
+        // walk and put, a trip out and back in): a way out is ranked with the rest of the goal from its end, the straight
+        // walk from the surface cell it ends at to the chest (rule 18 amended: a rank, never its price; Baritone's own path
+        // from there is a priced walk once the leg is done) - the leg's own seconds stay its price
+        double rest = over == null ? 0 : io.github.mojolowjo.entropybot.aa.brain.Unit.seconds(Math.sqrt(
+                (double) (over.x() - x) * (over.x() - x) + (double) (over.y() - y) * (over.y() - y) + (double) (over.z() - z) * (over.z() - z)));
+        for (int i = outFrom; i < ways.size(); i++) {
+            ways.get(i).legOnly = true;
+            ways.get(i).rate = sec -> sec + rest;
+        }
         int d0 = c.dropped.size();
         Trial win = choose(c, ways, null);
         if (win == null) {
@@ -3891,6 +3900,8 @@ public final class NeedChain {
             else if (heldBack != null && pendingOverPriced && !t.stuck() && (t.alt().legOnly || t.seconds() > Tuning.get("pathCost.firstAnswerWaitS")))
                 why = PRICED_HELD + s(t.seconds()) + heldWhy(t) + heldBack;
             else if (t.stuck()) why = "no known source for " + shw(t.unknown()) + (win.stuck() ? " (the explore ends when one is known too)" : "");
+            else if (t.alt().legOnly && t.alt().rate != null) why = s(t.seconds()) + " a leg only, ranked " + s(t.alt().value(t.seconds()))
+                    + " with the straight walk on from its end (dearer than " + win.alt().label + " " + s(win.alt().value(win.seconds())) + ")";
             else if (t.alt().rate != null) why = s(t.seconds()) + String.format(Locale.ROOT, ", %.2f s a point with the eating (dearer a point than %s, %.2f)", t.alt().value(t.seconds()), win.alt().label, win.alt().value(win.seconds()));
             else why = s(t.seconds()) + " (dearer than " + win.alt().label + (t.seconds() > horizonS ? ", past the horizon" : "") + ")";
             drop(c, t.alt().label, why);

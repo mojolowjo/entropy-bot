@@ -59,16 +59,28 @@ public final class RefusedBreaks {
 
     /**
      * Merge review 2026-11-25 finding 17 (the flight recorder's "guard refusal streak" went quiet on a one-cell loop once the
-     * repeats stopped reaching its event ring): a repeat refusal of the cell that the recorder still hears. True when the
-     * cell's count since its last saying ({@link #take}) is a power of two (2, 4, 8, 16 ...): a hot cell gives the ring a
-     * few events, never thousands, and the streak (5 enforced refusals within a minute) still fires on it; a step that
-     * stalls on the cell again after its count was said starts over from 1. False for a cell not held (counted only).
+     * repeats stopped reaching its event ring): a repeat refusal of the cell that the recorder still hears. True for the
+     * first {@link io.github.mojolowjo.entropybot.recorder.IncidentText.GuardStreak#limit} refusals since the cell's count
+     * was last said ({@link #take}), so the streak (that many enforced refusals within a minute) fires on a slow loop as
+     * on a hot one, and after them at each doubling of that count (8, 16, 32 ...): a hot cell gives the ring a few events,
+     * never thousands. Send-back: the first repeat after a saying (count 1) is heard too, and a click every few seconds
+     * no longer needs a count of 16 to reach the streak. False for a cell not held (counted only).
      */
     public synchronized boolean echo(String dim, int x, int y, int z) {
         Rec r = map.get(key(dim, x, y, z));
         if (r == null) return false;
         int n = r.count - r.told;
-        return n > 1 && (n & (n - 1)) == 0;          // structural: log-spaced echoes (each doubling of the unsaid count)
+        if (n < 1) return false;
+        return n <= io.github.mojolowjo.entropybot.recorder.IncidentText.GuardStreak.limit() || (n & (n - 1)) == 0;   // structural: log-spaced past the streak's own count
+    }
+
+    /** What the guard does with an enforced refused break: say the line (the first), echo it to the recorder only, or count it. */
+    public enum Say { LINE, ECHO, COUNT }
+
+    /** {@link #note} then {@link #echo}: the guard's one decision for an enforced refused break (Guard.refuse). */
+    public synchronized Say say(String dim, int x, int y, int z, String block, String reason) {
+        if (note(dim, x, y, z, block, reason)) return Say.LINE;
+        return echo(dim, x, y, z) ? Say.ECHO : Say.COUNT;
     }
 
     private final List<String> pending = new ArrayList<>();

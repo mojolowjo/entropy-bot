@@ -60,21 +60,48 @@ class MergeReviewToolsTest {
         assertInstanceOf(Step.Deposit.class, landed.steps().get(landed.steps().size() - 1), landed.why());
     }
 
+    /**
+     * Send-back: once the chest walk is priced, the walk up to a door nearer than the chest competed on its leg alone (3 s
+     * against the whole walk and put, 20 s) and won: a trip out and back in. A way out is ranked with the straight walk on
+     * from its end now (the surface cell 0 45 0 to the chest at 100 70 0, 103 m), so the whole walk wins; a long tunnel
+     * walk (200 s) still loses to the walk up and the walk over the top (NeedChainDepositTest.underGround_theWalkUpBeatsTheClimb).
+     */
+    @Test
+    void f10_aRoofedRoomWithADoorNearerThanTheChest_theWholeWalkWins() {
+        NeedChain.Surface roof = new NeedChain.Surface(5, 0, 45, 0, 5);
+        Chain c = NeedChain.deposit(NeedChainDepositTest.OWED, NeedChainDepositTest.CHEST, NeedChainDepositTest.world(Map.of("minecraft:dirt", 64), roof,
+                NeedChainDepositTest.priced(20), NeedChainDepositTest.priced(3), List.of()));
+        assertTrue(c.ok(), c.why());
+        assertInstanceOf(Step.ToStation.class, c.steps().get(0), c.why());
+        assertInstanceOf(Step.Deposit.class, c.steps().get(c.steps().size() - 1), c.why());
+        assertEquals(20, c.seconds(), 0.1, "the price is the walk's own: " + c.why());
+        assertTrue(c.dropped().stream().anyMatch(d -> d.contains("walk up") && d.contains("a leg only, ranked")), c.dropped().toString());
+        Chain tunnel = NeedChain.deposit(NeedChainDepositTest.OWED, NeedChainDepositTest.CHEST, NeedChainDepositTest.world(Map.of("minecraft:dirt", 64), roof,
+                NeedChainDepositTest.priced(200), NeedChainDepositTest.priced(3), List.of()));
+        assertEquals(List.of(new Step.ToSurface(0, 45, 0)), tunnel.steps(), tunnel.why());
+        assertEquals(3, tunnel.seconds(), 0.1, "the leg's price is its own seconds: " + tunnel.why());
+    }
+
     // ---- 11 and 16: the station place step read its own leaf-free ring ----
 
     static NeedChain.Surface at(int[] feet, boolean sky, int noLeaves, java.util.function.IntBinaryOperator ground) {
         return D14StationsTest.at(feet, sky, noLeaves, ground);
     }
 
-    /** A) the bot at the bottom of its own 1x1 shaft, 3 deep, open to the sky, the ground round it at 67. */
+    /**
+     * A) the bot at the bottom of its own 1x1 shaft, 3 deep, open to the sky, the ground round it at 67: one fact (the
+     * planner's Surface, built as Jobs.feetSurface builds it). Send-back: the request is the rim the surface leg targets,
+     * within the place reach (the fork's own cell search on the shaft: baritone.process.StationShaftCellsTest).
+     */
     @Test
     void f11_aShallowOpenShaft_thePlaceStepAndThePlannerAgree() {
         int[] feet = {0, 64, 0};
-        NeedChain.Surface s = at(feet, true, 64, (x, z) -> x == 0 && z == 0 ? 64 : 67);
-        assertTrue(s.under(), "the planner, the deposit and the explore: under ground (" + s + ")");
+        NeedChain.Surface s = io.github.mojolowjo.entropybot.commands.Jobs.feetSurface(feet, 0, (x, z) -> x == 0 && z == 0 ? 64 : 67);
+        assertTrue(s.under() && s.hole() && s.depth() == 3, "the planner, the deposit and the explore: under ground in a hole (" + s + ")");
+        assertEquals(at(feet, true, 64, (x, z) -> x == 0 && z == 0 ? 64 : 67), s, "the live build and the planner's agree");
         StationPlace.Ask a = StationPlace.ask(feet, s, null);
-        assertFalse(a.surface(), "the place step asks no surface cell 3 up: " + a.why());
-        assertTrue(a.why().contains("open to the sky"), a.why());
+        assertTrue(a.surface(), "the rim 3 up is within the place reach: " + a.why());
+        assertTrue(a.why().contains("the rim of the hole"), a.why());
     }
 
     /** B) flat ground in a dark oak grove: the leaf-free ring reads the trunk tops, the ground under any tree is flat. */
@@ -104,6 +131,31 @@ class MergeReviewToolsTest {
                 "the copper pickaxe digs stone: no pickaxe made first: " + c.steps());
         // an order for a modded item counts the bag by the same key
         assertEquals(List.of(mod), new Thing.Result("x", "leafscopperbackport:copper_pickaxe", false, List.of(mod), List.of(Thing.path(mod)), 0, null, null, null).counts());
+    }
+
+    /**
+     * Send-back: the readers of the sensed bag that still stripped the namespace. The bag as SenseRuntime keys it (Thing.path:
+     * a modded item by its full id). A modded junk item was counted 0 and never dropped; the owner building with a modded
+     * block in the bot's bag got a fetch of minecraft:&lt;path&gt; instead of a give.
+     */
+    @Test
+    void f13_theBagsOtherReaders_readAModdedItemByItsOneKey() {
+        Map<String, Integer> bag = Map.of(Thing.path("modx:rotten_bark"), 10, Thing.path("modx:slate_bricks"), 50, "oak_planks", 2);
+        io.github.mojolowjo.entropybot.aa.core.Inputs in = new io.github.mojolowjo.entropybot.aa.core.Inputs();
+        in.bag = bag;
+        var facts = io.github.mojolowjo.entropybot.commands.NeedFacts.bag(in, bag, List.of("modx:rotten_bark"), 0);
+        assertEquals(1, facts.junkSlots(), "the modded junk is counted: " + facts.junkDrops());
+        assertEquals(List.of(new Step.DropJunk("modx:rotten_bark", 10)), facts.junkDrops());
+        in.ownerOnline = true;
+        in.ownerDist = 4;
+        in.ownerAct = "building";
+        in.ownerPlaced = "modx:slate_bricks";
+        var p = io.github.mojolowjo.entropybot.aa.brain.Help.pick(in, 20);
+        assertNotNull(p);
+        assertEquals("give", p.what(), p.steps().toString());
+        assertEquals(new Step.Give("modx:slate_bricks", 32), p.steps().get(0));
+        assertTrue(io.github.mojolowjo.entropybot.aa.core.Inputs.has(bag, "modx:slate_bricks"));
+        assertFalse(io.github.mojolowjo.entropybot.aa.core.Inputs.has(bag, "othermod:slate_bricks"), "another mod's item of the same path is another item");
     }
 
     // ---- 15: the travel click refused a modded world-gen stone the path was priced through ----
@@ -145,5 +197,31 @@ class MergeReviewToolsTest {
         assertTrue(fired, "the streak fires on the hot cell");
         assertTrue(events < 20, "a few ring events, not thousands: " + events);
         assertTrue(r.take().contains("8115 times"));
+    }
+
+    /**
+     * Send-back: the guard's decision (RefusedBreaks.say), its event (GuardCore.refusalEvent, as Guard.refuse pushes it), the
+     * recorder's ring and its scan (IncidentText.GuardStreak.scan, as FlightRecorder.guardScan runs it each second). A slow
+     * loop, one refused click every 4 s, fires the streak within a minute; after the cell's count is said (take), the first
+     * repeat is heard again.
+     */
+    @Test
+    void f17_aSlowLoop_throughTheRingAndTheRecordersScan() {
+        RefusedBreaks r = new RefusedBreaks();
+        io.github.mojolowjo.entropybot.events.EventRing ring = new io.github.mojolowjo.entropybot.events.EventRing();
+        IncidentText.GuardStreak streak = new IncidentText.GuardStreak(IncidentText.GuardStreak.limit(), 60_000L, 5 * 60_000L);      // as FlightRecorder
+        GuardCore.Verdict v = new GuardCore.Verdict(false, "structure block outside my areas", true, false);
+        long seq = ring.lastSeq(), firedAt = -1;
+        for (int i = 0; i < 20 && firedAt < 0; i++) {
+            long now = 1000L + i * 4000L;
+            RefusedBreaks.Say say = r.say("minecraft:overworld", -25, -32, -123, "minecraft:rail", v.reason());
+            if (say != RefusedBreaks.Say.COUNT) GuardCore.refusalEvent(ring, "break", -25, -32, -123, v, "refused break at -25 -32 -123: " + v.reason(), say);
+            String fired = IncidentText.GuardStreak.scan(streak, ring.since(seq, io.github.mojolowjo.entropybot.events.EventRing.CAPACITY), now);
+            seq = ring.lastSeq();
+            if (fired != null) firedAt = now - 1000L;              // since the loop's first click
+        }
+        assertTrue(firedAt >= 0 && firedAt <= 60_000L, "the streak fires within a minute: " + firedAt);
+        assertNotNull(r.take());
+        assertEquals(RefusedBreaks.Say.ECHO, r.say("minecraft:overworld", -25, -32, -123, "minecraft:rail", v.reason()), "the first repeat after the saying is heard");
     }
 }

@@ -617,6 +617,7 @@ reconnectRules.perHour	3.0
 reconnectRules.timeoutDefaultS	60.0
 reconnectRules.timeoutMaxS	600.0
 reconnectRules.timeoutMinS	15.0
+recorder.guardStreakN	5.0
 reflex.air.burrowUp	3.0
 reflex.air.pullUp	24.0
 reflex.creeper.burrow	2.0

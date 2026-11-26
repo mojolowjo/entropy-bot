@@ -249,26 +249,13 @@ public final class Guard {
         // when the step ends (Steps.next / failOrReplan)
         // merge review 2026-11-25 finding 17: a repeat still reaches the recorder's ring at each doubling of its count
         // (RefusedBreaks.echo), so the recorder's refusal streak fires on a one-cell loop; the log line stays once per cell
-        boolean repeat = false;
+        RefusedBreaks.Say say = null;
         if ("break".equals(action) && !v.allowed() && level != null) {
-            String dim = dimOf(level);
-            if (!RefusedBreaks.INSTANCE.note(dim, pos.getX(), pos.getY(), pos.getZ(), block, v.reason())) {
-                if (!RefusedBreaks.INSTANCE.echo(dim, pos.getX(), pos.getY(), pos.getZ())) return true;
-                repeat = true;
-                line += " (refused again at this cell; the count is said when the step ends)";
-            } else line += " (said once for this cell; the count is said when the step ends)";
+            say = RefusedBreaks.INSTANCE.say(dimOf(level), pos.getX(), pos.getY(), pos.getZ(), block, v.reason());
+            if (say == RefusedBreaks.Say.COUNT) return true;
         }
-        EventRing ring = events;
-        if (ring != null) {
-            JsonObject d = new JsonObject();
-            d.addProperty("action", action);
-            d.addProperty("pos", pos.getX() + " " + pos.getY() + " " + pos.getZ());
-            d.addProperty("reason", v.reason());
-            d.addProperty("floor", v.floor());
-            d.addProperty("enforced", !v.allowed());
-            ring.push("guard", line, d);
-        }
-        if (!v.allowed() && !repeat) LOG.info("[entropybot] guard {}", line);
+        line = GuardCore.refusalEvent(events, action, pos.getX(), pos.getY(), pos.getZ(), v, line, say);
+        if (!v.allowed() && say != RefusedBreaks.Say.ECHO) LOG.info("[entropybot] guard {}", line);
         return !v.allowed();
     }
 

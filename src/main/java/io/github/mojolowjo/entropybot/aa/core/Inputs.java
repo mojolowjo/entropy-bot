@@ -123,8 +123,8 @@ public final class Inputs {
     /** one-planner: the bag holds the item (by path or id); false for a null id (no data loaded). */
     public static boolean has(java.util.Map<String, Integer> bag, String id) {
         if (bag == null || id == null) return false;
-        String path = id.indexOf(':') >= 0 ? id.substring(id.indexOf(':') + 1) : id;
-        return bag.getOrDefault(path, 0) > 0 || bag.getOrDefault(id, 0) > 0;
+        // merge review 2026-11-25 send-back (finding 13): the bag's one key (Thing.path); another mod's item of the same path is another item
+        return bag.getOrDefault(io.github.mojolowjo.entropybot.aa.brain.Thing.path(id), 0) > 0 || bag.getOrDefault(id, 0) > 0;
     }
 
     /** Torches may burn coal: the torches' gain per coal over the coal goal's loss per coal (Costs.torchCoal). */

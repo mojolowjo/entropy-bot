@@ -14,8 +14,9 @@ import io.github.mojolowjo.entropybot.aa.brain.Tuning;
  *     reading, {@link NeedChain.Surface#atFeet}: the rock over the head and the hole round the feet over the ground
  *     under any tree). Merge review 2026-11-25 findings 11 and 16 (rule 23 (2)): the place step's own leaf-free column and
  *     ring test (job-review-leftovers, run 3 w005) is gone, so the plan and the place step never disagree in one cell (a
- *     1-3 deep shaft open to the sky, a grove of trunks round the feet). Under ground the cell stays within a block of
- *     the feet's height, in a cave chamber with room.</li>
+ *     1-3 deep shaft open to the sky, a grove of trunks round the feet). A hole whose rim is within the place reach
+ *     ({@code steps.placeNearR}) asks the surface: its rim is where the cells with room are. Under ground the cell stays
+ *     within a block of the feet's height, in a cave chamber with room.</li>
  * </ul>
  * Pure (JUnit: D14StationsTest). Loader notes: none here; the live fact is {@code commands.Jobs.feetSurface}.
  */
@@ -41,6 +42,11 @@ public final class StationPlace {
         }
         boolean up = at != null && !at.under();
         boolean shaft = at != null && !up && at.hole();
+        // merge review 2026-11-25 send-back (findings 11/16): under ground in a hole whose rim is within the place step's own
+        // reach (the hole's depth, the one reading, at most steps.placeNearR), the cells with room are on the rim the surface
+        // leg targets, not round the feet (the walls of a 1x1 shaft: the fork found 0 free cells there) - the request is the
+        // surface, as it was before the one reader; deeper, the plain under-ground request (the fork's cell or its named end)
+        if (shaft && at.depth() <= r) return new Ask(feet.clone(), r, true, "near me on the surface (the rim of the hole I stand in, " + at.depth() + " up, within the place reach " + r + ")");
         return new Ask(feet.clone(), r, up, up ? "near me on the surface"
                 : at == null ? "near me under ground (a cell with room at my height; the surface over me is not known)"
                 : shaft ? "near me under ground (a cell with room at my height; my column is open to the sky but I am " + at.depth() + " below the ground round it)"

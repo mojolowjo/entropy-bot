@@ -885,9 +885,19 @@ public final class Jobs {
      * the surface over the column is not known (rule 15, as {@link #rockOverHeadKnown}).
      */
     public static io.github.mojolowjo.entropybot.aa.NeedChain.Surface feetSurface(net.minecraft.world.level.Level lv, int x, int y, int z) {
-        int rock = rockOverHeadKnown(lv, x, y, z);
-        if (rock < 0) return null;
-        return io.github.mojolowjo.entropybot.aa.NeedChain.Surface.atFeet(new int[]{x, y, z}, rock, holeDepth(lv, x, y, z));
+        return feetSurface(new int[]{x, y, z}, rockOverHeadKnown(lv, x, y, z), (cx, cz) -> ground(lv, cx, cz));
+    }
+
+    /**
+     * {@link #feetSurface} on its readings, pure (JUnit: MergeReviewToolsTest): {@code rockKnown} as {@link #rockOverHeadKnown}
+     * (-1: not known), {@code ground} the column heights round the feet ({@link #ground}). Null when either is not known
+     * (rule 15; send-back: the ring not loaded read as pitDepth's 0, so the place step claimed the surface).
+     */
+    public static io.github.mojolowjo.entropybot.aa.NeedChain.Surface feetSurface(int[] feet, int rockKnown, java.util.function.IntBinaryOperator ground) {
+        if (rockKnown < 0) return null;
+        int hole = io.github.mojolowjo.entropybot.world.SurfaceHeight.pitDepthKnown(feet, ground);
+        if (!io.github.mojolowjo.entropybot.world.SurfaceHeight.known(hole)) return null;
+        return io.github.mojolowjo.entropybot.aa.NeedChain.Surface.atFeet(feet, rockKnown, hole);
     }
 
     public static int rockOverHeadKnown(net.minecraft.world.level.Level lv, int x, int y, int z) {

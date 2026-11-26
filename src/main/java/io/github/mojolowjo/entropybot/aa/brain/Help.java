@@ -73,6 +73,10 @@ public final class Help {
     /** Under 1: not wanted (-1); else at most {@link #CAP}. */
     static double cap(double v) { return v < 1 ? -1 : Math.min(capV(), v); }
 
-    /** "minecraft:oak_planks" -> "oak_planks" (the bag's keys). */
-    static String path(String id) { return id.substring(id.indexOf(':') + 1); }
+    /**
+     * The bag's one key ({@link Thing#path}: "minecraft:oak_planks" -> "oak_planks", a modded block by its full id). Merge
+     * review 2026-11-25 send-back (finding 13): the bare path read 0 for a modded block, so "give" became a fetch of
+     * minecraft:&lt;path&gt;.
+     */
+    static String path(String id) { return Thing.path(id); }
 }
