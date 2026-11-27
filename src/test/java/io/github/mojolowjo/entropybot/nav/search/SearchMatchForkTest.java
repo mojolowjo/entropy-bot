@@ -48,7 +48,7 @@ import org.junit.jupiter.api.Test;
  * {@link ForkMirror}). Each search is bounded by nodes, not the clock, so it is repeatable. Two setups: Baritone's
  * defaults; and parkour and diagonals on with a cost advisor and the first search's path favoured (backtracking).
  */
-class SearchMatchForkTest {
+public class SearchMatchForkTest {
 
     static final int MAX_NODES = 20_000;
     static final long NO_CLOCK_MS = 600_000;
@@ -57,11 +57,11 @@ class SearchMatchForkTest {
     static void boot() { SimSearch.boot(); }
 
     /** A scenario cube as a BlockView: the saved states; a cell the file holds none for is bedrock (as sim/SimSearch). */
-    static final class ScenarioView extends BlockView {
+    public static final class ScenarioView extends BlockView {
         private final Scenario s;
         private final BlockState[] cells;
 
-        ScenarioView(Scenario s) {
+        public ScenarioView(Scenario s) {
             super(new BetterWorldBorder(new WorldBorder()), -64, 384);
             this.s = s;
             Map<String, BlockState> parsed = new HashMap<>();
@@ -89,9 +89,9 @@ class SearchMatchForkTest {
         @Override public boolean worldContainsLoadedChunk(int x, int z) { return true; }
     }
 
-    record GoalPair(String name, Goal ours, baritone.api.pathing.goals.Goal fork) {}
+    public record GoalPair(String name, Goal ours, baritone.api.pathing.goals.Goal fork) {}
 
-    static List<GoalPair> goals(Scenario s, ScenarioView v, BlockRules rules) {
+    public static List<GoalPair> goals(Scenario s, ScenarioView v, BlockRules rules) {
         List<GoalPair> out = new ArrayList<>();
         int fx = s.feet[0], fy = s.feet[1], fz = s.feet[2];
         Random r = new Random(fx * 31L + fz * 17L + fy);
@@ -111,7 +111,7 @@ class SearchMatchForkTest {
         return out;
     }
 
-    static final class OurAdvisor implements CostAdvisor {
+    public static final class OurAdvisor implements CostAdvisor {
         @Override public double breakMultiplier(int x, int y, int z, BlockState s, BlockView v) {
             return v.get0(x, y + 1, z).getBlock() instanceof FallingBlock ? ActionCosts.COST_INF : ((x + z) & 3) == 0 ? 3 : Double.NaN;
         }
@@ -120,7 +120,7 @@ class SearchMatchForkTest {
         @Override public double moveExtra(int x, int y, int z, BlockView v) { return y < 60 ? 2 : Double.NaN; }
     }
 
-    static final class ForkAdvisor implements baritone.pathing.movement.CostAdvisor {
+    public static final class ForkAdvisor implements baritone.pathing.movement.CostAdvisor {
         @Override public Object begin() { return null; }
         @Override public double breakMultiplier(Object t, int x, int y, int z, BlockState s, baritone.utils.BlockStateInterface v) {
             return v.get0(x, y + 1, z).getBlock() instanceof FallingBlock ? ActionCosts.COST_INF : ((x + z) & 3) == 0 ? 3 : Double.NaN;
@@ -132,7 +132,7 @@ class SearchMatchForkTest {
         @Override public double moveExtra(Object t, int x, int y, int z, baritone.utils.BlockStateInterface v) { return y < 60 ? 2 : Double.NaN; }
     }
 
-    static NavConfig parkourConfig() {
+    public static NavConfig parkourConfig() {
         NavConfig d = NavConfig.defaults();
         NavConfig.Moves m = d.moves();
         return d.withMoves(new NavConfig.Moves(true, true, true, true, true, true, m.allowDownward(), true /* the fork reads its world otherwise */,

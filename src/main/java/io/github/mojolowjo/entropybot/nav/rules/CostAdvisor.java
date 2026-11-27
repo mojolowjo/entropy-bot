@@ -34,4 +34,12 @@ public interface CostAdvisor {
     default boolean pricesMoves() {
         return true;
     }
+
+    /**
+     * The advisor's rules epoch: a new number whenever its rules change (the fork's CostAdvisor.rulesEpoch, z57). A kept
+     * price whose epoch differs is dropped (nav step 7, the price stamp). 0: the advisor does not say.
+     */
+    default long rulesEpoch() {
+        return 0;
+    }
 }

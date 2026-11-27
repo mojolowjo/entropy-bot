@@ -79,6 +79,11 @@ public final class Path {
         return assemble(cells, costs, goal, numNodes, context);
     }
 
+    /** A path from given cells and steps (sanity checked as any path): the pricing's tests and checks build their own. */
+    public static Path of(List<BetterBlockPos> cells, List<Step> steps, Goal goal) {
+        return new Path(cells, steps, goal, 0);
+    }
+
     /** The fork's {@code Path.fromCells}: rebuild a path from kept cells and their cumulative costs. */
     public static Path fromCells(List<BetterBlockPos> cells, double[] cum, Goal goal, SearchContext context) {
         List<Double> costs = new ArrayList<>(cum.length);
