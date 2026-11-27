@@ -19,7 +19,7 @@ public final class EntropyBot {
         NeoForge.EVENT_BUS.addListener(ClientTickEvent.Pre.class, e -> io.github.mojolowjo.entropybot.blind.BlindRuntime.INSTANCE.preTick());
         // nav step 8: our driver's keys, look and hands, before vanilla's keybinds in the same tick (as Baritone's tick)
         NeoForge.EVENT_BUS.addListener(ClientTickEvent.Pre.class, e -> {
-            try { io.github.mojolowjo.entropybot.nav.drive.DriveLive.INSTANCE.preTick(); } catch (Throwable caught) { Quiet.warn("nav DriveLive.preTick failed, carrying on", caught); }
+            try { io.github.mojolowjo.entropybot.nav.drive.DriveLive.INSTANCE.preTick(); } catch (Throwable caught) { Quiet.warn("nav DriveLive.preTick failed, the driver stops and lets go", caught); io.github.mojolowjo.entropybot.nav.drive.DriveLive.INSTANCE.panic(caught); }
         });
         // 0.39.z56 item 3 (the owner sees very low frame rates at times): the load probe's window around the whole client
         // tick (Pre first, Post last) and each frame's start; one Tuning read a tick (debug.loadProbe), never throws

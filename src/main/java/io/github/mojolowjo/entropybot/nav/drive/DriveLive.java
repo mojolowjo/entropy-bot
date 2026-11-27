@@ -151,7 +151,7 @@ public final class DriveLive {
             p.setXRot(n.pitch());
         }
         HitResult hr = p.pick(p.blockInteractionRange(), 1.0f, false);
-        if (act.hit() && hr instanceof BlockHitResult b && hr.getType() == HitResult.Type.BLOCK) {
+        if (act.hit() && hr instanceof BlockHitResult b && hr.getType() == HitResult.Type.BLOCK && on(task, b, false)) {
             if (mc.gameMode.continueDestroyBlock(b.getBlockPos(), b.getDirection())) {
                 p.swing(InteractionHand.MAIN_HAND);
             }
@@ -161,7 +161,7 @@ public final class DriveLive {
             mc.gameMode.stopDestroyBlock();
             hitting = false;
         }
-        if (act.use() && hr instanceof BlockHitResult b && hr.getType() == HitResult.Type.BLOCK) {
+        if (act.use() && hr instanceof BlockHitResult b && hr.getType() == HitResult.Type.BLOCK && on(task, b, true)) {
             InteractionResult r = mc.gameMode.useItemOn(p, InteractionHand.MAIN_HAND, b);
             if (r.consumesAction()) {
                 p.swing(InteractionHand.MAIN_HAND);
@@ -170,6 +170,35 @@ public final class DriveLive {
         if (act.ended() != null) {
             letGo(mc);
             say(act.ended() + (act.ok() ? "" : " [failed]"));
+        }
+    }
+
+    /**
+     * Review 2026-11-27: the hit or click goes only to the task's own block (a break) or a support face next to the
+     * cell (a place), read after this tick's turn, never to whatever the head ended on.
+     */
+    private static boolean on(Driver.Task task, BlockHitResult b, boolean place) {
+        if (!place && task instanceof Driver.Break br) {
+            return b.getBlockPos().equals(new BlockPos(br.pos().x, br.pos().y, br.pos().z));
+        }
+        if (place && task instanceof Driver.Place pl) {
+            return b.getBlockPos().relative(b.getDirection()).equals(new BlockPos(pl.pos().x, pl.pos().y, pl.pos().z));
+        }
+        return false;
+    }
+
+    /** Review 2026-11-27: after a failed tick the driver stops and lets go, so no key stays held. */
+    public void panic(Throwable why) {
+        try {
+            String line = driver.stop("error: " + why);
+            letGo(Minecraft.getInstance());
+            if (line != null) {
+                say(line + " [failed]");
+            }
+        } catch (Throwable caught) {
+            keys.releaseAll();
+            hitting = false;
+            Quiet.warn("DriveLive.panic failed, keys released", caught);
         }
     }
 

@@ -94,6 +94,9 @@ public final class Driver {
         static Act idle() { return new Act(EnumSet.noneOf(Keys.Key.class), null, false, false, null, false); }
     }
 
+    /** A place holds sneak, as Baritone does, so a support that has a menu (a chest, a table) takes the block. */
+    private static final Set<Keys.Key> SNEAK = EnumSet.of(Keys.Key.SNEAK);
+
     private final DriveConfig config;
     private Task task;
     private int ticks;
@@ -215,6 +218,10 @@ public final class Driver {
                 return run(Set.of(), t.aim(), false, false);
             }
         }
+        if (!t.onTarget() && !aimed) {
+            holdStart = -1;                                                   // review 2026-11-27: off the block, the game's progress restarts: aim again
+            return run(Set.of(), t.aim(), false, false);
+        }
         if (ticks - holdStart > budget) {
             return end("still there after " + (ticks - 1) + " ticks (" + (ticks - holdStart) + " holding, the game's time "
                     + (int) Math.ceil(1f / Math.max(t.progress(), 1e-6f)) + "): " + (t.onTarget() ? "under the crosshair, the break did not finish" : "wrong block under the crosshair: " + t.under()), false);
@@ -239,7 +246,7 @@ public final class Driver {
                 return end("not there after " + (ticks - 1) + " ticks: " + (aimed ? "wrong face under the crosshair: " + t.under()
                         : "the look did not arrive"), false);
             } else {
-                return run(Set.of(), t.aim(), false, false);
+                return run(SNEAK, t.aim(), false, false);
             }
         }
         if (ticks - holdStart > config.placeTimeout()) {
@@ -252,7 +259,7 @@ public final class Driver {
         } else {
             delay--;
         }
-        return run(Set.of(), t.aim(), false, click);
+        return run(SNEAK, t.aim(), false, click);
     }
 
     private Act run(Set<Keys.Key> keys, LookMath.Turn look, boolean hit, boolean use) {
