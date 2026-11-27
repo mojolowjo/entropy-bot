@@ -33,13 +33,13 @@ public final class RotationMath {
     /**
      * Constant that a degree value is multiplied by to get the equivalent radian value
      */
-    public static final double DEG_TO_RAD = Math.PI / 180.0;
+    public static final double DEG_TO_RAD = Math.PI / 180.0; // structural: unit conversion
     public static final float DEG_TO_RAD_F = (float) DEG_TO_RAD;
 
     /**
      * Constant that a radian value is multiplied by to get the equivalent degree value
      */
-    public static final double RAD_TO_DEG = 180.0 / Math.PI;
+    public static final double RAD_TO_DEG = 180.0 / Math.PI; // structural: unit conversion
     public static final float RAD_TO_DEG_F = (float) RAD_TO_DEG;
 
     /**

@@ -54,7 +54,7 @@ public final class DiagonalCost implements ActionCosts {
 
     private DiagonalCost() {}
 
-    private static final double SQRT_2 = Math.sqrt(2);
+    private static final double SQRT_2 = Math.sqrt(2); // structural: geometry
 
     public static void cost(SearchContext context, int x, int y, int z, int destX, int destZ, MutableMoveResult res) {
         BlockState destIntoUpper = context.get(destX, y + 1, destZ);

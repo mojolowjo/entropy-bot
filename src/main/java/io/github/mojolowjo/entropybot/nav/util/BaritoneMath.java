@@ -24,8 +24,8 @@ package io.github.mojolowjo.entropybot.nav.util;
  */
 public final class BaritoneMath {
 
-    private static final double FLOOR_DOUBLE_D = 1_073_741_824.0;
-    private static final int FLOOR_DOUBLE_I = 1_073_741_824;
+    private static final double FLOOR_DOUBLE_D = 1_073_741_824.0; // structural: 2^30, the floor trick
+    private static final int FLOOR_DOUBLE_I = 1_073_741_824; // structural: 2^30, the floor trick
 
     private BaritoneMath() {}
 

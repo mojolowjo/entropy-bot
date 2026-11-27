@@ -55,6 +55,7 @@ public final class ForkMirror {
         @Override public int dimensionMinY() { return -64; }
         @Override public int dimensionHeight() { return 384; }
         @Override public int minBuildHeight() { return -64; }
+        @Override public baritone.utils.pathing.BetterWorldBorder searchBorder() { return new baritone.utils.pathing.BetterWorldBorder(new WorldBorder()); }
     }
 
     public static Bsi bsi(BlockView view) throws Exception {
@@ -76,6 +77,9 @@ public final class ForkMirror {
         t.ours = ours.toolSet;
         set(c, "precomputedData", new baritone.pathing.precompute.PrecomputedData());
         set(c, "safeForThreadedUse", true);
+        // the fork's Path builds Movement objects, which ask the IBaritone for a player context: a proxy answering null
+        set(c, "baritone", java.lang.reflect.Proxy.newProxyInstance(ForkMirror.class.getClassLoader(),
+                new Class<?>[]{baritone.api.IBaritone.class}, (p, m, a) -> null));
         set(c, "bsi", bsi(ours.bsi));
         set(c, "toolSet", t);
         set(c, "hasThrowaway", ours.hasThrowaway);
