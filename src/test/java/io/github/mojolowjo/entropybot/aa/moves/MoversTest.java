@@ -19,7 +19,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * Backbone step 2 (BARITONE_BACKBONE.md, owner: "AA is the driver, Baritone is the car"): no mod code presses keys,
  * sets the camera, or breaks / places by hand outside {@code aa/moves} (Moves and its Baritone car), the air and hit
  * reflexes ({@code engine/Reflexes}), the lava / fire reflex ({@code engine/FireReflex}) and Baritone itself (not in
- * this tree). The other sites the movers audit (docs/runs/movers-audit.md) found are the exception list below, each
+ * this tree), and since nav step 8 (owner 2026-11-27) {@code nav/drive} (our own pathing's driver, the car that
+ * replaces Baritone's driving at step 9; the two never drive together). The other sites the movers audit (docs/runs/movers-audit.md) found are the exception list below, each
  * with its exact count today: a new caller anywhere, or one more in a listed file, fails the build; one fewer fails too
  * and names the count to write in (so the list only shrinks). Each later
  * backbone step lowers a count or drops a line; the goal is an empty list.
@@ -29,7 +30,7 @@ class MoversTest {
             "setKey\\(|\\.setDown\\(|KeyMapping\\.set\\(|(?<![mM]oves)\\.lookAt\\(|setYRot\\(|setXRot\\(|continueDestroyBlock\\(|startDestroyBlock\\(|useItemOn\\(");
 
     /** Files under the mod's package root allowed any number (the movers' homes). */
-    static final List<String> HOMES = List.of("aa/moves/");
+    static final List<String> HOMES = List.of("aa/moves/", "nav/drive/");
 
     /** The reflexes (allowed by the design) and the audit's sites still to move: path -> the exact number of calls. */
     static final Map<String, Integer> CEILING = new TreeMap<>(Map.ofEntries(
