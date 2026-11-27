@@ -72,10 +72,10 @@ public final class DriveLive {
             switch (verb) {
                 case "status":
                     return "nav: " + (pilot.driving() ? pilot.name() + " driving, " + pilot.where() : driver.task() == null ? "idle" : Driver.name(driver.task()) + " running")
-                            + ", keys " + keys + "; last: " + last;
+                            + ", keys " + keys + "; last: " + last + "; " + check.status();
                 case "stop": {
                     String line = driver.stop("aa nav stop");
-                    String route = pilot.stop("aa nav stop");
+                    String route = stopRoute("aa nav stop");
                     line = line != null ? line : route;
                     letGo(Minecraft.getInstance());
                     if (line != null) {
@@ -93,7 +93,7 @@ public final class DriveLive {
                     return start(new Driver.Place(new BetterBlockPos(Integer.parseInt(a[1]), Integer.parseInt(a[2]), Integer.parseInt(a[3]))));
                 case "go":
                     return go(new BetterBlockPos(Integer.parseInt(a[1]), Integer.parseInt(a[2]), Integer.parseInt(a[3])),
-                            a.length > 4 && a[4].equals("parkour"));
+                            java.util.Arrays.asList(a).subList(4, a.length).contains("parkour"), java.util.Arrays.asList(a).subList(4, a.length).contains("walk"));
                 default:
                     return USAGE;
             }
@@ -102,15 +102,25 @@ public final class DriveLive {
         }
     }
 
-    static final String USAGE = "usage: aa nav look <yaw> <pitch> | walk <blocks> | break <x y z> | place <x y z> | go <x y z> [parkour] | stop | status";
+    static final String USAGE = "usage: aa nav look <yaw> <pitch> | walk <blocks> | break <x y z> | place <x y z> | go <x y z> [parkour] [walk] | stop | status";
 
     /** Step 9a: parts of one trip planned at most this many times (a part ends where the search's budget ran out). */
     static final int MAX_PARTS = 20;                                         // structural: a test verb's guard against a loop
 
     /** aa nav go x y z: plan with our planner and drive with the pilot. */
-    private boolean parkour;
+    private boolean parkour, walkOnly;
+    private final RouteCheck check = new RouteCheck();
 
-    private String go(BetterBlockPos goal, boolean parkour) {
+    /** Stops the route and tells the checker the real part's end is unknown (stopped from outside). */
+    private String stopRoute(String why) {
+        String line = pilot.stop(why);
+        if (line != null) {
+            check.realEnded(io.github.mojolowjo.entropybot.nav.check.CheckBook.Real.UNKNOWN, why);
+        }
+        return line;
+    }
+
+    private String go(BetterBlockPos goal, boolean parkour, boolean walk) {
         Minecraft mc = Minecraft.getInstance();
         LocalPlayer p = mc.player;
         if (p == null || mc.level == null) {
@@ -121,7 +131,7 @@ public final class DriveLive {
             return "nav " + name + ": not started, Baritone is driving (aa nav waits until it is idle)";
         }
         String was = driver.stop("replaced by " + name);
-        String trip = pilot.stop("replaced by " + name);
+        String trip = stopRoute("replaced by " + name);
         if (was != null || trip != null) {
             say(was != null ? was : trip);
             letGo(mc);
@@ -130,6 +140,7 @@ public final class DriveLive {
         level = mc.level;
         parts = 0;
         this.parkour = parkour;
+        this.walkOnly = walk;
         pilot.resetCounts();
         String planned = plan(p, name, true);
         return "nav " + planned;
@@ -139,14 +150,14 @@ public final class DriveLive {
     private String plan(LocalPlayer p, String name, boolean first) {
         parts++;
         long t0 = System.nanoTime();
-        route = LiveRoute.of(p, parkour);
+        route = LiveRoute.of(p, parkour, walkOnly);
         BetterBlockPos feet = new MoveDriver.Body(p.getX(), p.getY(), p.getZ(), 0, 0, 0, true, false, 0, 0).feet();
         var r = route.plan(feet, goal);
         long ms = (System.nanoTime() - t0) / 1_000_000;
         var path = r.getPath().orElse(null);
         if (path == null || path.steps().isEmpty()) {
             String line = name + ": no route (" + r.getType().name().toLowerCase(java.util.Locale.ROOT) + (r.failure() == null ? "" : ", " + r.failure()) + ", " + ms + " ms) [failed]";
-            pilot.stop("no route");
+            stopRoute("no route");
             say(line);
             return line;
         }
@@ -155,6 +166,7 @@ public final class DriveLive {
         } else {
             pilot.next(path);
         }
+        check.start(path, route, p, config.walkTurn(), Minecraft.getInstance().options.sensitivity().get());   // 9c: the ghost flies it first
         String line = name + ": part " + parts + " planned, " + path.steps().size() + " moves, " + Math.round(path.ticksRemainingFrom(0)) + " ticks priced, "
                 + (r.getType() == io.github.mojolowjo.entropybot.nav.search.PathCalculationResult.Type.SUCCESS_TO_GOAL ? "to the goal" : "a part of the way") + " (" + ms + " ms)";
         say(line);
@@ -174,7 +186,7 @@ public final class DriveLive {
             say(Driver.name(t) + ": not started, the guard refuses this block (its log line says why) [failed]");
             return "nav " + Driver.name(t) + ": not started, the guard refuses this block";
         }
-        String route = pilot.stop("replaced by " + Driver.name(t));
+        String route = stopRoute("replaced by " + Driver.name(t));
         if (route != null) {
             say(route);
             letGo(mc);
@@ -440,7 +452,7 @@ public final class DriveLive {
     /** One pilot tick: the move's keys, the head's yaw (walking turns at walkTurn a tick), sprint, the trip's next part. */
     private void pilotTick(Minecraft mc, LocalPlayer p) {
         if (p == null || mc.level == null) {
-            String line = pilot.stop("the world is gone");
+            String line = stopRoute("the world is gone");
             keys.releaseAll();
             sprinting = false;
             say(line);
@@ -454,7 +466,9 @@ public final class DriveLive {
         LiveRoute r = route;
         MoveDriver.MoveWorld w = r.world();
         Pilot.Act act = pilot.tick(b, w, new LiveHands(mc, p, r.view), mc.isPaused(), baritoneDriving(), mc.level == level, r::impossible);
+        check.tick();
         if (act.replan()) {
+            check.realEnded(io.github.mojolowjo.entropybot.nav.check.CheckBook.Real.PART_DONE, "");
             keys.releaseAll();                                                 // nothing held while the next part is searched
             if (parts >= MAX_PARTS) {
                 letGo(mc);
@@ -488,6 +502,8 @@ public final class DriveLive {
             p.setXRot(n.pitch());
         }
         if (act.ended() != null) {
+            check.realEnded(act.ok() ? io.github.mojolowjo.entropybot.nav.check.CheckBook.Real.ARRIVED : io.github.mojolowjo.entropybot.nav.check.CheckBook.Real.FAILED,
+                    act.ended().substring(act.ended().indexOf(": ") + 2));
             letGo(mc);
             say(act.ended() + (act.ok() ? "" : " [failed]"));
             return;
@@ -515,7 +531,7 @@ public final class DriveLive {
         boolean fresh = wish == null || wish.place() != h.place() || !wish.cell().equals(h.cell());
         wish = h;
         if (!h.place() && fresh && Guard.INSTANCE.vetoBreak(pos)) {
-            String line = pilot.stop("the guard refuses to break " + pos.toShortString() + " (its log line says why)");
+            String line = stopRoute("the guard refuses to break " + pos.toShortString() + " (its log line says why)");
             letGo(mc);
             say(line + " [failed]");
             return;
