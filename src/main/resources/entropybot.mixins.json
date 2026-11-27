@@ -16,7 +16,8 @@
     "RestoreMixinGameMode",
     "ClockMixinMinecraft",
     "GhostMixinEntityAccess",
-    "GhostMixinLivingAccess"
+    "GhostMixinLivingAccess",
+    "DriveMixinGameModeAccess"
   ],
   "injectors": {
     "defaultRequire": 1

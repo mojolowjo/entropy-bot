@@ -33,13 +33,13 @@ import java.util.ArrayList;
  * Baritone's own classes with their fields set by reflection, as the fork's own tests do it
  * (bs-vein ClimbGoalTest.MapContext): no Level, no player. Test code only.
  */
-final class SimSearch {
+public final class SimSearch {
     private SimSearch() {}
 
     private static boolean booted;
 
     /** The game's registries (blocks and their states), once a JVM. */
-    static synchronized void boot() {
+    public static synchronized void boot() {
         if (booted) return;
         SharedConstants.tryDetectVersion();
         try {
