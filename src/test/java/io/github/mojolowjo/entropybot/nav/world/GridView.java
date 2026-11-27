@@ -10,20 +10,25 @@ import net.minecraft.world.level.border.WorldBorder;
 /**
  * Test world for the nav tests: a flat floor of {@code floor} at y &lt;= {@code floorY}, air above, any cell set by
  * hand, loaded within {@code radius} blocks of 0 0 (beyond it nothing is loaded and get0 answers AIR, as an unloaded
- * Baritone view does). Overworld height (-64, 384).
+ * Baritone view does); {@link #liveWithin} marks a ring of cached-only columns. Overworld height (-64, 384).
  */
 public final class GridView extends BlockView {
     private final Long2ObjectOpenHashMap<BlockState> cells = new Long2ObjectOpenHashMap<>();
     private final BlockState floor;
     private final int floorY;
     private final int radius;
+    private int liveRadius;
 
     public GridView(BlockState floor, int floorY, int radius) {
         super(new BetterWorldBorder(new WorldBorder()), -64, 384);
         this.floor = floor;
         this.floorY = floorY;
         this.radius = radius;
+        this.liveRadius = radius;
     }
+
+    /** Columns beyond {@code r} (but within the radius) are a cached sketch: loaded for the view, not live in the game. */
+    public GridView liveWithin(int r) { this.liveRadius = r; return this; }
 
     public static GridView flat() { return new GridView(Blocks.STONE.defaultBlockState(), 63, 256); }
 
@@ -48,5 +53,5 @@ public final class GridView extends BlockView {
     public boolean isLoaded(int x, int z) { return Math.abs(x) <= radius && Math.abs(z) <= radius; }
 
     @Override
-    public boolean worldContainsLoadedChunk(int blockX, int blockZ) { return isLoaded(blockX, blockZ); }
+    public boolean worldContainsLoadedChunk(int blockX, int blockZ) { return Math.abs(blockX) <= liveRadius && Math.abs(blockZ) <= liveRadius; }
 }
