@@ -308,7 +308,7 @@ public abstract class MoveDriver {
             double dist1 = flatMax(b, dest.x + 0.5, dest.z + 0.5);
             PlaceSense p = h.place(under, false, true);
             EnumSet<Keys.Key> k = keys();
-            if ((p != null && p.ready()) || dist1 < 0.6) {                        // structural: the fork's sneak distance
+            if (p != null || dist1 < 0.6) {                                       // structural: the fork's sneak distance; a face found sneaks (attemptToPlaceABlock wouldSneak)
                 k.add(Keys.Key.SNEAK);
             }
             if (p != null && p.ready()) {
@@ -367,9 +367,9 @@ public abstract class MoveDriver {
                 PlaceSense p = h.place(dest.below(), false, true);
                 EnumSet<Keys.Key> k = keys();
                 boolean click = false;
-                if (p != null && p.ready()) {
+                if (p != null) {                                                   // attemptToPlaceABlock wouldSneak: sneak once a face is found
                     k.add(Keys.Key.SNEAK);
-                    click = h.crouching();
+                    click = p.ready() && h.crouching();
                 }
                 if (ticksWithoutPlacement > 10) {                                  // structural: the fork's "standing in the way"
                     k.add(Keys.Key.BACK);

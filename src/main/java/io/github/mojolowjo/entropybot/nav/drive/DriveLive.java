@@ -522,7 +522,10 @@ public final class DriveLive {
         }
         if (fresh || (h.place() && !fullBlock(p.getMainHandItem()))) {
             Driver.Task t = h.place() ? new Driver.Place(h.cell()) : new Driver.Break(h.cell());
-            say(pilot.name() + ": " + pilot.where() + ", " + (h.place() ? "place at " : "break ") + pos.toShortString() + ", " + hand(mc, p, t));
+            String chose = hand(mc, p, t);
+            if (fresh) {                                                         // PR 5 review: said once per wish, not every retry
+                say(pilot.name() + ": " + pilot.where() + ", " + (h.place() ? "place at " : "break ") + pos.toShortString() + ", " + chose);
+            }
         }
         BlockHitResult hr = crosshair(p);
         if (!h.place() && h.click() && hr != null && hr.getBlockPos().equals(pos)) {
@@ -536,7 +539,9 @@ public final class DriveLive {
             hitting = false;
         }
         if (h.place() && h.click() && hr != null && fullBlock(p.getMainHandItem())
-                && (hr.getBlockPos().equals(pos) || hr.getBlockPos().relative(hr.getDirection()).equals(pos))) {
+                && (hr.getBlockPos().equals(pos) || (hr.getBlockPos().relative(hr.getDirection()).equals(pos)
+                && io.github.mojolowjo.entropybot.nav.rules.BlockRules.canPlaceAgainst(route.view, hr.getBlockPos().getX(), hr.getBlockPos().getY(), hr.getBlockPos().getZ())))) {
+            // PR 5 review: only against a block the fork places against (READY_TO_PLACE), never a chest or door
             InteractionResult res = mc.gameMode.useItemOn(p, InteractionHand.MAIN_HAND, hr);
             if (res.consumesAction()) {
                 p.swing(InteractionHand.MAIN_HAND);

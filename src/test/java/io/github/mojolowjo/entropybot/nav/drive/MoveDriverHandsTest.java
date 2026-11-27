@@ -48,7 +48,7 @@ class MoveDriverHandsTest {
         MoveDriver.MoveAct a = t.tick(at(0.5, 64, 0.5), w, h);
         assertEquals(new MoveDriver.Hand(true, c(0, 63, 1), false), a.hand());
         assertTrue(a.keys().contains(Keys.Key.FORWARD), "attempting, straight ahead and 1.0 away: forward");
-        assertFalse(a.keys().contains(Keys.Key.SNEAK));
+        assertTrue(a.keys().contains(Keys.Key.SNEAK), "a face found: sneak (attemptToPlaceABlock wouldSneak)");
         h.place.put(c(0, 63, 1), new MoveDriver.PlaceSense(new Rotation(0, 70), true));
         a = t.tick(at(0.5, 64, 0.9), w, h);
         assertTrue(a.keys().contains(Keys.Key.SNEAK));
