@@ -18,7 +18,8 @@
  * route (back to an earlier move, skip ahead), the off-route and too-slow give-ups (maxDistFromPath 2 for 200 ticks,
  * maxMaxDistFromPath 3 at once, a fall measured flat, movementTimeoutTicks 100),
  * the "this move became impossible" check before each move, and the next move started in the same tick. Every give-up
- * says why. Not in 9a: sprint across moves, plan-ahead and splice (the next segment is planned when one ends), pause.
+ * says why. Not yet: sprint across moves, plan-ahead and splice (the next segment is planned when one ends), pause.
+ * 9b: the hands' wish of the current move passes through.
  */
 
 package io.github.mojolowjo.entropybot.nav.drive;
@@ -47,7 +48,11 @@ import java.util.function.Function;
 public final class Pilot {
 
     /** What the pilot does this tick. ended: null while it drives; replan: the route ran out short of the goal. */
-    public record Act(Set<Keys.Key> keys, Float yaw, String ended, boolean ok, boolean replan) {}
+    public record Act(Set<Keys.Key> keys, Float yaw, String ended, boolean ok, boolean replan, Float pitch, MoveDriver.Hand hand) {
+        public Act(Set<Keys.Key> keys, Float yaw, String ended, boolean ok, boolean replan) {
+            this(keys, yaw, ended, ok, replan, null, null);
+        }
+    }
 
     /** The fork's PathExecutor numbers. */
     static final double MAX_DIST_FROM_PATH = 2, MAX_MAX_DIST_FROM_PATH = 3;   // structural: Settings maxDistFromPath, maxMaxDistFromPath
@@ -118,6 +123,12 @@ public final class Pilot {
      */
     public Act tick(MoveDriver.Body b, MoveDriver.MoveWorld w, boolean paused, boolean baritone, boolean sameWorld,
                     Function<Step, String> impossible) {
+        return tick(b, w, MoveDriver.Hands.NONE, paused, baritone, sameWorld, impossible);
+    }
+
+    /** One tick with the live side's hands. */
+    public Act tick(MoveDriver.Body b, MoveDriver.MoveWorld w, MoveDriver.Hands h, boolean paused, boolean baritone, boolean sameWorld,
+                    Function<Step, String> impossible) {
         if (path == null) {
             return idle();
         }
@@ -131,6 +142,9 @@ public final class Pilot {
         }
         for (int round = 0; round < 2; round++) {                              // a move that ends hands over in the same tick
             if (index >= path.steps().size()) {
+                if (path.getGoal().isInGoal(feet.x, feet.y, feet.z)) {            // the last move ended in the goal (a dig down lands mid-air)
+                    return end("arrived in " + ticks + " ticks, " + moves + " moves", true);
+                }
                 Act a = new Act(EnumSet.noneOf(Keys.Key.class), null, null, false, true);
                 path = null;                                                   // DriveLive plans the next part
                 return a;
@@ -139,9 +153,6 @@ public final class Pilot {
             if (driver == null) {
                 Step s = path.steps().get(index);
                 driver = MoveDriver.of(s);
-                if (driver == null) {
-                    return end("move " + (index + 1) + " (" + s.move() + ") cannot be driven in 9a", false);
-                }
                 String why = impossible.apply(s);
                 if (why != null) {
                     return end("move " + (index + 1) + " became impossible: " + why, false);
@@ -165,10 +176,10 @@ public final class Pilot {
                 return end(String.format(Locale.ROOT, "too slow: %d ticks on move %d (%s), its price %.1f", moveTicks, index + 1,
                         s.move().name().toLowerCase(Locale.ROOT), s.cost()), false);
             }
-            MoveDriver.MoveAct a = driver.tick(b, w);
+            MoveDriver.MoveAct a = driver.tick(b, w, h);
             switch (a.status()) {
                 case RUNNING:
-                    return new Act(a.keys(), a.yaw(), null, false, false);
+                    return new Act(a.keys(), a.yaw(), null, false, false, a.pitch(), a.hand());
                 case FAILED:
                     return end("move " + (index + 1) + " (" + s.move().name().toLowerCase(Locale.ROOT) + " " + cell(s.src()) + " to " + cell(s.dest()) + ") failed: " + a.why(), false);
                 case SUCCESS:

@@ -39,10 +39,10 @@ class MoveDriverTest {
         assertFalse(d(MoveCatalog.TRAVERSE_SOUTH, c(0, 64, 0), c(0, 64, 1)).tick(at(0.5, 64, 0.5), w).keys().contains(Keys.Key.SPRINT));
         FakeMoveWorld wall = new FakeMoveWorld().solid(0, 65, 1);
         MoveDriver.MoveAct a = d(MoveCatalog.TRAVERSE_SOUTH, c(0, 64, 0), c(0, 64, 1)).tick(at(0.5, 64, 0.5), wall);
-        assertEquals(MoveDriver.Status.FAILED, a.status());
-        assertEquals("needs a break at 0 65 1 (breaking is off in 9a)", a.why());
+        assertEquals(MoveDriver.Status.RUNNING, a.status(), "9b: a block in the way is broken first");
+        assertEquals(new MoveDriver.Hand(false, c(0, 65, 1), true), a.hand(), "no face in sight: aim at the centre and hit (the fork)");
         FakeMoveWorld hole = new FakeMoveWorld().hole(0, 1);
-        assertEquals("needs a block placed at 0 63 1 (placing is off in 9a)", d(MoveCatalog.TRAVERSE_SOUTH, c(0, 64, 0), c(0, 64, 1)).tick(at(0.5, 64, 0.5), hole).why());
+        assertEquals("needs a block placed at 0 63 1 and the bag has no full block", d(MoveCatalog.TRAVERSE_SOUTH, c(0, 64, 0), c(0, 64, 1)).tick(at(0.5, 64, 0.5), hole).why());
     }
 
     @Test
@@ -111,10 +111,10 @@ class MoveDriverTest {
     }
 
     @Test
-    void movesForNinePointBAreNotDrivenYet() {
-        assertNull(MoveDriver.of(new Step(c(0, 64, 0), c(0, 63, 0), MoveCatalog.DOWNWARD, 20)));
-        assertNull(MoveDriver.of(new Step(c(0, 64, 0), c(0, 65, 0), MoveCatalog.PILLAR, 20)));
-        assertNull(MoveDriver.of(new Step(c(0, 64, 0), c(0, 64, 3), MoveCatalog.PARKOUR_SOUTH, 20)));
+    void everyMoveHasADriver() {
+        assertTrue(MoveDriver.of(new Step(c(0, 64, 0), c(0, 63, 0), MoveCatalog.DOWNWARD, 20)) instanceof MoveDriver.Downward);
+        assertTrue(MoveDriver.of(new Step(c(0, 64, 0), c(0, 65, 0), MoveCatalog.PILLAR, 20)) instanceof MoveDriver.Pillar);
+        assertTrue(MoveDriver.of(new Step(c(0, 64, 0), c(0, 64, 3), MoveCatalog.PARKOUR_SOUTH, 20)) instanceof MoveDriver.Parkour);
     }
 
     @Test

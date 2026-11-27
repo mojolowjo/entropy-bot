@@ -161,7 +161,7 @@ class PilotTest {
         p.start(south(2, 2), "r");
         w.hole(0, 1);
         Pilot.Act a = tick(p, 0.5);
-        assertEquals("r: move 1 (traverse_south 0 64 0 to 0 64 1) failed: needs a block placed at 0 63 1 (placing is off in 9a)", a.ended());
+        assertEquals("r: move 1 (traverse_south 0 64 0 to 0 64 1) failed: needs a block placed at 0 63 1 and the bag has no full block", a.ended());
     }
 
     @Test
@@ -179,10 +179,23 @@ class PilotTest {
     }
 
     @Test
-    void movesNineAWillNotDriveEndTheRoute() {
+    void theLastMoveEndingInTheGoalInTheAirArrives() {                        // cloud run 9b: "no route (success_to_goal)" after a dig down
+        Pilot p = new Pilot();
+        p.start(south(1, 1), "r");
+        tick(p, 0.5);
+        Pilot.Act a = p.tick(at(0.5, 64.3, 1.5, false), w, false, false, true, s -> null);
+        assertTrue(a.ok(), String.valueOf(a.ended()));
+        assertFalse(a.replan());
+    }
+
+    @Test
+    void aDigDownPassesTheMovesBreakWishOn() {
         Pilot p = new Pilot();
         List<BetterBlockPos> cells = List.of(c(0, 64, 0), c(0, 63, 0));
         p.start(Path.of(cells, List.of(new Step(c(0, 64, 0), c(0, 63, 0), MoveCatalog.DOWNWARD, 20)), new GoalBlock(0, 63, 0)), "r");
-        assertEquals("r: move 1 (DOWNWARD) cannot be driven in 9a", tick(p, 0.5).ended());
+        Pilot.Act a = tick(p, 0.5);
+        assertNull(a.ended());
+        assertEquals(new MoveDriver.Hand(false, c(0, 63, 0), true), a.hand());
+        assertNotNull(a.pitch());
     }
 }
