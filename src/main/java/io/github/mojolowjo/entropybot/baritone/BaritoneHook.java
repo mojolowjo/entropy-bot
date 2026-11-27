@@ -146,6 +146,15 @@ public final class BaritoneHook {
                     } catch (RuntimeException caught) { Quiet.warn("BaritoneHook.onPathEvent failed, carrying on with the fallback", caught); }
                 }
 
+                /** Dry-run package 1: the facing Baritone really moves the player by (its mixin swaps the yaw in travel and the jump). */
+                @Override
+                public void onPlayerRotationMove(baritone.api.event.events.RotationMoveEvent event) {
+                    try {
+                        io.github.mojolowjo.entropybot.ghost.GhostShadow.INSTANCE.rotationMove(
+                                event.getType() == baritone.api.event.events.RotationMoveEvent.Type.JUMP, event.getYaw(), event.getPitch());
+                    } catch (RuntimeException caught) { Quiet.warn("BaritoneHook.onPlayerRotationMove failed, the ghost shadow keeps the player's yaw", caught); }
+                }
+
                 /** 0.29.0: the builder dig hears changed blocks. */
                 @Override
                 public void onBlockChange(baritone.api.event.events.BlockChangeEvent event) {

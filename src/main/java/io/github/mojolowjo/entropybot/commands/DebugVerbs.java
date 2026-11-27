@@ -74,6 +74,18 @@ public final class DebugVerbs {
         return "ok: leaving " + where + " for the save " + save + " (watch the log's world: lines)";
     }
 
+    /** Dry-run package 1: "debug ghost" (status), "debug ghost shadow [ticks]" (the body test), "debug ghost stop", "debug ghost walk [ticks] [sprint]". */
+    private static String ghost(List<String> w) {
+        var g = io.github.mojolowjo.entropybot.ghost.GhostShadow.INSTANCE;
+        if (w.size() == 1 || w.get(1).equalsIgnoreCase("status")) return g.status();
+        if (w.get(1).equalsIgnoreCase("stop")) return g.stop();
+        if (w.get(1).equalsIgnoreCase("shadow")) return g.start(DebugRules.optInt(w, 2, 200, 1, 6000, GHOST_USAGE));
+        if (w.get(1).equalsIgnoreCase("walk")) return g.walk(DebugRules.optInt(w, 2, 40, 1, 6000, GHOST_USAGE), w.size() > 3 && w.get(3).equalsIgnoreCase("sprint"));
+        return GHOST_USAGE;
+    }
+
+    static final String GHOST_USAGE = "usage: debug ghost [status] | debug ghost shadow [ticks] | debug ghost stop | debug ghost walk [ticks] [sprint]";
+
     private static String run(Core core, List<String> w) {
         String verb = w.get(0).toLowerCase();
         Recorder rec = core.recorder;
@@ -97,6 +109,7 @@ public final class DebugVerbs {
                 return core.events.since(Math.max(0, core.events.lastSeq() - n), n);
             }
             case "baritone" -> { return baritone(); }
+            case "ghost" -> { return ghost(w); }
             case "hits", "hit", "damage" -> {      // 0.24.4 damage log
                 int n = DebugRules.optInt(w, 1, 10, 1, io.github.mojolowjo.entropybot.threat.HitLog.CAP, "usage: debug hits [n]");
                 return "last hits (oldest first): " + io.github.mojolowjo.entropybot.threat.HitLog.text(io.github.mojolowjo.entropybot.threat.HitLog.INSTANCE.last(n), zone)

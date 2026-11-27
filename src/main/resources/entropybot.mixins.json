@@ -14,7 +14,9 @@
     "WatchMixinCameraAccess",
     "WatchMixinLevelRenderer",
     "RestoreMixinGameMode",
-    "ClockMixinMinecraft"
+    "ClockMixinMinecraft",
+    "GhostMixinEntityAccess",
+    "GhostMixinLivingAccess"
   ],
   "injectors": {
     "defaultRequire": 1

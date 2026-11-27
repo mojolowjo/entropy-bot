@@ -39,6 +39,9 @@ public final class EntropyBot {
         container.registerExtensionPoint(net.neoforged.neoforge.client.gui.IConfigScreenFactory.class,
                 (net.neoforged.neoforge.client.gui.IConfigScreenFactory) (mod, parent) -> new io.github.mojolowjo.entropybot.screen.ConfigScreen(parent));
         NeoForge.EVENT_BUS.addListener(EntropyBot::onChat);
+        // dry-run package 1: the ghost body test records the local player's ticks (debug ghost shadow)
+        NeoForge.EVENT_BUS.addListener(net.neoforged.neoforge.event.tick.PlayerTickEvent.Post.class,
+                e -> io.github.mojolowjo.entropybot.ghost.GhostShadow.INSTANCE.afterPlayerTick(e.getEntity()));
         // 0.35.2: /ai and /bot in the bot's own window (client commands: NeoForge RegisterClientCommandsEvent, never sent to the server)
         NeoForge.EVENT_BUS.addListener(net.neoforged.neoforge.client.event.RegisterClientCommandsEvent.class,
                 e -> io.github.mojolowjo.entropybot.commands.LocalCommands.register(e.getDispatcher()));

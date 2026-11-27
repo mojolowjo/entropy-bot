@@ -434,6 +434,7 @@ furnaceJobs.slackMs	2000.0
 furnaceJobs.smeltMs	10000.0
 furnaceJobs.stallMs	60000.0
 game.lavaHpPerS	8.0
+ghost.shadowPassBlocks	0.1
 goals.freshMs	300000.0
 goals.high	20.0
 goals.legRestMs	0.0
