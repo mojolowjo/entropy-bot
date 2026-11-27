@@ -129,6 +129,7 @@ public final class BaritoneHook {
                 @Override
                 public void onPathEvent(PathEvent event) {
                     try {
+                        io.github.mojolowjo.entropybot.ghost.GhostChecker.INSTANCE.pathEvent(event.name());   // dry-run package 3: why a path ended
                         if (event == PathEvent.CALC_FAILED) calcFailed++;                          // 0.39.z71 (D2 3.2): the step monitor's no-path count
                         if (event.name().contains("CALC") && !event.name().endsWith("STARTED")) {  // 0.39.z76 J3-mod item 0: the last search result
                             lastCalc = event.name();

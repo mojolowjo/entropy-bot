@@ -434,7 +434,15 @@ furnaceJobs.slackMs	2000.0
 furnaceJobs.smeltMs	10000.0
 furnaceJobs.stallMs	60000.0
 game.lavaHpPerS	8.0
+ghost.check	1.0
+ghost.deadlineTicks	40.0
+ghost.hopAfterTicks	5.0
+ghost.hops	3.0
+ghost.incidentsMax	20.0
+ghost.msPerTick	2.0
+ghost.pointTicks	40.0
 ghost.shadowPassBlocks	0.1
+ghost.ticksPerTick	200.0
 goals.freshMs	300000.0
 goals.high	20.0
 goals.legRestMs	0.0

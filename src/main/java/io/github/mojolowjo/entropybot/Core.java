@@ -333,6 +333,7 @@ public final class Core {
         a.add("reconnect");
         if (ready) a.add("safetynet");
         if (ready && recorder.enabled()) a.add("recorder");
+        if (ready && io.github.mojolowjo.entropybot.ghost.GhostChecker.active()) a.add("ghost:check");   // dry-run package 3
         if (commands.ready()) a.add("commands");
         if (commands.ready()) a.add("jobs:walk");
         if (commands.ready()) a.add("jobs:storage");

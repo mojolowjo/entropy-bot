@@ -1058,6 +1058,14 @@ final class TuningDefs {
         Tuning.def("pathCost.askFactor", 2, "job-start (run JAK 01:28:31: 7 first answers pending in the fork while the bot stood 40 s before its first move; asks queue first come behind pathCost.maxPending)", "a way of one need is asked for a priced path only when Baritone's estimate is at most this many times the estimate of the first way asked; past it the way is 'ranked' (no ask, never a price), so the search slots go to the ways that can win");
         Tuning.def("strip.areaMinFactor", 0.5, "0.39.z64 review 5 (a vein is several ore blocks together - 1.21 ore_iron_middle size 9 - so one vein in few faces is clumping, not a richer area)", "the lowest an area's seen yield may scale the band's blocks per ore: 0.5 = at most twice as rich as the band says, so one vein cannot make a strip look 30x richer");
         // dry-run package 1 (plan "Dry-run checker plan (ghost body)", m0j 2026-11-26)
+        Tuning.def("ghost.check", 1, "dry-run package 3 (m0j 2026-11-27: start package 3, report only)", "1: a ghost walks each new Baritone path and reports pass or refuse (debug ghost status, debug ghost last); 0: off");
+        Tuning.def("ghost.pointTicks", 40, "dry-run plan (Kestrel's rule: each point gets up to 40 ticks)", "ghost ticks the ghost may spend heading for one path point before the path is refused for no progress");
+        Tuning.def("ghost.hopAfterTicks", 5, "dry-run package 3, a guess (a stall of a quarter second)", "ghost ticks without progress on the ground before the pilot hops once (Kestrel's stall hop)");
+        Tuning.def("ghost.hops", 3, "dry-run plan (Kestrel's rule: up to 3 hops if it stalls on something low)", "hops the pilot may use per path point");
+        Tuning.def("ghost.ticksPerTick", 200, "dry-run package 3 (package 1: about 0.01-0.03 ms per ghost tick, so 200 stays near 2-6 ms only on a slow machine)", "the most ghost ticks one game tick may run");
+        Tuning.def("ghost.msPerTick", 2, "dry-run plan (m0j 2026-11-26: under 2 ms per game tick on average)", "milliseconds of ghost work one game tick may spend; it stops at the first step past it");
+        Tuning.def("ghost.deadlineTicks", 40, "dry-run package 3, a guess (2 s: a path is usually still being walked)", "game ticks a path may wait for its verdict before it is marked unchecked (never pass)");
+        Tuning.def("ghost.incidentsMax", 20, "dry-run package 3 (one recorder incident per disagreement, capped so a bad stretch cannot fill the disk)", "recorder incidents the ghost checker may leave per game session");
         Tuning.def("ghost.shadowPassBlocks", 0.1, "dry-run package 1 (m0j 2026-11-26: the ghost's end spot within 0.1 block of the real player's)", "the most the ghost's feet may end from the real player's after a debug ghost shadow replay for the run to say PASS");
     }
 }

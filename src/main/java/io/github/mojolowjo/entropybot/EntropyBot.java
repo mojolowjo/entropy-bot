@@ -42,6 +42,8 @@ public final class EntropyBot {
         // dry-run package 1: the ghost body test records the local player's ticks (debug ghost shadow)
         NeoForge.EVENT_BUS.addListener(net.neoforged.neoforge.event.tick.PlayerTickEvent.Post.class,
                 e -> io.github.mojolowjo.entropybot.ghost.GhostShadow.INSTANCE.afterPlayerTick(e.getEntity()));
+        // dry-run package 3: the ghost checks each new Baritone path (report only)
+        NeoForge.EVENT_BUS.addListener(ClientTickEvent.Post.class, e -> io.github.mojolowjo.entropybot.ghost.GhostChecker.INSTANCE.tick());
         // 0.35.2: /ai and /bot in the bot's own window (client commands: NeoForge RegisterClientCommandsEvent, never sent to the server)
         NeoForge.EVENT_BUS.addListener(net.neoforged.neoforge.client.event.RegisterClientCommandsEvent.class,
                 e -> io.github.mojolowjo.entropybot.commands.LocalCommands.register(e.getDispatcher()));

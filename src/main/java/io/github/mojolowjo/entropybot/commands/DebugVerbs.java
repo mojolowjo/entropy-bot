@@ -74,17 +74,19 @@ public final class DebugVerbs {
         return "ok: leaving " + where + " for the save " + save + " (watch the log's world: lines)";
     }
 
-    /** Dry-run package 1: "debug ghost" (status), "debug ghost shadow [ticks]" (the body test), "debug ghost stop", "debug ghost walk [ticks] [sprint]". */
+    /** Dry-run package 1: "debug ghost" (status: the checker and the shadow), "debug ghost last [n]" (the last paths judged), "debug ghost shadow [ticks]" (the body test), "debug ghost stop", "debug ghost walk [ticks] [sprint]". */
     private static String ghost(List<String> w) {
         var g = io.github.mojolowjo.entropybot.ghost.GhostShadow.INSTANCE;
-        if (w.size() == 1 || w.get(1).equalsIgnoreCase("status")) return g.status();
+        var c = io.github.mojolowjo.entropybot.ghost.GhostChecker.INSTANCE;
+        if (w.size() == 1 || w.get(1).equalsIgnoreCase("status")) return c.status() + "; shadow: " + g.status();
+        if (w.get(1).equalsIgnoreCase("last")) return c.last(DebugRules.optInt(w, 2, 5, 1, 20, GHOST_USAGE));
         if (w.get(1).equalsIgnoreCase("stop")) return g.stop();
         if (w.get(1).equalsIgnoreCase("shadow")) return g.start(DebugRules.optInt(w, 2, 200, 1, 6000, GHOST_USAGE));
         if (w.get(1).equalsIgnoreCase("walk")) return g.walk(DebugRules.optInt(w, 2, 40, 1, 6000, GHOST_USAGE), w.size() > 3 && w.get(3).equalsIgnoreCase("sprint"));
         return GHOST_USAGE;
     }
 
-    static final String GHOST_USAGE = "usage: debug ghost [status] | debug ghost shadow [ticks] | debug ghost stop | debug ghost walk [ticks] [sprint]";
+    static final String GHOST_USAGE = "usage: debug ghost [status] | debug ghost last [n] | debug ghost shadow [ticks] | debug ghost stop | debug ghost walk [ticks] [sprint]";
 
     private static String run(Core core, List<String> w) {
         String verb = w.get(0).toLowerCase();
