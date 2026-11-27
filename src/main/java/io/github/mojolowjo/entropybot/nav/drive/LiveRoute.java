@@ -17,14 +17,16 @@ import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.state.BlockState;
 
 import java.util.ArrayList;
 import java.util.List;
 
 /**
  * Nav step 9a: plans a route in the live world with our planner (step 6) and answers the pilot's questions about the
- * live cells. The config is Baritone's defaults with breaking and placing off (9a has no hands in the route); the body
- * is the player's hotbar, food and effects. The search runs on the game thread with a small budget (a 9a test verb
+ * live cells. The config is Baritone's defaults (9b: break and place on, parkour off unless asked); the body is the
+ * player's hotbar, food and effects, and a full block anywhere in the bag counts as a throwaway (the fork reads its
+ * acceptableThrowawayItems list; ours reads the item's block shape, no name list). The search runs on the game thread with a small budget (a 9a test verb
  * plans tens of blocks). Pure (JUnit: none, the adapter). Loader notes: vanilla {@code LocalPlayer} inventory, food and
  * effects, {@code Level.NETHER}; Fabric the same.
  */
@@ -41,22 +43,26 @@ final class LiveRoute {
         this.context = context;
     }
 
-    /** The planner's config for 9a: the fork's defaults, breaking and placing off. */
-    static NavConfig config() {
+    /** The planner's config for 9b: the fork's defaults (break and place on, parkour off), parkour on when asked. */
+    static NavConfig config(boolean parkour) {
         NavConfig d = NavConfig.defaults();
-        NavConfig.Breaking b = d.breaking();
-        NavConfig.Placing p = d.placing();
-        return d.withBreaking(new NavConfig.Breaking(false, b.allowBreakAnyway(), b.blockBreakAdditionalPenalty(), b.blocksToDisallowBreaking(),
-                        b.blocksToAvoidBreaking(), b.avoidBreakingMultiplier(), b.allowBreakNextToWater(), b.allowBreakNextToLava(),
-                        b.avoidUpdatingFallingBlocks(), b.considerPotionEffects(), b.useSwordToMine(), b.itemSaver(), b.itemSaverThreshold(),
-                        b.autoTool(), b.assumeExternalAutoTool(), b.preferSilkTouch()))
-                .withPlacing(new NavConfig.Placing(false, p.blockPlacementPenalty(), p.allowPlaceInFluidsSource(), p.allowPlaceInFluidsFlow()));
+        if (!parkour) {
+            return d;
+        }
+        NavConfig.Moves m = d.moves();
+        return d.withMoves(new NavConfig.Moves(m.allowSprint(), true, m.allowParkourPlace(), m.allowParkourAscend(),
+                m.allowDiagonalDescend(), m.allowDiagonalAscend(), m.allowDownward(), m.allowJumpAtBuildLimit(), m.allowVines(),
+                m.allowWalkOnBottomSlab(), m.allowWalkOnMagmaBlocks(), m.assumeWalkOnWater(), m.assumeWalkOnLava(),
+                m.allowWaterBucketFall(), m.maxFallHeightNoWater(), m.maxFallHeightBucket(), m.jumpPenalty(),
+                m.walkOnWaterOnePenalty(), m.pathUnderWater(), m.lavaCellCost(), m.strictLiquidCheck(), m.blocksToAvoid()));
     }
 
-    private static final NavConfig CONFIG = config();
+    private static final NavConfig CONFIG = config(false);
     private static final BlockRules RULES = new BlockRules(CONFIG);
+    private static final NavConfig PARKOUR_CONFIG = config(true);
+    private static final BlockRules PARKOUR_RULES = new BlockRules(PARKOUR_CONFIG);   // the context wants rules built for its own config
 
-    static LiveRoute of(LocalPlayer p) {
+    static LiveRoute of(LocalPlayer p, boolean parkour) {
         LiveBlockView view = new LiveBlockView((net.minecraft.client.multiplayer.ClientLevel) p.level());
         List<ItemStack> bar = new ArrayList<>(9);
         for (int i = 0; i < 9; i++) {                                     // structural: the hotbar's 9 slots
@@ -64,10 +70,14 @@ final class LiveRoute {
         }
         var haste = p.getEffect(MobEffects.DIG_SPEED);
         var fatigue = p.getEffect(MobEffects.DIG_SLOWDOWN);
+        boolean throwaway = false;
+        for (int i = 0; i < 36 && !throwaway; i++) {                       // structural: the player inventory's 36 slots
+            throwaway = DriveLive.fullBlock(p.getInventory().getItem(i));
+        }
         BodySnapshot body = new BodySnapshot(bar, p.getInventory().selected, haste == null ? -1 : haste.getAmplifier(),
-                fatigue == null ? -1 : fatigue.getAmplifier(), 0, 1f, p.getFoodData().getFoodLevel(), false, false,
+                fatigue == null ? -1 : fatigue.getAmplifier(), 0, 1f, p.getFoodData().getFoodLevel(), false, throwaway,
                 p.level().dimension() == Level.NETHER);
-        return new LiveRoute(view, new SearchContext(CONFIG, RULES, view, body, null));
+        return new LiveRoute(view, new SearchContext(parkour ? PARKOUR_CONFIG : CONFIG, parkour ? PARKOUR_RULES : RULES, view, body, null));
     }
 
     /** Plans from the feet to the goal. */
@@ -98,6 +108,8 @@ final class LiveRoute {
             @Override public boolean avoidWalkingInto(int x, int y, int z) { return RULES.avoidWalkingInto(view.get0(x, y, z)); }
             @Override public boolean isLiquid(int x, int y, int z) { return BlockRules.isLiquid(view.get0(x, y, z)); }
             @Override public boolean isWater(int x, int y, int z) { return BlockRules.isWater(view.get0(x, y, z)); }
+            @Override public boolean isReplaceable(int x, int y, int z) { BlockState st = view.get0(x, y, z); return st.isAir() || st.canBeReplaced(); }
+            @Override public boolean isClimbable(int x, int y, int z) { return BlockRules.isClimbable(view.get0(x, y, z).getBlock()); }
         };
     }
 }

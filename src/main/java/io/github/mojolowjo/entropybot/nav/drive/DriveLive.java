@@ -92,7 +92,8 @@ public final class DriveLive {
                 case "place":
                     return start(new Driver.Place(new BetterBlockPos(Integer.parseInt(a[1]), Integer.parseInt(a[2]), Integer.parseInt(a[3]))));
                 case "go":
-                    return go(new BetterBlockPos(Integer.parseInt(a[1]), Integer.parseInt(a[2]), Integer.parseInt(a[3])));
+                    return go(new BetterBlockPos(Integer.parseInt(a[1]), Integer.parseInt(a[2]), Integer.parseInt(a[3])),
+                            a.length > 4 && a[4].equals("parkour"));
                 default:
                     return USAGE;
             }
@@ -101,13 +102,15 @@ public final class DriveLive {
         }
     }
 
-    static final String USAGE = "usage: aa nav look <yaw> <pitch> | walk <blocks> | break <x y z> | place <x y z> | go <x y z> | stop | status";
+    static final String USAGE = "usage: aa nav look <yaw> <pitch> | walk <blocks> | break <x y z> | place <x y z> | go <x y z> [parkour] | stop | status";
 
     /** Step 9a: parts of one trip planned at most this many times (a part ends where the search's budget ran out). */
     static final int MAX_PARTS = 20;                                         // structural: a test verb's guard against a loop
 
     /** aa nav go x y z: plan with our planner and drive with the pilot. */
-    private String go(BetterBlockPos goal) {
+    private boolean parkour;
+
+    private String go(BetterBlockPos goal, boolean parkour) {
         Minecraft mc = Minecraft.getInstance();
         LocalPlayer p = mc.player;
         if (p == null || mc.level == null) {
@@ -126,6 +129,7 @@ public final class DriveLive {
         this.goal = new io.github.mojolowjo.entropybot.nav.search.goals.GoalBlock(goal.x, goal.y, goal.z);
         level = mc.level;
         parts = 0;
+        this.parkour = parkour;
         pilot.resetCounts();
         String planned = plan(p, name, true);
         return "nav " + planned;
@@ -135,7 +139,7 @@ public final class DriveLive {
     private String plan(LocalPlayer p, String name, boolean first) {
         parts++;
         long t0 = System.nanoTime();
-        route = LiveRoute.of(p);
+        route = LiveRoute.of(p, parkour);
         BetterBlockPos feet = new MoveDriver.Body(p.getX(), p.getY(), p.getZ(), 0, 0, 0, true, false, 0, 0).feet();
         var r = route.plan(feet, goal);
         long ms = (System.nanoTime() - t0) / 1_000_000;
@@ -341,7 +345,7 @@ public final class DriveLive {
     }
 
     /** The first of the block's centre and its six face centres the eyes see within reach, or null. */
-    private static Vec3 visible(Minecraft mc, LocalPlayer p, BlockPos pos) {
+    static Vec3 visible(Minecraft mc, LocalPlayer p, BlockPos pos) {
         List<Vec3> points = new ArrayList<>();
         points.add(Vec3.atCenterOf(pos));
         for (Direction d : Direction.values()) {
@@ -357,7 +361,7 @@ public final class DriveLive {
     }
 
     /** The block the eyes' ray toward {@code point} hits within reach, or null. */
-    private static BlockHitResult ray(Minecraft mc, LocalPlayer p, Vec3 point) {
+    static BlockHitResult ray(Minecraft mc, LocalPlayer p, Vec3 point) {
         Vec3 eye = p.getEyePosition();
         Vec3 dir = point.subtract(eye);
         if (dir.length() > p.blockInteractionRange() + 0.87) {                      // structural: half a block's diagonal
@@ -368,7 +372,7 @@ public final class DriveLive {
         return r.getType() == HitResult.Type.BLOCK ? r : null;
     }
 
-    private static BlockHitResult crosshair(LocalPlayer p) {
+    static BlockHitResult crosshair(LocalPlayer p) {
         HitResult hr = p.pick(p.blockInteractionRange(), 1.0f, false);
         return hr instanceof BlockHitResult b && hr.getType() == HitResult.Type.BLOCK ? b : null;
     }
@@ -418,7 +422,7 @@ public final class DriveLive {
     }
 
     /** A stack that places a full solid block that stays put (no falling block, no block entity). */
-    private static boolean fullBlock(ItemStack s) {
+    static boolean fullBlock(ItemStack s) {
         if (s.isEmpty() || !(s.getItem() instanceof BlockItem bi)) {
             return false;
         }
@@ -442,10 +446,14 @@ public final class DriveLive {
             say(line);
             return;
         }
+        if (hitting && mc.gameMode != null) {
+            ((DriveMixinGameModeAccess) mc.gameMode).entropybot$setDestroying(true);     // Baritone's restore of last tick's hold
+        }
         MoveDriver.Body b = new MoveDriver.Body(p.getX(), p.getY(), p.getZ(), p.getDeltaMovement().x, p.getDeltaMovement().y, p.getDeltaMovement().z,
                 p.onGround(), p.horizontalCollision, p.getYRot(), p.getXRot());
         LiveRoute r = route;
-        Pilot.Act act = pilot.tick(b, r.world(), mc.isPaused(), baritoneDriving(), mc.level == level, r::impossible);
+        MoveDriver.MoveWorld w = r.world();
+        Pilot.Act act = pilot.tick(b, w, new LiveHands(mc, p, r.view), mc.isPaused(), baritoneDriving(), mc.level == level, r::impossible);
         if (act.replan()) {
             keys.releaseAll();                                                 // nothing held while the next part is searched
             if (parts >= MAX_PARTS) {
@@ -473,18 +481,77 @@ public final class DriveLive {
             p.setSprinting(false);
         }
         sprinting = sprint;
-        if (act.yaw() != null) {
-            LookMath.Turn n = LookMath.step(p.getYRot(), p.getXRot(), act.yaw(), p.getXRot(), config.walkTurn(), mc.options.sensitivity().get());
+        if (act.yaw() != null || act.pitch() != null) {
+            float ty = act.yaw() == null ? p.getYRot() : act.yaw(), tp = act.pitch() == null ? p.getXRot() : act.pitch();
+            LookMath.Turn n = LookMath.step(p.getYRot(), p.getXRot(), ty, tp, config.walkTurn(), mc.options.sensitivity().get());
             p.setYRot(n.yaw());
+            p.setXRot(n.pitch());
         }
         if (act.ended() != null) {
             letGo(mc);
             say(act.ended() + (act.ok() ? "" : " [failed]"));
+            return;
+        }
+        hands(mc, p, act.hand());
+    }
+
+    private MoveDriver.Hand wish;
+
+    /**
+     * Nav step 9b: the move's hand wish. A new wish puts the best tool (a break) or a full block (a place) in the hand and
+     * says so; the hit or click goes only to the wished cell (a break: the crosshair on it; a place: on a face next to it,
+     * or on the replaceable cell itself), read after this tick's turn; the guard may refuse a break, which stops the trip.
+     */
+    private void hands(Minecraft mc, LocalPlayer p, MoveDriver.Hand h) {
+        if (h == null || mc.gameMode == null) {
+            if (hitting && mc.gameMode != null) {
+                mc.gameMode.stopDestroyBlock();
+            }
+            hitting = false;
+            wish = null;
+            return;
+        }
+        BlockPos pos = new BlockPos(h.cell().x, h.cell().y, h.cell().z);
+        boolean fresh = wish == null || wish.place() != h.place() || !wish.cell().equals(h.cell());
+        wish = h;
+        if (!h.place() && fresh && Guard.INSTANCE.vetoBreak(pos)) {
+            String line = pilot.stop("the guard refuses to break " + pos.toShortString() + " (its log line says why)");
+            letGo(mc);
+            say(line + " [failed]");
+            return;
+        }
+        if (fresh || (h.place() && !fullBlock(p.getMainHandItem()))) {
+            Driver.Task t = h.place() ? new Driver.Place(h.cell()) : new Driver.Break(h.cell());
+            String chose = hand(mc, p, t);
+            if (fresh) {                                                         // PR 5 review: said once per wish, not every retry
+                say(pilot.name() + ": " + pilot.where() + ", " + (h.place() ? "place at " : "break ") + pos.toShortString() + ", " + chose);
+            }
+        }
+        BlockHitResult hr = crosshair(p);
+        if (!h.place() && h.click() && hr != null && hr.getBlockPos().equals(pos)) {
+            if (mc.gameMode.continueDestroyBlock(hr.getBlockPos(), hr.getDirection())) {
+                p.swing(InteractionHand.MAIN_HAND);
+            }
+            hitting = mc.gameMode.isDestroying();
+            ((DriveMixinGameModeAccess) mc.gameMode).entropybot$setDestroying(false);   // vanilla's continueAttack(false) must not abort it
+        } else if (hitting) {
+            mc.gameMode.stopDestroyBlock();
+            hitting = false;
+        }
+        if (h.place() && h.click() && hr != null && fullBlock(p.getMainHandItem())
+                && (hr.getBlockPos().equals(pos) || (hr.getBlockPos().relative(hr.getDirection()).equals(pos)
+                && io.github.mojolowjo.entropybot.nav.rules.BlockRules.canPlaceAgainst(route.view, hr.getBlockPos().getX(), hr.getBlockPos().getY(), hr.getBlockPos().getZ())))) {
+            // PR 5 review: only against a block the fork places against (READY_TO_PLACE), never a chest or door
+            InteractionResult res = mc.gameMode.useItemOn(p, InteractionHand.MAIN_HAND, hr);
+            if (res.consumesAction()) {
+                p.swing(InteractionHand.MAIN_HAND);
+            }
         }
     }
 
     private void letGo(Minecraft mc) {
         keys.releaseAll();
+        wish = null;
         LocalPlayer p = mc.player;
         if (sprinting && p != null) {
             p.setSprinting(false);
