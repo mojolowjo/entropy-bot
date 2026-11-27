@@ -33,7 +33,7 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * Nav step 8, the game side of our driver: the owner's test verbs ({@code aa nav look|walk|break|place|stop|status}),
+ * Nav step 8, the game side of our driver: the owner's test verbs ({@code aa nav look|walk|break|place|go|stop|status}; go: step 9a's {@link Pilot} on a route our planner made, {@link LiveRoute}),
  * and on each client tick's start what the {@link Driver} asks for: the keys ({@link NavInput} in {@code player.input}),
  * the head turn ({@link LookMath}, set on the player), a held break ({@code continueDestroyBlock}, the
  * {@code isDestroying} flag set false after it as Baritone's BlockBreakHelper does), a right click ({@code useItemOn}), and
@@ -55,7 +55,11 @@ public final class DriveLive {
     private final Driver driver = new Driver(config);
     private final Keys keys = new Keys();
     private ClientLevel level;
-    private boolean hitting;
+    private boolean hitting, sprinting;
+    private final Pilot pilot = new Pilot();
+    private LiveRoute route;
+    private io.github.mojolowjo.entropybot.nav.search.goals.Goal goal;
+    private int parts;
     private String last = "nothing yet";
 
     private DriveLive() {}
@@ -67,9 +71,12 @@ public final class DriveLive {
         try {
             switch (verb) {
                 case "status":
-                    return "nav: " + (driver.task() == null ? "idle" : Driver.name(driver.task()) + " running") + ", keys " + keys + "; last: " + last;
+                    return "nav: " + (pilot.driving() ? pilot.name() + " driving, " + pilot.where() : driver.task() == null ? "idle" : Driver.name(driver.task()) + " running")
+                            + ", keys " + keys + "; last: " + last;
                 case "stop": {
                     String line = driver.stop("aa nav stop");
+                    String route = pilot.stop("aa nav stop");
+                    line = line != null ? line : route;
                     letGo(Minecraft.getInstance());
                     if (line != null) {
                         say(line);
@@ -84,6 +91,8 @@ public final class DriveLive {
                     return start(new Driver.Break(new BetterBlockPos(Integer.parseInt(a[1]), Integer.parseInt(a[2]), Integer.parseInt(a[3]))));
                 case "place":
                     return start(new Driver.Place(new BetterBlockPos(Integer.parseInt(a[1]), Integer.parseInt(a[2]), Integer.parseInt(a[3]))));
+                case "go":
+                    return go(new BetterBlockPos(Integer.parseInt(a[1]), Integer.parseInt(a[2]), Integer.parseInt(a[3])));
                 default:
                     return USAGE;
             }
@@ -92,7 +101,61 @@ public final class DriveLive {
         }
     }
 
-    static final String USAGE = "usage: aa nav look <yaw> <pitch> | walk <blocks> | break <x y z> | place <x y z> | stop | status";
+    static final String USAGE = "usage: aa nav look <yaw> <pitch> | walk <blocks> | break <x y z> | place <x y z> | go <x y z> | stop | status";
+
+    /** Step 9a: parts of one trip planned at most this many times (a part ends where the search's budget ran out). */
+    static final int MAX_PARTS = 20;                                         // structural: a test verb's guard against a loop
+
+    /** aa nav go x y z: plan with our planner and drive with the pilot. */
+    private String go(BetterBlockPos goal) {
+        Minecraft mc = Minecraft.getInstance();
+        LocalPlayer p = mc.player;
+        if (p == null || mc.level == null) {
+            return "nav: not started, no world";
+        }
+        String name = "route to " + goal.x + " " + goal.y + " " + goal.z;
+        if (baritoneDriving()) {
+            return "nav " + name + ": not started, Baritone is driving (aa nav waits until it is idle)";
+        }
+        String was = driver.stop("replaced by " + name);
+        String trip = pilot.stop("replaced by " + name);
+        if (was != null || trip != null) {
+            say(was != null ? was : trip);
+            letGo(mc);
+        }
+        this.goal = new io.github.mojolowjo.entropybot.nav.search.goals.GoalBlock(goal.x, goal.y, goal.z);
+        level = mc.level;
+        parts = 0;
+        pilot.resetCounts();
+        String planned = plan(p, name, true);
+        return "nav " + planned;
+    }
+
+    /** Plans the next part of the trip and hands it to the pilot. Returns the line said. */
+    private String plan(LocalPlayer p, String name, boolean first) {
+        parts++;
+        long t0 = System.nanoTime();
+        route = LiveRoute.of(p);
+        BetterBlockPos feet = new MoveDriver.Body(p.getX(), p.getY(), p.getZ(), 0, 0, 0, true, false, 0, 0).feet();
+        var r = route.plan(feet, goal);
+        long ms = (System.nanoTime() - t0) / 1_000_000;
+        var path = r.getPath().orElse(null);
+        if (path == null || path.steps().isEmpty()) {
+            String line = name + ": no route (" + r.getType().name().toLowerCase(java.util.Locale.ROOT) + (r.failure() == null ? "" : ", " + r.failure()) + ", " + ms + " ms) [failed]";
+            pilot.stop("no route");
+            say(line);
+            return line;
+        }
+        if (first) {
+            pilot.start(path, name);
+        } else {
+            pilot.next(path);
+        }
+        String line = name + ": part " + parts + " planned, " + path.steps().size() + " moves, " + Math.round(path.ticksRemainingFrom(0)) + " ticks priced, "
+                + (r.getType() == io.github.mojolowjo.entropybot.nav.search.PathCalculationResult.Type.SUCCESS_TO_GOAL ? "to the goal" : "a part of the way") + " (" + ms + " ms)";
+        say(line);
+        return line;
+    }
 
     private String start(Driver.Task t) {
         Minecraft mc = Minecraft.getInstance();
@@ -106,6 +169,11 @@ public final class DriveLive {
         if (t instanceof Driver.Break b && Guard.INSTANCE.vetoBreak(new BlockPos(b.pos().x, b.pos().y, b.pos().z))) {
             say(Driver.name(t) + ": not started, the guard refuses this block (its log line says why) [failed]");
             return "nav " + Driver.name(t) + ": not started, the guard refuses this block";
+        }
+        String route = pilot.stop("replaced by " + Driver.name(t));
+        if (route != null) {
+            say(route);
+            letGo(mc);
         }
         String hand = hand(mc, p, t);
         String was = driver.start(t);
@@ -121,8 +189,12 @@ public final class DriveLive {
     public void preTick() {
         Minecraft mc = Minecraft.getInstance();
         LocalPlayer p = mc.player;
+        if (pilot.driving()) {
+            pilotTick(mc, p);
+            return;
+        }
         if (driver.task() == null) {
-            if (keys.moving() || hitting || (p != null && p.input instanceof NavInput)) {
+            if (keys.moving() || hitting || sprinting || (p != null && p.input instanceof NavInput)) {
                 letGo(mc);
             }
             return;
@@ -361,9 +433,63 @@ public final class DriveLive {
         return s.isEmpty() ? "empty hand" : s.getItem().builtInRegistryHolder().key().location().getPath();
     }
 
+    /** One pilot tick: the move's keys, the head's yaw (walking turns at walkTurn a tick), sprint, the trip's next part. */
+    private void pilotTick(Minecraft mc, LocalPlayer p) {
+        if (p == null || mc.level == null) {
+            String line = pilot.stop("the world is gone");
+            keys.releaseAll();
+            sprinting = false;
+            say(line);
+            return;
+        }
+        MoveDriver.Body b = new MoveDriver.Body(p.getX(), p.getY(), p.getZ(), p.getDeltaMovement().x, p.getDeltaMovement().y, p.getDeltaMovement().z,
+                p.onGround(), p.horizontalCollision, p.getYRot(), p.getXRot());
+        LiveRoute r = route;
+        Pilot.Act act = pilot.tick(b, r.world(), mc.isPaused(), baritoneDriving(), mc.level == level, r::impossible);
+        if (act.replan()) {
+            keys.releaseAll();                                                 // nothing held while the next part is searched
+            if (parts >= MAX_PARTS) {
+                letGo(mc);
+                say(pilot.name() + ": gave up after " + parts + " parts, the goal not reached [failed]");
+                return;
+            }
+            String line = plan(p, pilot.name() == null ? "route" : pilot.name(), false);
+            if (!pilot.driving()) {
+                letGo(mc);
+            }
+            return;
+        }
+        keys.set(act.keys());
+        if (keys.moving() && !(p.input instanceof NavInput)) {
+            p.input = new NavInput(keys);
+        } else if (!keys.moving() && p.input instanceof NavInput) {
+            p.input = new KeyboardInput(mc.options);
+        }
+        boolean sprint = keys.isDown(Keys.Key.SPRINT) && keys.isDown(Keys.Key.FORWARD);
+        boolean fed = p.getFoodData().getFoodLevel() > 6 || p.getAbilities().mayfly;   // structural: LocalPlayer.hasEnoughFoodToStartSprinting
+        if (sprint && fed && !p.horizontalCollision && !p.isSprinting()) {   // again after vanilla dropped it (a bump)
+            p.setSprinting(true);
+        } else if (!sprint && sprinting && p.isSprinting()) {
+            p.setSprinting(false);
+        }
+        sprinting = sprint;
+        if (act.yaw() != null) {
+            LookMath.Turn n = LookMath.step(p.getYRot(), p.getXRot(), act.yaw(), p.getXRot(), config.walkTurn(), mc.options.sensitivity().get());
+            p.setYRot(n.yaw());
+        }
+        if (act.ended() != null) {
+            letGo(mc);
+            say(act.ended() + (act.ok() ? "" : " [failed]"));
+        }
+    }
+
     private void letGo(Minecraft mc) {
         keys.releaseAll();
         LocalPlayer p = mc.player;
+        if (sprinting && p != null) {
+            p.setSprinting(false);
+        }
+        sprinting = false;
         if (p != null && p.input instanceof NavInput) {
             p.input = new KeyboardInput(mc.options);
         }

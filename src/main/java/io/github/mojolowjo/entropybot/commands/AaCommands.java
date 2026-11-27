@@ -171,7 +171,7 @@ final class AaCommands {
         // ---- driving tests (nav step 8: our own keys, look and hands, Baritone idle; each result is a "nav" line in latest.log)
         String D = "driving tests";
         v("nav", (c, aa, vb, a) -> io.github.mojolowjo.entropybot.nav.drive.DriveLive.INSTANCE.command(a),
-                f(D, "nav look|walk|break|place|stop|status", "our own driver (Baritone idle): look <yaw> <pitch>, walk <n>, break|place <x y z>"));
+                f(D, "nav look|walk|break|place|go|stop|status", "our own driver (Baritone idle): look <yaw> <pitch>, walk <n>, break|place|go <x y z>"));
         // ---- help
         v("help", (c, aa, vb, a) -> help(), f("help", "help", "this list"));
     }

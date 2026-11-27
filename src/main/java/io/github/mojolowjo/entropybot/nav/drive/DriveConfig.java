@@ -25,6 +25,7 @@ package io.github.mojolowjo.entropybot.nav.drive;
  * Loader notes: none.
  *
  * @param maxTurn         degrees the head turns at most per tick on each axis (ours: the fork turned in one tick)
+ * @param walkTurn        the same while the pilot walks a route (step 9a: a corner of 90 degrees in one tick, as the fork)
  * @param lookWithin      a look has arrived within this many degrees on both axes
  * @param lookTimeout     ticks a look may take before it fails "not reached"
  * @param walkTicksPerBlock ticks one block of walking may take (walking speed is 4.3 blocks a second, about 4.7 ticks)
@@ -33,11 +34,11 @@ package io.github.mojolowjo.entropybot.nav.drive;
  * @param placeTimeout    ticks a place may take after the look has arrived
  * @param placeDelay      ticks between two right clicks (the fork's rightClickSpeed 4 less its base 1)
  */
-public record DriveConfig(float maxTurn, float lookWithin, int lookTimeout, int walkTicksPerBlock, int stuckTicks,
+public record DriveConfig(float maxTurn, float walkTurn, float lookWithin, int lookTimeout, int walkTicksPerBlock, int stuckTicks,
                           int breakMargin, int placeTimeout, int placeDelay) {
 
     /** The defaults (the click delay the fork's, the rest ours, set on 2026-11-27 for the step 8 tests). */
     public static DriveConfig defaults() {
-        return new DriveConfig(30f, 1f, 40, 10, 20, 40, 40, 3);
+        return new DriveConfig(30f, 90f, 1f, 40, 10, 20, 40, 40, 3);
     }
 }
