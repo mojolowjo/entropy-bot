@@ -23,9 +23,12 @@ package io.github.mojolowjo.entropybot.nav.price;
 
 import io.github.mojolowjo.entropybot.nav.rules.BodySnapshot;
 import io.github.mojolowjo.entropybot.nav.rules.SearchContext;
+import net.minecraft.core.Holder;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.enchantment.Enchantment;
+import net.minecraft.world.item.enchantment.ItemEnchantments;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -36,7 +39,7 @@ import java.util.TreeSet;
  * epoch, what the context read from the body (sprint, water bucket, frost walker, water speed), the move settings and the
  * search's favouring and cached-only rule; in {@code breaking} the break settings, the hotbar's tools and the mining
  * effects; in {@code placing} the place settings, the placement price and whether there is a block to place. Pure (JUnit:
- * PriceStampTest). Loader notes: vanilla DataComponents.TOOL and the item registry, for the tool names only.
+ * PriceStampTest). Loader notes: vanilla DataComponents.TOOL and ENCHANTMENTS and the item registry, for the tool names only.
  */
 public final class PriceStamp {
     private PriceStamp() {}
@@ -56,7 +59,17 @@ public final class PriceStamp {
         TreeSet<String> tools = new TreeSet<>();
         for (ItemStack st : body.hotbar()) {
             if (!st.isEmpty() && st.has(DataComponents.TOOL)) {
-                tools.add(String.valueOf(BuiltInRegistries.ITEM.getKey(st.getItem())));
+                // review of 2026-11-27: the enchantments change break speed (efficiency), so they are in the stamp
+                StringBuilder name = new StringBuilder(String.valueOf(BuiltInRegistries.ITEM.getKey(st.getItem())));
+                ItemEnchantments ench = st.getOrDefault(DataComponents.ENCHANTMENTS, ItemEnchantments.EMPTY);
+                TreeSet<String> levels = new TreeSet<>();
+                for (Holder<Enchantment> e : ench.keySet()) {
+                    levels.add(e.getRegisteredName() + " " + ench.getLevel(e));
+                }
+                if (!levels.isEmpty()) {
+                    name.append(' ').append(levels);
+                }
+                tools.add(name.toString());
             }
         }
         breaking.put("tools on the hotbar", tools);

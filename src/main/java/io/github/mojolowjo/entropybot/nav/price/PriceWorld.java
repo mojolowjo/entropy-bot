@@ -55,7 +55,11 @@ public interface PriceWorld {
     /** The stamp now, for comparing a kept answer (may build a context; read when the memory compares). */
     PathMemory.Stamp stampNow();
 
-    /** The block view the cells are read from now (the same one a fresh context would get). */
+    /**
+     * The block view the cells are read from now (the same one a fresh context would get). Review of 2026-11-27: it is
+     * read on the game thread while searches run, so it must be its own instance, never the view a running search uses
+     * (a BlockView keeps a scratch position).
+     */
     BlockView view();
 
     /** The block rules a fresh context would get (the cells are classified with them). */

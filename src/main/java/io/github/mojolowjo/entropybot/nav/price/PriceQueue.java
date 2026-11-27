@@ -369,7 +369,12 @@ public final class PriceQueue implements IPricedPath {
             r.firstStart = from;
             lastCalcs.remove(r.goal);     // lease probe: a new search for the goal: the last one's detail is not this one's
         }
-        r.search = CompletableFuture.supplyAsync(() -> finder.calculate(primary, failure), world.executor());
+        try {
+            r.search = CompletableFuture.supplyAsync(() -> finder.calculate(primary, failure), world.executor());
+        } catch (RuntimeException e) {                                         // review of 2026-11-27: a refused executor lands as an error, not a stuck run
+            world.say("price search for " + r.goal + " not started: " + e);
+            r.search = CompletableFuture.failedFuture(e);
+        }
         segStarted++;
     }
 

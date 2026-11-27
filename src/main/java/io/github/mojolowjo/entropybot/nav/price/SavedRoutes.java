@@ -202,8 +202,11 @@ final class SavedRoutes {
      * feet stand in the goal and the goal has a kept path, it is saved as a route. Returns true when saved.
      */
     boolean walkEnded(Goal g, long tick) {
+        if (g == null) {
+            return false;                                                       // review of 2026-11-27: no goal, nothing walked to
+        }
         BetterBlockPos feet = world.start();
-        PathMemory.Path<Seen> p = g == null ? null : kept.memory.path(g);
+        PathMemory.Path<Seen> p = kept.memory.path(g);
         if (feet == null || world.world() == null || !g.isInGoal(feet) || p == null) {
             return false;                                                       // not in the goal, or no kept path walked: nothing to save
         }
