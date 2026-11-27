@@ -66,6 +66,7 @@ public final class GhostChecker {
     private String lastPathEvent = "";
     private int incidents;
     private boolean errorLogged;
+    private long errors;
     private int gameTick;
 
     private GhostChecker() {}
@@ -102,7 +103,7 @@ public final class GhostChecker {
     public void tick() {
         gameTick++;
         if (!active()) {
-            open.clear();
+            dropAll("checker off");
             current = null;
             return;
         }
@@ -113,7 +114,7 @@ public final class GhostChecker {
             ClientLevel level = mc.level;
             IBaritone b = io.github.mojolowjo.entropybot.baritone.SafetyNet.primary();
             if (p == null || level == null || b == null) {
-                open.clear();
+                dropAll("no player, level or Baritone");
                 current = null;
                 return;
             }
@@ -129,6 +130,7 @@ public final class GhostChecker {
                         if (handoff(lastPathEvent)) j.real(Outcome.UNKNOWN, "handed to the next segment after " + lastPathEvent);
                         else j.real(Outcome.FAILED, "Baritone left it at " + str(feet) + (lastPathEvent.isEmpty() ? "" : " after " + lastPathEvent));
                     }
+                lastPathEvent = "";   // review: consumed, so a later drop is not judged by an old handoff
                 current = path;
                 if (path != null) start(path, p, level);
             }
@@ -138,6 +140,7 @@ public final class GhostChecker {
                 if (j.verdict != null) continue;
                 if (budget.late(gameTick - j.startTick)) {
                     j.judged(Verdict.unchecked(Reason.BUDGET, j.check.ticks() + " ghost ticks in " + (gameTick - j.startTick) + " game ticks"));
+                    j.ghost = null;
                     continue;
                 }
                 while (j.verdict == null && budget.mayStep(steps, (System.nanoTime() - t0) / 1e6)) {
@@ -159,8 +162,9 @@ public final class GhostChecker {
                 close(j);
             }
         } catch (RuntimeException | LinkageError e) {
+            errors++;
             if (!errorLogged) LOG.warn("[entropybot] ghost check failed; open paths are unchecked (error)", e);
-            else LOG.warn("[entropybot] ghost check failed again: {}", e.toString());
+            else if (errors % 200 == 0) LOG.warn("[entropybot] ghost check failed {} times: {}", errors, e.toString());   // structural: about every 10 s
             errorLogged = true;
             for (Job j : open) if (j.verdict == null) j.judged(Verdict.unchecked(Reason.ERROR, e.toString()));
         } finally {
@@ -177,6 +181,10 @@ public final class GhostChecker {
             BetterBlockPos q = pos.get(i);
             points.add(new Point(q.x, q.y, q.z));
             kinds.add(i == 0 || i - 1 >= moves.size() ? MoveKind.OTHER : MoveKind.fromClassName(moves.get(i - 1).getClass().getSimpleName()));
+        }
+        if (points.isEmpty()) {   // review: an empty path has no destination to build a job on
+            LOG.info("[entropybot] ghost: Baritone path with no positions, not checked");
+            return;
         }
         Job j = new Job(ledger.newPath(), path, points, kinds, p, gameTick);
         for (int i = 1; i < points.size(); i++)
@@ -218,11 +226,23 @@ public final class GhostChecker {
         return null;
     }
 
+    /** Closes every open job as unchecked / unknown, so the ledger totals keep matching its rows. */
+    private void dropAll(String why) {
+        for (Job j : open) {
+            if (j.verdict == null) j.judged(Verdict.unchecked(Reason.REPLACED, why));
+            if (j.outcome == null) j.real(Outcome.UNKNOWN, why);
+            close(j);
+        }
+        open.clear();
+    }
+
     private void close(Job j) {
         GhostLedger.Row row = new GhostLedger.Row(j.no, j.verdict, j.outcome, j.realNote);
         Boolean agree = ledger.close(row);
         if (Boolean.FALSE.equals(agree)) {
-            LOG.info("[entropybot] ghost DISAGREE {}; route{}; ghost track {}", row.line(), j.route, j.track);
+            if (incidents < Tuning.i("ghost.incidentsMax"))
+                LOG.info("[entropybot] ghost DISAGREE {}; route{}; ghost track {}", row.line(), j.route, j.track);
+            else LOG.info("[entropybot] ghost DISAGREE {} (incident cap reached, no track)", row.line());
             if (incidents < Tuning.i("ghost.incidentsMax")) {
                 incidents++;
                 try {
