@@ -23,7 +23,9 @@ import java.util.Locale;
  * The ghost changes no blocks, so a part is flown only up to its first move that needs the hands (a break or a placed
  * block): "flown". It answers pass, refuse with the pilot's own reason (off the route, too slow, a move failed), or
  * unchecked (out of time, an error); it runs under {@link CheckBudget} beside the real walk and never holds it up. When
- * the real part ends, both go into {@link CheckBook}; a disagreement logs both tracks. Pure: no (the ghost is a game
+ * the real part ends, both go into {@link CheckBook}; a disagreement logs both tracks. Known limits: at a part boundary
+ * the real body coasts one tick with no keys while the next part is planned, the ghost does not; the ghost's sprint
+ * follows the keys, food and a bump, not vanilla's other sprint stops (water, blindness). Pure: no (the ghost is a game
  * entity; the books are pure). Loader notes: {@link GhostPlayer}'s accessor mixins (vanilla Entity, LivingEntity),
  * {@code Attributes.SNEAKING_SPEED}; Fabric the same.
  */
@@ -44,6 +46,7 @@ final class RouteCheck {
         if (!on()) return;
         Job j = new Job(book.newPart(), gameTick);
         job = j;
+        long t0 = System.nanoTime();
         try {
             MoveDriver.MoveWorld w = route.world();
             int hands = firstHands(path, w);
@@ -62,6 +65,8 @@ final class RouteCheck {
             j.food = p.getFoodData().getFoodLevel() > 6 || p.getAbilities().mayfly;   // structural: LocalPlayer.hasEnoughFoodToStartSprinting
         } catch (RuntimeException | LinkageError e) {
             error(j, e);
+        } finally {
+            book.cost((System.nanoTime() - t0) / 1e6);                        // PR 6 review: the scan and the ghost's build count too
         }
     }
 
@@ -195,7 +200,7 @@ final class RouteCheck {
                 pitch = n.pitch();
             }
             g.aim(yaw, pitch);
-            Keys.Impulse i = k.impulse(g.isCrouching() ? sneak : 1f);
+            Keys.Impulse i = k.impulse(sneak);                                  // as NavInput: the sneak key scales (PR 6 review)
             boolean sprint = k.isDown(Keys.Key.SPRINT) && k.isDown(Keys.Key.FORWARD) && food && !g.horizontalCollision;
             g.step(new GhostInput(i.forward(), i.left(), k.isDown(Keys.Key.JUMP), sprint, k.isDown(Keys.Key.SNEAK), yaw, pitch));
         }

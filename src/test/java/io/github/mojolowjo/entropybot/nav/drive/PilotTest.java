@@ -168,7 +168,10 @@ class PilotTest {
     void letsGoOnPauseWorldChangeAndBaritone() {
         Pilot p = new Pilot();
         p.start(south(2, 2), "r");
-        assertTrue(p.tick(at(0.5, 64, 0.5, true), w, true, false, true, s -> null).ended().contains("the game paused"));
+        String paused = p.tick(at(0.5, 64, 0.5, true), w, true, false, true, s -> null).ended();
+        assertTrue(paused.contains("the game paused"));
+        assertTrue(Pilot.letGo(paused), "an end from outside: the checker books it unknown");
+        assertFalse(Pilot.letGo("r: off the route: 3.1 blocks from it at move 1 (feet at 3 64 1)"));
         p.start(south(2, 2), "r");
         assertTrue(p.tick(at(0.5, 64, 0.5, true), w, false, true, true, s -> null).ended().contains("Baritone is driving"));
         p.start(south(2, 2), "r");

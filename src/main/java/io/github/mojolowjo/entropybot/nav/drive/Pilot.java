@@ -59,6 +59,14 @@ public final class Pilot {
     static final int MOVEMENT_TIMEOUT_TICKS = 100;                            // structural: Settings movementTimeoutTicks
     static final int MAX_TICKS_AWAY = 200;                                    // structural: PathExecutor MAX_TICKS_AWAY
 
+    /** The start of an end caused from outside the route (pause, world change, Baritone): not the route's fault. */
+    static final String LET_GO = "let go after ";
+
+    /** True for an ended line the pilot wrote for an end caused from outside the route. */
+    public static boolean letGo(String ended) {
+        return ended != null && ended.contains(": " + LET_GO);
+    }
+
     private Path path;
     private int index, moveTicks, ticks, moves, ticksAway;
     private MoveDriver driver;
@@ -132,9 +140,9 @@ public final class Pilot {
         if (path == null) {
             return idle();
         }
-        if (paused) return end("let go after " + ticks + " ticks: the game paused", false);
-        if (!sameWorld) return end("let go after " + ticks + " ticks: the world changed", false);
-        if (baritone) return end("let go after " + ticks + " ticks: Baritone is driving (the two never drive together)", false);
+        if (paused) return end(LET_GO + ticks + " ticks: the game paused", false);
+        if (!sameWorld) return end(LET_GO + ticks + " ticks: the world changed", false);
+        if (baritone) return end(LET_GO + ticks + " ticks: Baritone is driving (the two never drive together)", false);
         ticks++;
         BetterBlockPos feet = b.feet();
         if (path.getGoal().isInGoal(feet.x, feet.y, feet.z) && (b.onGround() || index >= path.steps().size())) {

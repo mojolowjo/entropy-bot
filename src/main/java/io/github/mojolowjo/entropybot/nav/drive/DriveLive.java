@@ -502,8 +502,10 @@ public final class DriveLive {
             p.setXRot(n.pitch());
         }
         if (act.ended() != null) {
-            check.realEnded(act.ok() ? io.github.mojolowjo.entropybot.nav.check.CheckBook.Real.ARRIVED : io.github.mojolowjo.entropybot.nav.check.CheckBook.Real.FAILED,
-                    act.ended().substring(act.ended().indexOf(": ") + 2));
+            check.realEnded(act.ok() ? io.github.mojolowjo.entropybot.nav.check.CheckBook.Real.ARRIVED
+                            : Pilot.letGo(act.ended()) ? io.github.mojolowjo.entropybot.nav.check.CheckBook.Real.UNKNOWN   // PR 6 review: not the route's fault
+                            : io.github.mojolowjo.entropybot.nav.check.CheckBook.Real.FAILED,
+                    act.ended().substring(Math.max(0, act.ended().indexOf(": ") + 2)));
             letGo(mc);
             say(act.ended() + (act.ok() ? "" : " [failed]"));
             return;
