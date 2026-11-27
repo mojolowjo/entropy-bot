@@ -1034,3 +1034,7 @@ band.legCarryS	600.0
 tunnel.heldNearM	8.0
 tunnel.legBlocks	6.0
 tunnel.shortLegBlocks	2.0
+ghost.check	1.0
+ghost.deadlineTicks	40.0
+ghost.msPerTick	2.0
+ghost.ticksPerTick	200.0
