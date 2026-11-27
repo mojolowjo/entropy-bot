@@ -89,8 +89,9 @@ final class LiveRoute {
         return null;
     }
 
-    /** The pilot's world: BlockRules on the live view. */
+    /** The pilot's world: BlockRules on the live view, read fresh each tick (PR 4 review: no stale chunk). */
     MoveDriver.MoveWorld world() {
+        view.reset();
         return new MoveDriver.MoveWorld() {
             @Override public boolean canWalkThrough(int x, int y, int z) { return RULES.canWalkThrough(view, x, y, z); }
             @Override public boolean canWalkOn(int x, int y, int z) { return RULES.canWalkOn(view, x, y, z); }

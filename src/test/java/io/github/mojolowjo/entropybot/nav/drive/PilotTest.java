@@ -25,6 +25,14 @@ class PilotTest {
         return Path.of(cells, steps, new GoalBlock(0, 64, goalZ));
     }
 
+    /** The same route with every move priced high, so the too-slow give-up stays out of the way. */
+    static Path slowSouth(int n) {
+        Path p = south(n, n);
+        List<Step> steps = new ArrayList<>();
+        for (Step s : p.steps()) steps.add(new Step(s.src(), s.dest(), s.move(), 1000));
+        return Path.of(p.positions(), steps, p.getGoal());
+    }
+
     static MoveDriver.Body at(double x, double y, double z, boolean ground) {
         return new MoveDriver.Body(x, y, z, 0, 0, 0, ground, false, 0f, 0f);
     }
@@ -73,6 +81,48 @@ class PilotTest {
         q.start(south(4, 4), "r");
         q.tick(at(0.5, 64, 0.5, true), w, false, false, true, s -> null);
         assertNull(q.tick(at(2.6, 64, 0.5, false), w, false, false, true, s -> null).ended(), "2.1 in the air: within 3");
+    }
+
+    @Test
+    void moreThanTwoBlocksOffIsToleratedFor200Ticks() {                       // PathExecutor MAX_TICKS_AWAY (PR 4 review)
+        Pilot p = new Pilot();
+        p.start(slowSouth(4), "r");
+        tick(p, 0.5);
+        Pilot.Act a = null;
+        int n = 0;
+        while (n < 300 && (a == null || a.ended() == null)) {
+            a = p.tick(at(3.0, 64, 0.5, true), w, false, false, true, s -> null);   // 2.5 blocks off: within 3
+            n++;
+        }
+        assertEquals(201, n);
+        assertTrue(a.ended().startsWith("r: off the route for 201 ticks: 2.5 blocks"), a.ended());
+        Pilot q = new Pilot();
+        q.start(slowSouth(4), "r");
+        for (int i = 0; i < 150; i++) q.tick(at(3.0, 64, 0.5, true), w, false, false, true, s -> null);
+        q.tick(at(0.5, 64, 0.5, true), w, false, false, true, s -> null);   // back on the route: the count starts again
+        for (int i = 0; i < 150; i++) {
+            assertNull(q.tick(at(3.0, 64, 0.5, true), w, false, false, true, s -> null).ended());
+        }
+    }
+
+    @Test
+    void feetBackOnAnEarlierMoveGoBackToIt() {                                 // PathExecutor rewind (a lag-back)
+        Pilot p = new Pilot();
+        p.start(south(6, 6), "r");
+        tick(p, 0.5);
+        tick(p, 3.5);
+        assertEquals("move 4 of 6 (traverse_south)", p.where());
+        tick(p, 0.5);
+        assertEquals("move 1 of 6 (traverse_south)", p.where());
+    }
+
+    @Test
+    void feetFarAheadSkipToTheMoveWhoseCellsHoldThem() {                       // PathExecutor skip, pathPosition + 3 on
+        Pilot p = new Pilot();
+        p.start(south(8, 8), "r");
+        tick(p, 0.5);
+        tick(p, 5.5);                                                         // cell 5: in move 5's cells, which ends there at once
+        assertEquals("move 6 of 8 (traverse_south)", p.where());
     }
 
     @Test

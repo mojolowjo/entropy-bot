@@ -15,26 +15,30 @@
  * along with Baritone.  If not, see <https://www.gnu.org/licenses/>.
  *
  * Entropy Bot 2026-11-27 (nav step 9a): Baritone's PathExecutor.onTick as a pure class: where the body is on the
- * route, the off-route and too-slow give-ups (maxDistFromPath 2, maxMaxDistFromPath 3, movementTimeoutTicks 100),
+ * route (back to an earlier move, skip ahead), the off-route and too-slow give-ups (maxDistFromPath 2 for 200 ticks,
+ * maxMaxDistFromPath 3 at once, a fall measured flat, movementTimeoutTicks 100),
  * the "this move became impossible" check before each move, and the next move started in the same tick. Every give-up
  * says why. Not in 9a: sprint across moves, plan-ahead and splice (the next segment is planned when one ends), pause.
  */
 
 package io.github.mojolowjo.entropybot.nav.drive;
 
+import io.github.mojolowjo.entropybot.nav.moves.MoveShape;
 import io.github.mojolowjo.entropybot.nav.search.Path;
 import io.github.mojolowjo.entropybot.nav.search.Step;
 import io.github.mojolowjo.entropybot.nav.util.BetterBlockPos;
 
+import java.util.ArrayList;
 import java.util.EnumSet;
+import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import java.util.function.Function;
 
 /**
  * Drives one planned route move by move with {@link MoveDriver}s. Each tick it finds the body on the route (the current
- * move's cells, or the start of one of the next three moves: the fork's look-ahead), gives up when the body is more
- * than 2 blocks from the route (3 in the air), when a move takes 100 ticks longer than its price, when a move's own
+ * move's cells, an earlier move's cells, or a later move's), gives up when the body is more than 2 blocks from the
+ * route for 200 ticks or 3 blocks at once (a fall: flat to its landing), when a move takes 100 ticks longer than its price, when a move's own
  * driver fails, or when the world changed under a move before it started (the price is asked again). It ends "arrived"
  * when the feet are in the goal, or "segment done" when the route (a part of the way) runs out: {@link DriveLive} plans
  * the next part. It lets go when the game pauses, the world changes or Baritone drives. Pure (JUnit: PilotTest).
@@ -48,27 +52,34 @@ public final class Pilot {
     /** The fork's PathExecutor numbers. */
     static final double MAX_DIST_FROM_PATH = 2, MAX_MAX_DIST_FROM_PATH = 3;   // structural: Settings maxDistFromPath, maxMaxDistFromPath
     static final int MOVEMENT_TIMEOUT_TICKS = 100;                            // structural: Settings movementTimeoutTicks
+    static final int MAX_TICKS_AWAY = 200;                                    // structural: PathExecutor MAX_TICKS_AWAY
 
     private Path path;
-    private int index, moveTicks, ticks, moves;
+    private int index, moveTicks, ticks, moves, ticksAway;
     private MoveDriver driver;
+    private List<Set<BetterBlockPos>> valid;                                   // each move's valid cells, for sync and off-route
     private String name;
 
     /** Starts a route (any running one is dropped). */
     public void start(Path p, String name) {
         this.path = p;
         this.name = name;
-        index = 0;
-        moveTicks = 0;
-        driver = null;
+        begin();
     }
 
     /** A new route for the same trip (the next part): the tick and move counts carry on. */
     public void next(Path p) {
         this.path = p;
+        begin();
+    }
+
+    private void begin() {
         index = 0;
         moveTicks = 0;
+        ticksAway = 0;
         driver = null;
+        valid = new ArrayList<>();
+        for (Step s : path.steps()) valid.add(MoveShape.of(s.move(), s.src(), s.dest()).valid());
     }
 
     /** Resets the counts for a new trip. */
@@ -138,7 +149,14 @@ public final class Pilot {
                 moveTicks = 0;
             }
             double off = offRoute(b);
-            if (off > (b.onGround() ? MAX_DIST_FROM_PATH : MAX_MAX_DIST_FROM_PATH)) {
+            if (offBy(b, off, MAX_DIST_FROM_PATH)) {                             // PathExecutor: far for too long
+                if (++ticksAway > MAX_TICKS_AWAY) {
+                    return end(String.format(Locale.ROOT, "off the route for %d ticks: %.1f blocks from it at move %d (feet at %s)", ticksAway, off, index + 1, cell(feet)), false);
+                }
+            } else {
+                ticksAway = 0;
+            }
+            if (offBy(b, off, MAX_MAX_DIST_FROM_PATH)) {
                 return end(String.format(Locale.ROOT, "off the route: %.1f blocks from it at move %d (feet at %s)", off, index + 1, cell(feet)), false);
             }
             moveTicks++;
@@ -163,13 +181,32 @@ public final class Pilot {
         return new Act(EnumSet.noneOf(Keys.Key.class), null, null, false, false);
     }
 
-    /** The fork's look-ahead: the feet on the start of one of the next 3 moves skips to it. */
+    /**
+     * PathExecutor's re-sync: feet in an earlier move's cells go back to it (a lag-back); feet in the cells of a move 3 or
+     * more ahead skip to it. Added here: feet on the start of one of the next 2 moves skip to it (the fork leaves that to
+     * the move's own done-check, which this port's drivers do not all have).
+     */
     private void sync(BetterBlockPos feet) {
-        if (driver != null && driver.valid().contains(feet)) {
+        if (valid.get(index).contains(feet)) {
             return;
         }
-        for (int j = index + 1; j < Math.min(path.steps().size(), index + 4); j++) {   // structural: the fork looks 3 moves ahead
+        for (int j = 0; j < index; j++) {
+            if (valid.get(j).contains(feet)) {
+                index = j;
+                driver = null;
+                return;
+            }
+        }
+        int n = path.steps().size();
+        for (int j = index + 1; j < Math.min(n, index + 3); j++) {               // structural: the next 2 moves by their start
             if (path.steps().get(j).src().equals(feet)) {
+                index = j;
+                driver = null;
+                return;
+            }
+        }
+        for (int j = index + 3; j < n - 1; j++) {                               // structural: the fork's skip, pathPosition + 3 on
+            if (valid.get(j).contains(feet)) {
                 index = j;
                 driver = null;
                 return;
@@ -177,15 +214,26 @@ public final class Pilot {
         }
     }
 
-    /** Distance from the body to the nearest cell of the current and the next move. */
+    /** PathExecutor.closestPathPos: the body's distance to the centre of the nearest valid cell of any move. */
     private double offRoute(MoveDriver.Body b) {
         double best = Double.MAX_VALUE;
-        for (int j = Math.max(0, index - 1); j < Math.min(path.positions().size(), index + 3); j++) {
-            BetterBlockPos c = path.positions().get(j);
-            double dx = b.x() - (c.x + 0.5), dy = b.y() - c.y, dz = b.z() - (c.z + 0.5);
-            best = Math.min(best, Math.sqrt(dx * dx + dy * dy + dz * dz));
+        for (Set<BetterBlockPos> cells : valid) {
+            for (BetterBlockPos c : cells) {
+                double dx = b.x() - (c.x + 0.5), dy = b.y() - (c.y + 0.5), dz = b.z() - (c.z + 0.5);
+                best = Math.min(best, Math.sqrt(dx * dx + dy * dy + dz * dz));
+            }
         }
         return best;
+    }
+
+    /** PathExecutor.possiblyOffPath: past the leniency, except a fall measured flat to its landing cell. */
+    private boolean offBy(MoveDriver.Body b, double off, double leniency) {
+        if (off <= leniency) return false;
+        if (driver instanceof MoveDriver.Fall) {
+            BetterBlockPos d = driver.step().dest();
+            return Math.hypot(b.x() - (d.x + 0.5), b.z() - (d.z + 0.5)) >= leniency;
+        }
+        return true;
     }
 
     private Act idle() {

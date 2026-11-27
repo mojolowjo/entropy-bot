@@ -25,10 +25,16 @@ public final class LiveBlockView extends BlockView {
         this.level = level;
     }
 
+    /** Forgets the cached chunk: the pilot calls it every tick, so a chunk the server sent again is read fresh. */
+    public void reset() {
+        last = null;
+        lastKey = Long.MIN_VALUE;
+    }
+
     private LevelChunk chunk(int x, int z) {
         int cx = x >> 4, cz = z >> 4;                                     // structural: 16 blocks a chunk
         long key = ((long) cx << 32) ^ (cz & 0xffffffffL);
-        if (key != lastKey) {
+        if (key != lastKey || last == null) {                              // a chunk not loaded yet is asked again
             last = (LevelChunk) level.getChunkSource().getChunk(cx, cz, ChunkStatus.FULL, false);
             lastKey = key;
         }

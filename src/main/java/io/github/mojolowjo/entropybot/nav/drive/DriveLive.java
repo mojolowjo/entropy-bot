@@ -447,6 +447,7 @@ public final class DriveLive {
         LiveRoute r = route;
         Pilot.Act act = pilot.tick(b, r.world(), mc.isPaused(), baritoneDriving(), mc.level == level, r::impossible);
         if (act.replan()) {
+            keys.releaseAll();                                                 // nothing held while the next part is searched
             if (parts >= MAX_PARTS) {
                 letGo(mc);
                 say(pilot.name() + ": gave up after " + parts + " parts, the goal not reached [failed]");
@@ -465,10 +466,13 @@ public final class DriveLive {
             p.input = new KeyboardInput(mc.options);
         }
         boolean sprint = keys.isDown(Keys.Key.SPRINT) && keys.isDown(Keys.Key.FORWARD);
-        if (sprint != sprinting) {
-            p.setSprinting(sprint);
-            sprinting = sprint;
+        boolean fed = p.getFoodData().getFoodLevel() > 6 || p.getAbilities().mayfly;   // structural: LocalPlayer.hasEnoughFoodToStartSprinting
+        if (sprint && fed && !p.horizontalCollision && !p.isSprinting()) {   // again after vanilla dropped it (a bump)
+            p.setSprinting(true);
+        } else if (!sprint && sprinting && p.isSprinting()) {
+            p.setSprinting(false);
         }
+        sprinting = sprint;
         if (act.yaw() != null) {
             LookMath.Turn n = LookMath.step(p.getYRot(), p.getXRot(), act.yaw(), p.getXRot(), config.walkTurn(), mc.options.sensitivity().get());
             p.setYRot(n.yaw());
