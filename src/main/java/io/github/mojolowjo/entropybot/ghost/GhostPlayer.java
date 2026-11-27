@@ -43,12 +43,12 @@ import java.util.UUID;
  * <p><b>Its tick</b> ({@link #step}) is the real player's tick cut down to movement, in vanilla order:
  * {@code Player.tick}'s {@code updateIsUnderwater}; {@code Entity.baseTick}'s powder-snow reset, water push
  * ({@code updateInWaterStateAndDoFluidPushing}), eyes-in-fluid and swimming, lava's fall scale; the air supply of
- * {@code LivingEntity.baseTick}; from {@code LocalPlayer.aiStep} the input, the sneak sink in a fluid; from
+ * {@code LivingEntity.baseTick}; from {@code LocalPlayer.aiStep} the input, the sneak sink in a fluid, flight's up/down thrust; from
  * {@code LivingEntity.aiStep} the jump delay, the tiny-speed cut, the jump (ground or fluid), the 0.98 input scale and
  * {@code travel}; and {@code Player.tick}'s {@code updatePlayerPose}. Left out on purpose: portals, sprint particles,
  * item pickup ({@code Player.touch}), pushing other players ({@code LivingEntity.pushEntities}, it would push the real
  * one), freezing, food, stats, and the NeoForge player-tick events. Not copied yet (open): the cobweb/berry stuck
- * multiplier carried into the next tick, elytra flight, riding, auto-jump, and {@code LocalPlayer.moveTowardsClosestSpace}
+ * multiplier carried into the next tick, elytra flight, riding, auto-jump, a spectator's forced off-ground, and {@code LocalPlayer.moveTowardsClosestSpace}
  * (the push out of a block the player is stuck in).
  *
  * <p><b>Leak guards</b> (source facts 2026-11-26 section 3, all without an injection):
@@ -60,8 +60,8 @@ import java.util.UUID;
  *   <li>NeoForge {@code LivingFallEvent}: {@link #causeFallDamage} is overridden, keeps the fall (distance, the block's
  *       multiplier, the damage by the game's own {@code calculateFallDamage}) and fires no event and no hurt;</li>
  *   <li>NeoForge {@code LivingJumpEvent}: {@link #jumpFromGround} is vanilla's body without the event;</li>
- *   <li>NeoForge {@code LivingBreatheEvent}: the air supply is the vanilla rule, run here instead of
- *       {@code CommonHooks.onLivingBreathe}.</li>
+ *   <li>NeoForge {@code LivingBreatheEvent}: the air supply is vanilla's water rule (the branch NeoForge replaced), run
+ *       here instead of {@code CommonHooks.onLivingBreathe}; air with the eyes in lava or a modded fluid may differ.</li>
  * </ul>
  * Still seen by other mods: NeoForge's {@code EntityEvent.EntityConstructing} when a ghost is built (once per ghost, not per
  * tick). On a client world {@code hurt()} is false, game events do nothing and plates, tripwires and berry damage act on
@@ -181,7 +181,8 @@ public final class GhostPlayer extends Player {
         ((GhostMixinEntityAccess) (Object) this).entropybot$updateFluidOnEyes();
         this.updateSwimming();
         if (this.isInLava()) this.fallDistance *= this.getFluidFallDistanceModifier(NeoForgeMod.LAVA_TYPE.value());
-        // LivingEntity.baseTick: the air supply (vanilla's rule; NeoForge's LivingBreatheEvent is not fired for a ghost)
+        // LivingEntity.baseTick: the air supply by vanilla's water rule (NeoForge's onLivingBreathe, which also knows other
+        // fluid types, is not run, so its LivingBreatheEvent is not fired; air in lava or modded fluids may differ)
         breathe();
         // LocalPlayer.aiStep: the input and the sneak sink
         this.aim(in.yaw(), in.pitch());
@@ -193,6 +194,10 @@ public final class GhostPlayer extends Player {
         FluidType top = this.getMaxHeightFluidType();
         if ((this.isInWater() || (!top.isAir() && this.canSwimInFluidType(top))) && in.shift() && this.isAffectedByFluids())
             this.sinkInFluid(this.isInWater() ? NeoForgeMod.WATER_TYPE.value() : top);
+        if (this.getAbilities().flying) {          // LocalPlayer.aiStep: flight's up and down thrust
+            int j = (in.jump() ? 1 : 0) - (in.shift() ? 1 : 0);
+            if (j != 0) this.setDeltaMovement(this.getDeltaMovement().add(0.0, j * this.getAbilities().getFlyingSpeed() * 3.0F, 0.0));   // structural: vanilla
+        }
         // LivingEntity.aiStep
         jumpDelay = GhostTickRules.decayDelay(jumpDelay);
         Vec3 v = this.getDeltaMovement();
@@ -202,7 +207,9 @@ public final class GhostPlayer extends Player {
             this.xxa = 0f;
             this.zza = 0f;
         }
+        this.aim(in.jumpYaw(), in.pitch());       // the jump may face another way than the move (Baritone)
         jumpBlock();
+        this.aim(in.yaw(), in.pitch());
         this.xxa *= GhostTickRules.INPUT_SCALE;
         this.zza *= GhostTickRules.INPUT_SCALE;
         if (this.hasEffect(MobEffects.SLOW_FALLING) || this.hasEffect(MobEffects.LEVITATION)) this.resetFallDistance();

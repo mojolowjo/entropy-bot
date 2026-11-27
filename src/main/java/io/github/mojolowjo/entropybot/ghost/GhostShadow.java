@@ -92,7 +92,7 @@ public final class GhostShadow {
                     + g.falls().size() + " landings; ms per tick: " + times + ", build " + fmt(build) + " ms";
             LOG.info("[entropybot] {}", out);
             return out;
-        } catch (RuntimeException ex) {
+        } catch (RuntimeException | LinkageError ex) {
             LOG.warn("[entropybot] ghost walk failed", ex);
             return "error: the ghost walk stopped: " + ex;
         } finally {
@@ -136,12 +136,13 @@ public final class GhostShadow {
             float pitch = movePitch != null ? movePitch : p.getXRot();
             if (moveYaw != null || jumpYaw != null) fromBaritone++;
             if (moveYaw != null && jumpYaw != null && Math.abs(moveYaw - jumpYaw) > 0.01f) jumpYawDiffers++;
+            float jYaw = jumpYaw != null ? jumpYaw : yaw;
             moveYaw = movePitch = jumpYaw = null;
             run.add(new GhostInput(p.input.forwardImpulse, p.input.leftImpulse, p.input.jumping, p.isSprinting(), p.input.shiftKeyDown,
-                    yaw, pitch), pos(p));
+                    yaw, pitch, jYaw), pos(p));
             realState.add(state(p));
             if (run.full()) finish();
-        } catch (RuntimeException ex) {
+        } catch (RuntimeException | LinkageError ex) {
             fail(ex);
         }
     }
@@ -172,9 +173,9 @@ public final class GhostShadow {
                 if (f.distance() > 0) falls.append(String.format(Locale.ROOT, " [tick %d: %.2f blocks x%.1f -> %d damage]", f.tick(), f.distance(), f.multiplier(), Math.max(0, f.damage())));
             last = "ghost shadow " + rep.line() + "; real: " + run.summary() + "; ghost: " + ghost.jumps() + " jumps, falls" + (falls.length() == 0 ? " none" : falls)
                     + (ghost.drowned() ? ", out of air" : "") + "; ghost ms per tick: " + times + ", build " + fmt(copyMs) + " ms"
-                    + "; yaw from Baritone's move event on " + fromBaritone + " ticks" + (jumpYawDiffers > 0 ? ", the jump's yaw differed on " + jumpYawDiffers : "");
+                    + "; yaw from Baritone's move event on " + fromBaritone + " ticks" + (jumpYawDiffers > 0 ? ", the jump faced another way than the move on " + jumpYawDiffers : "");
             LOG.info("[entropybot] {}", last);
-        } catch (RuntimeException ex) {
+        } catch (RuntimeException | LinkageError ex) {
             fail(ex);
         } finally {
             replaying = false;
@@ -183,7 +184,7 @@ public final class GhostShadow {
         }
     }
 
-    private void fail(RuntimeException ex) {
+    private void fail(Throwable ex) {
         last = "error: the shadow run stopped: " + ex;
         LOG.warn("[entropybot] ghost shadow: {}", last, ex);
         run = null;
