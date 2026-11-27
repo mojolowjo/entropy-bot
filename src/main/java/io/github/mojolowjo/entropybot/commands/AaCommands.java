@@ -27,7 +27,7 @@ final class AaCommands {
     }
 
     /** 0.39.z27: the help's headings in order; "areas and tags" comes from VerbTable's area row (the owner verb). */
-    static final List<String> GROUPS = List.of("orders", "areas and tags", "stations", "caves", "status", "tuning", "help");
+    static final List<String> GROUPS = List.of("orders", "areas and tags", "stations", "caves", "status", "tuning", "driving tests", "help");
     static final String AREAS = "areas and tags";
 
     /** aa do / use (and their debug forms) while aa is off. */
@@ -168,6 +168,10 @@ final class AaCommands {
         v("like", (c, aa, vb, a) -> aa.like(a), f(T, "like [<key> <n>]", "the personality (want weights, upkeep, sleep, margin): list or set one"));
         v("replan", (c, aa, vb, a) -> aa.replan(a), f(T, "replan on|off", "whether a task is planned again when its facts change"));
         v("horizon", (c, aa, vb, a) -> aa.horizon(a), f(T, "horizon [seconds]", "how far ahead the sequencer plans (saved)"));
+        // ---- driving tests (nav step 8: our own keys, look and hands, Baritone idle; each result is a "nav" line in latest.log)
+        String D = "driving tests";
+        v("nav", (c, aa, vb, a) -> io.github.mojolowjo.entropybot.nav.drive.DriveLive.INSTANCE.command(a),
+                f(D, "nav look|walk|break|place|stop|status", "our own driver (Baritone idle): look <yaw> <pitch>, walk <n>, break|place <x y z>"));
         // ---- help
         v("help", (c, aa, vb, a) -> help(), f("help", "help", "this list"));
     }

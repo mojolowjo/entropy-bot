@@ -14,7 +14,8 @@
     "WatchMixinCameraAccess",
     "WatchMixinLevelRenderer",
     "RestoreMixinGameMode",
-    "ClockMixinMinecraft"
+    "ClockMixinMinecraft",
+    "DriveMixinGameModeAccess"
   ],
   "injectors": {
     "defaultRequire": 1
