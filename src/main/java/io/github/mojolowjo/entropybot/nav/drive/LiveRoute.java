@@ -1,5 +1,6 @@
 package io.github.mojolowjo.entropybot.nav.drive;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
 import io.github.mojolowjo.entropybot.nav.config.NavConfig;
 import io.github.mojolowjo.entropybot.nav.rules.BlockRules;
 import io.github.mojolowjo.entropybot.nav.rules.BodySnapshot;
@@ -49,6 +50,14 @@ final class LiveRoute {
      */
     static NavConfig config(boolean parkour, boolean walk) {
         NavConfig d = NavConfig.defaults();
+        if (Tuning.i("steer.on") != 0) {                                     // steering S3: the steerer drives water, so the fork's under-water pathing is on (SwimRouteTest)
+            NavConfig.Moves m = d.moves();
+            d = d.withMoves(new NavConfig.Moves(m.allowSprint(), m.allowParkour(), m.allowParkourPlace(), m.allowParkourAscend(),
+                    m.allowDiagonalDescend(), m.allowDiagonalAscend(), m.allowDownward(), m.allowJumpAtBuildLimit(), m.allowVines(),
+                    m.allowWalkOnBottomSlab(), m.allowWalkOnMagmaBlocks(), m.assumeWalkOnWater(), m.assumeWalkOnLava(),
+                    m.allowWaterBucketFall(), m.maxFallHeightNoWater(), m.maxFallHeightBucket(), m.jumpPenalty(),
+                    m.walkOnWaterOnePenalty(), true, m.lavaCellCost(), m.strictLiquidCheck(), m.blocksToAvoid()));
+        }
         if (parkour) {
             NavConfig.Moves m = d.moves();
             d = d.withMoves(new NavConfig.Moves(m.allowSprint(), true, m.allowParkourPlace(), m.allowParkourAscend(),
