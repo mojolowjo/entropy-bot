@@ -217,6 +217,22 @@ public final class Reflexes {
 
     public boolean hold() { return reflex != Reflex.NONE || fire.active() || moves.active(); }
 
+    /**
+     * Steering S4 (m0j 2026-11-27: reflexes off while aa nav go drives): an owner's {@code aa nav go} takes over from a
+     * running reflex. The reflex settles, its Baritone goal and danger move stop, and Core keeps the reflexes off until
+     * the trip ends (the trip's own steerer swims). Returns the reflex that was running, for the log.
+     */
+    public String yieldToNav(String why) {
+        String was = reflex().name().toLowerCase();
+        settle(why);
+        moves.stop(why);
+        try {
+            IBaritone b = BaritoneAPI.getProvider().getPrimaryBaritone();
+            if (b != null) b.getPathingBehavior().cancelEverything();
+        } catch (Throwable caught) { Quiet.warn("Reflexes.yieldToNav: Baritone's cancel failed, the trip may wait for it", caught); }
+        return was;
+    }
+
     /** AA_CLEANUP 4: RETREATING while a danger move runs (the jobs hold; AA does not count it as its danger pause). */
     public Reflex reflex() { return reflex == Reflex.NONE && moves.active() ? Reflex.RETREATING : reflex; }
 

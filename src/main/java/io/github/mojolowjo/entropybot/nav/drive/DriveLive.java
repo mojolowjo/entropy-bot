@@ -135,7 +135,12 @@ public final class DriveLive {
             return "nav: not started, no world";
         }
         String name = "route to " + goal.x + " " + goal.y + " " + goal.z;
-        if (baritoneDriving()) {
+        var reflexes = io.github.mojolowjo.entropybot.Core.INSTANCE.reflexes;
+        if (baritoneDriving() && reflexes.hold()) {                             // steering S4: the trip takes over from a reflex
+            say(name + ": takes over from the " + reflexes.yieldToNav("aa nav go takes over") + " reflex");
+            baritoneGrace = BARITONE_GRACE_TICKS;
+        }
+        if (baritoneDriving() && baritoneGrace == 0) {
             return "nav " + name + ": not started, Baritone is driving (aa nav waits until it is idle)";
         }
         String was = driver.stop("replaced by " + name);
@@ -485,7 +490,7 @@ public final class DriveLive {
         Pilot.Act act;
         if (steer != null) steer.newTick();
         try {
-            act = pilot.tick(b, w, hands, mc.isPaused(), baritoneDriving(), mc.level == level, r::impossible);
+            act = pilot.tick(b, w, hands, mc.isPaused(), baritoneDrivingNow(), mc.level == level, r::impossible);
         } catch (RuntimeException | LinkageError e) {
             if (steer == null) throw e;
             GhostSteer.warn(e);                                                  // the ghost broke: steering off for this trip
@@ -616,6 +621,19 @@ public final class DriveLive {
             mc.gameMode.stopDestroyBlock();
         }
         hitting = false;
+    }
+
+    /** Steering S4: ticks after a reflex was told to stop in which Baritone's last process may still show in control. */
+    static final int BARITONE_GRACE_TICKS = 5;                                  // structural: a few ticks for Baritone's control manager to clear
+    private int baritoneGrace;
+
+    /** Baritone drives, past the grace ticks after a reflex handed over. */
+    private boolean baritoneDrivingNow() {
+        if (baritoneGrace > 0) {
+            baritoneGrace--;
+            return false;
+        }
+        return baritoneDriving();
     }
 
     private static boolean baritoneDriving() {

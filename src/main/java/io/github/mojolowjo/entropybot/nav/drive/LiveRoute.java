@@ -85,10 +85,9 @@ final class LiveRoute {
     static {
         for (int i = 0; i < 8; i++) {                                         // structural: parkour x walk x under water
             CONFIGS[i] = config((i & 1) != 0, (i & 2) != 0, (i & 4) != 0);
-            RULESETS[i] = new BlockRules(CONFIGS[i]);
+            RULESETS[i] = new BlockRules(CONFIGS[i], BlockRules.Cells.NONE, (i & 4) != 0);   // S4: steering swims flowing water too
         }
     }
-    private static final BlockRules RULES = RULESETS[0];
 
     static LiveRoute of(LocalPlayer p, boolean parkour, boolean walk) {
         LiveBlockView view = new LiveBlockView((net.minecraft.client.multiplayer.ClientLevel) p.level());
@@ -132,9 +131,9 @@ final class LiveRoute {
     MoveDriver.MoveWorld world() {
         view.reset();
         return new MoveDriver.MoveWorld() {
-            @Override public boolean canWalkThrough(int x, int y, int z) { return RULES.canWalkThrough(view, x, y, z); }
-            @Override public boolean canWalkOn(int x, int y, int z) { return RULES.canWalkOn(view, x, y, z); }
-            @Override public boolean avoidWalkingInto(int x, int y, int z) { return RULES.avoidWalkingInto(view.get0(x, y, z)); }
+            @Override public boolean canWalkThrough(int x, int y, int z) { return context.rules.canWalkThrough(view, x, y, z); }   // S4: the trip's own rules (flowing water)
+            @Override public boolean canWalkOn(int x, int y, int z) { return context.rules.canWalkOn(view, x, y, z); }
+            @Override public boolean avoidWalkingInto(int x, int y, int z) { return context.rules.avoidWalkingInto(view.get0(x, y, z)); }
             @Override public boolean isLiquid(int x, int y, int z) { return BlockRules.isLiquid(view.get0(x, y, z)); }
             @Override public boolean isWater(int x, int y, int z) { return BlockRules.isWater(view.get0(x, y, z)); }
             @Override public boolean isReplaceable(int x, int y, int z) { BlockState st = view.get0(x, y, z); return st.isAir() || st.canBeReplaced(); }
