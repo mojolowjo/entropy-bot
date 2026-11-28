@@ -62,4 +62,14 @@ class SwimRouteTest {
         var r = new AStarPathFinder(start, 0, 64, 0, new GoalBlock(3, 69, 0), Favoring.none(), c).calculate(600_000, 600_000);
         assertFalse(r.getPath().map(p -> p.steps().get(p.steps().size() - 1).dest().equals(new BetterBlockPos(3, 69, 0))).orElse(false));
     }
+
+    @Test void flowingWaterIsPassableOnlyForTheSteeringRules() {
+        BlockState flowing = Blocks.WATER.defaultBlockState().setValue(net.minecraft.world.level.block.LiquidBlock.LEVEL, 2);
+        GridView g = GridView.flat();
+        g.fill(0, 64, 0, 4, 64, 0, flowing);
+        NavConfig d = NavConfig.defaults();
+        NavConfig cfg = d.withMoves(MovesMatchForkTest.moves(d.moves(), true, false, false, true, 0));
+        assertFalse(new BlockRules(cfg).canWalkThrough(g, 2, 64, 0), "the fork: flowing water is not passable");
+        assertTrue(new BlockRules(cfg, BlockRules.Cells.NONE, true).canWalkThrough(g, 2, 64, 0), "steering S4: the current is swum");
+    }
 }

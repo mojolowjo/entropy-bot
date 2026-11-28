@@ -76,12 +76,22 @@ public final class BlockRules implements ActionCosts {
     private final NavConfig.Moves moves;
     private final NavConfig.Breaking breaking;
     private final Cells kept;
+    private final boolean swimFlowing;
 
     public BlockRules(NavConfig config) {
         this(config, Cells.NONE);
     }
 
     public BlockRules(NavConfig config, Cells kept) {
+        this(config, kept, false);
+    }
+
+    /**
+     * Steering S4 (ours, not the fork's): with {@code swimFlowing}, flowing water is a cell the body may pass through,
+     * as still water is; the steerer swims the current. The fork (and every fork-equality check) keeps it false.
+     */
+    public BlockRules(NavConfig config, Cells kept, boolean swimFlowing) {
+        this.swimFlowing = swimFlowing;
         this.config = config;
         this.moves = config.moves();
         this.breaking = config.breaking();
@@ -235,7 +245,7 @@ public final class BlockRules implements ActionCosts {
         FluidState fluidState = state.getFluidState();
         if (!FluidFlags.isEmpty(state)) {
             if (fluidState.getType().getAmount(fluidState) != 8) {
-                return NO;
+                return swimFlowing && isWater(state) ? MAYBE : NO;          // S4: a shallow current is swum (the position check decides)
             } else {
                 return MAYBE;
             }
@@ -296,7 +306,7 @@ public final class BlockRules implements ActionCosts {
 
         FluidState fluidState = state.getFluidState();
         if (!FluidFlags.isEmpty(state)) {
-            if (isFlowing(x, y, z, state, bsi)) {
+            if (isFlowing(x, y, z, state, bsi) && !(swimFlowing && isWater(state))) {
                 return false;
             }
             if (moves.lavaCellCost() > 0 && fluidState.is(FluidTags.LAVA)) {
