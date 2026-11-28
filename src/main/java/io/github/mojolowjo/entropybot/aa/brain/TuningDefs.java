@@ -1061,6 +1061,16 @@ final class TuningDefs {
         Tuning.def("ghost.ticksPerTick", 200, "dry-run package 3 (package 1: about 0.01-0.03 ms per ghost tick)", "the most ghost ticks one game tick may run");
         Tuning.def("ghost.msPerTick", 2, "dry-run plan (m0j 2026-11-26: under 2 ms per game tick on average)", "milliseconds of ghost work one game tick may spend; it stops at the first step past it");
         Tuning.def("ghost.deadlineTicks", 40, "dry-run package 3, a guess (2 s: a part is usually still being walked)", "game ticks a part may wait for the ghost's verdict before it is marked unchecked (never pass)");
+        // ghost steering S1 (plan to-do/nav-steer.md, m0j 2026-11-27: "do what you think makes sense"); first guesses, set by the S4 water course
+        Tuning.def("steer.horizon", 15, "steering S1, a guess (m0j 2026-11-27: 8 options x 10-20 ticks, about 3 ms at 0.02 ms a ghost tick)", "ticks each key choice is tried in the ghost before the steerer compares them");
+        Tuning.def("steer.every", 2, "steering S1, a guess", "the steerer re-tests its options every this many game ticks");
+        Tuning.def("steer.hold", 4, "steering S1, a guess (keeps it from flip-flopping)", "a newly picked key choice is kept at least this many ticks, unless the held one now hurts");
+        Tuning.def("steer.giveUpTicks", 60, "steering S1 plan, error catching (3 s)", "ticks the real body may go without getting closer to the aim before the steerer gives up with a reason");
+        Tuning.def("steer.progress", 0.25, "steering S1, a guess (a quarter block)", "blocks closer to the aim that count as progress for steer.giveUpTicks");
+        Tuning.def("steer.upWeight", 1, "steering S1, a guess (height counts like distance across)", "how much a block of height weighs against a block across in the steerer's distance");
+        Tuning.def("steer.hurtCost", 20, "steering S1, a guess (worse than any miss within the horizon)", "blocks added to a try that hurts (lava, fire, a hard fall, drowning); low air adds up to this much more");
+        Tuning.def("steer.airLow", 100, "steering S1, a guess (a third of the lungs, about 5 s of air)", "air (300 = full) under which a try costs more as the air runs out");
+        Tuning.def("steer.keepBonus", 0.1, "steering S1, a guess", "blocks taken off the held choice's score, so a near-tie does not switch");
         Tuning.def("strip.areaMinFactor", 0.5, "0.39.z64 review 5 (a vein is several ore blocks together - 1.21 ore_iron_middle size 9 - so one vein in few faces is clumping, not a richer area)", "the lowest an area's seen yield may scale the band's blocks per ore: 0.5 = at most twice as rich as the band says, so one vein cannot make a strip look 30x richer");
     }
 }

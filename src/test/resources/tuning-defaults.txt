@@ -1038,3 +1038,12 @@ ghost.check	1.0
 ghost.deadlineTicks	40.0
 ghost.msPerTick	2.0
 ghost.ticksPerTick	200.0
+steer.airLow	100.0
+steer.every	2.0
+steer.giveUpTicks	60.0
+steer.hold	4.0
+steer.horizon	15.0
+steer.hurtCost	20.0
+steer.keepBonus	0.1
+steer.progress	0.25
+steer.upWeight	1.0
