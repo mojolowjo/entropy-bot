@@ -108,6 +108,7 @@ public final class Pilot {
     /** Sets the ghost the steerer tries options on (null: no steering). */
     public void ghost(Ghost g) {
         this.ghost = g;
+        if (g == null) steer = Steer.OFF;                                      // S2 review: no ghost, no steering left showing
     }
 
     /** What the steerer is doing now, for the status line and the log. */
@@ -216,6 +217,11 @@ public final class Pilot {
             }
             double off = offRoute(b);
             Steer want = steerWanted(b, off);
+            if (want == Steer.OFF && steer != Steer.OFF) {                     // out of the water: the move's driver starts afresh (S2 review)
+                steer = Steer.OFF;
+                driver = null;
+                continue;
+            }
             if (want != Steer.OFF) {
                 Act a = steerTick(b, want);
                 if (a != null) return a;
@@ -313,11 +319,7 @@ public final class Pilot {
                     moves++;
                     index++;
                 }
-                driver = null;
-                if (index < path.steps().size()) {
-                    driver = MoveDriver.of(path.steps().get(index));
-                    moveTicks = 0;
-                }
+                driver = null;                                                 // built by the loop, with the move's re-price (S2 review)
                 return null;
             case GAVE_UP:
                 steer = Steer.OFF;
