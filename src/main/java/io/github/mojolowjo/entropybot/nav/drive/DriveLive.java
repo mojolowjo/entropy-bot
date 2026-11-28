@@ -176,7 +176,9 @@ public final class DriveLive {
         }
         check.start(path, route, p, config.walkTurn(), Minecraft.getInstance().options.sensitivity().get());   // 9c: the ghost flies it first
         if (first) {                                                             // steering S2: one ghost for the trip
-            steer = GhostSteer.ready() ? new GhostSteer(p, config.walkTurn(), Minecraft.getInstance().options.sensitivity().get()) : null;
+            if (steer == null || !steer.isFor(p)) {                              // one per player, so its counters add up over trips
+                steer = GhostSteer.ready() ? new GhostSteer(p, config.walkTurn(), Minecraft.getInstance().options.sensitivity().get()) : null;
+            }
             if (steer == null) say("steer: OFF, the ghost's accessor mixins did not apply (see the game log); moves drive as before");
             lastSteer = Pilot.Steer.OFF;
         }

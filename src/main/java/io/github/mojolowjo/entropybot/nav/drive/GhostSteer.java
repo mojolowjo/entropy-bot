@@ -33,7 +33,7 @@ final class GhostSteer implements Pilot.Ghost, Sim {
     private final double sensitivity;
     private GhostPlayer g;
     private boolean hurt;
-    private long tickStart;
+    private long tickStart, lastStepEnd;
     private int tickSteps;
     private long steps, maxNanos, sumNanos, ticks;
 
@@ -41,6 +41,11 @@ final class GhostSteer implements Pilot.Ghost, Sim {
         this.real = real;
         this.walkTurn = walkTurn;
         this.sensitivity = sensitivity;
+    }
+
+    /** Is this the ghost for that player (a respawn or a new world makes a new player)? */
+    boolean isFor(LocalPlayer p) {
+        return p == real;
     }
 
     /** True when the ghost can be built (its accessor mixins applied). */
@@ -51,7 +56,7 @@ final class GhostSteer implements Pilot.Ghost, Sim {
     /** A new game tick: the budget starts again; the last tick's time goes into the counters. */
     void newTick() {
         if (tickStart != 0 && tickSteps > 0) {
-            long n = System.nanoTime() - tickStart;
+            long n = lastStepEnd - tickStart;                                  // the steering work, not the whole game tick
             sumNanos += n;
             maxNanos = Math.max(maxNanos, n);
             ticks++;
@@ -89,6 +94,7 @@ final class GhostSteer implements Pilot.Ghost, Sim {
         g.step(new GhostInput(i.forward(), i.left(), c.jump(), sprint, c.sneak(), n.yaw(), n.pitch()));
         if (g.isInLava() || g.isOnFire() || g.drowned()) hurt = true;
         for (GhostPlayer.Fall f : g.falls()) if (f.damage() > 0) hurt = true;
+        lastStepEnd = System.nanoTime();
     }
 
     @Override public double x() { return g.getX(); }

@@ -162,6 +162,7 @@ public final class Pilot {
         if (path == null) return null;
         String line = name + ": stopped after " + ticks + " ticks, " + moves + " moves (" + why + ")";
         path = null;
+        steer = Steer.OFF;
         return line;
     }
 
@@ -394,6 +395,7 @@ public final class Pilot {
         String line = name + ": " + why;
         path = null;
         driver = null;
+        steer = Steer.OFF;
         return new Act(EnumSet.noneOf(Keys.Key.class), null, line, ok, false);
     }
 
