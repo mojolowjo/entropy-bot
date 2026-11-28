@@ -1062,6 +1062,7 @@ final class TuningDefs {
         Tuning.def("ghost.msPerTick", 2, "dry-run plan (m0j 2026-11-26: under 2 ms per game tick on average)", "milliseconds of ghost work one game tick may spend; it stops at the first step past it");
         Tuning.def("ghost.deadlineTicks", 40, "dry-run package 3, a guess (2 s: a part is usually still being walked)", "game ticks a part may wait for the ghost's verdict before it is marked unchecked (never pass)");
         // ghost steering S1 (plan to-do/nav-steer.md, m0j 2026-11-27: "do what you think makes sense"); first guesses, set by the S4 water course
+        Tuning.def("steer.on", 1, "steering S2 (m0j 2026-11-27)", "1: in water, or more than 2 blocks off the route, an aa nav go trip is steered by trying key choices on the ghost first; 0: the moves drive as before");
         Tuning.def("steer.horizon", 15, "steering S1, a guess (m0j 2026-11-27: 8 options x 10-20 ticks, about 3 ms at 0.02 ms a ghost tick)", "ticks each key choice is tried in the ghost before the steerer compares them");
         Tuning.def("steer.every", 2, "steering S1, a guess", "the steerer re-tests its options every this many game ticks");
         Tuning.def("steer.hold", 4, "steering S1, a guess (keeps it from flip-flopping)", "a newly picked key choice is kept at least this many ticks, unless the held one now hurts");

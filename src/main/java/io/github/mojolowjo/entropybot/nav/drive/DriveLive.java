@@ -72,7 +72,8 @@ public final class DriveLive {
             switch (verb) {
                 case "status":
                     return "nav: " + (pilot.driving() ? pilot.name() + " driving, " + pilot.where() : driver.task() == null ? "idle" : Driver.name(driver.task()) + " running")
-                            + ", keys " + keys + "; last: " + last + "; " + check.status();
+                            + ", keys " + keys + "; last: " + last + "; " + check.status() + "; " + pilot.steerStatus()
+                            + (steer == null ? "" : ", " + steer.status());
                 case "stop": {
                     String line = driver.stop("aa nav stop");
                     String route = stopRoute("aa nav stop");
@@ -110,6 +111,13 @@ public final class DriveLive {
     /** aa nav go x y z: plan with our planner and drive with the pilot. */
     private boolean parkour, walkOnly;
     private final RouteCheck check = new RouteCheck();
+    private GhostSteer steer;                                                    // steering S2: the ghost the pilot's steerer tries options on
+    private Pilot.Steer lastSteer = Pilot.Steer.OFF;
+
+    /** True while an aa nav go trip drives (the reflexes stay off then: m0j 2026-11-27, steering plan). */
+    public boolean driving() {
+        return pilot.driving();
+    }
 
     /** Stops the route and tells the checker the real part's end is unknown (stopped from outside). */
     private String stopRoute(String why) {
@@ -167,6 +175,12 @@ public final class DriveLive {
             pilot.next(path);
         }
         check.start(path, route, p, config.walkTurn(), Minecraft.getInstance().options.sensitivity().get());   // 9c: the ghost flies it first
+        if (first) {                                                             // steering S2: one ghost for the trip
+            steer = GhostSteer.ready() ? new GhostSteer(p, config.walkTurn(), Minecraft.getInstance().options.sensitivity().get()) : null;
+            if (steer == null) say("steer: OFF, the ghost's accessor mixins did not apply (see the game log); moves drive as before");
+            lastSteer = Pilot.Steer.OFF;
+        }
+        pilot.ghost(steer);
         String line = name + ": part " + parts + " planned, " + path.steps().size() + " moves, " + Math.round(path.ticksRemainingFrom(0)) + " ticks priced, "
                 + (r.getType() == io.github.mojolowjo.entropybot.nav.search.PathCalculationResult.Type.SUCCESS_TO_GOAL ? "to the goal" : "a part of the way") + " (" + ms + " ms)";
         say(line);
@@ -465,8 +479,25 @@ public final class DriveLive {
                 p.onGround(), p.horizontalCollision, p.getYRot(), p.getXRot());
         LiveRoute r = route;
         MoveDriver.MoveWorld w = r.world();
-        Pilot.Act act = pilot.tick(b, w, new LiveHands(mc, p, r.view), mc.isPaused(), baritoneDriving(), mc.level == level, r::impossible);
-        check.tick();
+        LiveHands hands = new LiveHands(mc, p, r.view);
+        Pilot.Act act;
+        if (steer != null) steer.newTick();
+        try {
+            act = pilot.tick(b, w, hands, mc.isPaused(), baritoneDriving(), mc.level == level, r::impossible);
+        } catch (RuntimeException | LinkageError e) {
+            if (steer == null) throw e;
+            GhostSteer.warn(e);                                                  // the ghost broke: steering off for this trip
+            steer = null;
+            pilot.ghost(null);
+            say("steer: OFF for this trip, the ghost failed (" + e + ")");
+            act = pilot.tick(b, w, hands, mc.isPaused(), baritoneDriving(), mc.level == level, r::impossible);
+        }
+        if (pilot.steering() != lastSteer) {
+            say("steer: " + pilot.steering().name().toLowerCase(java.util.Locale.ROOT).replace('_', ' ') + " at " + pilot.where()
+                    + String.format(java.util.Locale.ROOT, " (feet %.1f %.1f %.1f)", p.getX(), p.getY(), p.getZ()));
+            lastSteer = pilot.steering();
+        }
+        if (pilot.steering() == Pilot.Steer.OFF) check.tick();                   // while steering the ghost is the steerer's
         if (act.replan()) {
             check.realEnded(io.github.mojolowjo.entropybot.nav.check.CheckBook.Real.PART_DONE, "");
             keys.releaseAll();                                                 // nothing held while the next part is searched

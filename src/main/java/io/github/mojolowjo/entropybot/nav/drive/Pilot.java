@@ -29,6 +29,12 @@ import io.github.mojolowjo.entropybot.nav.search.Path;
 import io.github.mojolowjo.entropybot.nav.search.Step;
 import io.github.mojolowjo.entropybot.nav.util.BetterBlockPos;
 
+import io.github.mojolowjo.entropybot.aa.brain.Tuning;
+import io.github.mojolowjo.entropybot.nav.steer.Choice;
+import io.github.mojolowjo.entropybot.nav.steer.Sim;
+import io.github.mojolowjo.entropybot.nav.steer.SteerConfig;
+import io.github.mojolowjo.entropybot.nav.steer.Steerer;
+import io.github.mojolowjo.entropybot.nav.steer.Target;
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
@@ -42,7 +48,14 @@ import java.util.function.Function;
  * route for 200 ticks or 3 blocks at once (a fall: flat to its landing), when a move takes 100 ticks longer than its price, when a move's own
  * driver fails, or when the world changed under a move before it started (the price is asked again). It ends "arrived"
  * when the feet are in the goal, or "segment done" when the route (a part of the way) runs out: {@link DriveLive} plans
- * the next part. It lets go when the game pauses, the world changes or Baritone drives. Pure (JUnit: PilotTest).
+ * the next part. It lets go when the game pauses, the world changes or Baritone drives.
+ *
+ * <p>Steering S2 (plan to-do/nav-steer.md, m0j 2026-11-27): with a {@link Ghost} set and {@code steer.on} 1, a body in
+ * water, or more than 2 blocks off the route, is handed to the {@link Steerer}, which tries key choices on the ghost
+ * first. In water it heads for the move's end cell (or the next move's cells) and that counts as the move done; off the
+ * route it heads back to the current move's cells and the move's driver starts again. While it steers, the move's
+ * time limit and the off-route ends wait; the steerer's own give-up (no progress for {@code steer.giveUpTicks}) ends the
+ * trip with its reason. Pure (JUnit: PilotTest, PilotSteerTest).
  * Loader notes: none; {@link DriveLive} supplies the body, the world and the re-price.
  */
 public final class Pilot {
@@ -73,6 +86,38 @@ public final class Pilot {
     private List<Set<BetterBlockPos>> valid;                                   // each move's valid cells, for sync and off-route
     private String name;
 
+    /** Steering S2: the live side's ghost for the steerer to try options on. */
+    public interface Ghost {
+        /** Is the body in water (feet or eyes)? */
+        boolean inWater();
+
+        /** The ghost as the steerer's sim; reset copies the real body. */
+        Sim sim();
+
+        /** This game tick's budget for ghost steps. */
+        Steerer.Budget budget();
+    }
+
+    public enum Steer { OFF, WATER, BACK_TO_ROUTE }
+
+    private Ghost ghost;
+    private Steerer steerer;
+    private Steer steer = Steer.OFF;
+    private String steerWhy = "";
+
+    /** Sets the ghost the steerer tries options on (null: no steering). */
+    public void ghost(Ghost g) {
+        this.ghost = g;
+    }
+
+    /** What the steerer is doing now, for the status line and the log. */
+    public Steer steering() { return steer; }
+
+    /** The steerer's counters and its last choice. */
+    public String steerStatus() {
+        return steerer == null ? "steer: not used yet" : "steer " + steer.name().toLowerCase(Locale.ROOT).replace('_', ' ') + "; " + steerer.status();
+    }
+
     /** Starts a route (any running one is dropped). */
     public void start(Path p, String name) {
         this.path = p;
@@ -91,6 +136,7 @@ public final class Pilot {
         moveTicks = 0;
         ticksAway = 0;
         driver = null;
+        steer = Steer.OFF;
         valid = new ArrayList<>();
         for (Step s : path.steps()) valid.add(MoveShape.of(s.move(), s.src(), s.dest()).valid());
     }
@@ -168,6 +214,12 @@ public final class Pilot {
                 moveTicks = 0;
             }
             double off = offRoute(b);
+            Steer want = steerWanted(b, off);
+            if (want != Steer.OFF) {
+                Act a = steerTick(b, want);
+                if (a != null) return a;
+                continue;                                                      // the steerer got there: the next move, this tick
+            }
             if (offBy(b, off, MAX_DIST_FROM_PATH)) {                             // PathExecutor: far for too long
                 if (++ticksAway > MAX_TICKS_AWAY) {
                     return end(String.format(Locale.ROOT, "off the route for %d ticks: %.1f blocks from it at move %d (feet at %s)", ticksAway, off, index + 1, cell(feet)), false);
@@ -231,6 +283,85 @@ public final class Pilot {
                 return;
             }
         }
+    }
+
+    /** Steering S2: does this spot go to the steerer? Water always; off the route past 2 blocks until back on it. */
+    private Steer steerWanted(MoveDriver.Body b, double off) {
+        if (ghost == null || Tuning.i("steer.on") == 0) return Steer.OFF;
+        if (ghost.inWater()) return Steer.WATER;
+        if (steer == Steer.BACK_TO_ROUTE) return Steer.BACK_TO_ROUTE;          // until the steerer says it is back
+        if (offBy(b, off, MAX_DIST_FROM_PATH)) return Steer.BACK_TO_ROUTE;
+        return Steer.OFF;
+    }
+
+    /** One steered tick. Null when the steerer got there (the caller goes on with the next move or the driver). */
+    private Act steerTick(MoveDriver.Body b, Steer want) {
+        if (steerer == null) steerer = new Steerer(SteerConfig.live());
+        if (want != steer) {
+            steerer.restart();
+            steer = want;
+        }
+        ticksAway = 0;
+        Step s = path.steps().get(index);
+        Target t = want == Steer.WATER ? waterTarget(s) : backTarget(b);
+        Steerer.Decision d = steerer.tick(b.x(), b.y(), b.z(), t, ghost.sim(), ghost.budget());
+        switch (d.status()) {
+            case ARRIVED:
+                steer = Steer.OFF;
+                if (want == Steer.WATER) {
+                    moves++;
+                    index++;
+                }
+                driver = null;
+                if (index < path.steps().size()) {
+                    driver = MoveDriver.of(path.steps().get(index));
+                    moveTicks = 0;
+                }
+                return null;
+            case GAVE_UP:
+                steer = Steer.OFF;
+                return end("steer (" + want.name().toLowerCase(Locale.ROOT).replace('_', ' ') + ") at move " + (index + 1) + ": " + d.why(), false);
+            default:
+                return new Act(keysOf(d.choice()), d.yaw(), null, false, false);
+        }
+    }
+
+    /** In water: the move's end cell, or any cell of the next move. Aimed at the end cell's centre, on its floor. */
+    private Target waterTarget(Step s) {
+        List<Target.Cell> cells = new ArrayList<>();
+        cells.add(new Target.Cell(s.dest().x, s.dest().y, s.dest().z));
+        if (index + 1 < valid.size()) for (BetterBlockPos c : valid.get(index + 1)) cells.add(new Target.Cell(c.x, c.y, c.z));
+        return new Target(cells, s.dest().x + 0.5, s.dest().y, s.dest().z + 0.5);
+    }
+
+    /** Off the route: any cell of the current move, aimed at the nearest one's centre, on its floor. */
+    private Target backTarget(MoveDriver.Body b) {
+        List<Target.Cell> cells = new ArrayList<>();
+        BetterBlockPos near = null;
+        double best = Double.MAX_VALUE;
+        for (BetterBlockPos c : valid.get(index)) {
+            cells.add(new Target.Cell(c.x, c.y, c.z));
+            double dx = b.x() - (c.x + 0.5), dy = b.y() - c.y, dz = b.z() - (c.z + 0.5);
+            double d = dx * dx + dy * dy + dz * dz;
+            if (d < best) {
+                best = d;
+                near = c;
+            }
+        }
+        return new Target(cells, near.x + 0.5, near.y, near.z + 0.5);
+    }
+
+    /** A steerer's choice as the driver's keys. */
+    static Set<Keys.Key> keysOf(Choice c) {
+        Set<Keys.Key> k = EnumSet.noneOf(Keys.Key.class);
+        if (c.forward() > 0) k.add(Keys.Key.FORWARD);
+        if (c.forward() < 0) k.add(Keys.Key.BACK);
+        if (c.left() > 0) k.add(Keys.Key.LEFT);
+        if (c.left() < 0) k.add(Keys.Key.RIGHT);
+        if (c.jump()) k.add(Keys.Key.JUMP);
+        if (c.sprint()) k.add(Keys.Key.SPRINT);
+        if (c.sneak()) k.add(Keys.Key.SNEAK);
+        return k;
     }
 
     /** PathExecutor.closestPathPos: the body's distance to the centre of the nearest valid cell of any move. */

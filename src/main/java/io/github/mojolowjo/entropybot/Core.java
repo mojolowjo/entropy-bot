@@ -260,7 +260,12 @@ public final class Core {
                 io.github.mojolowjo.entropybot.baritone.CostAdvisorHook.install();
             }
             boolean ownerDrives = io.github.mojolowjo.entropybot.screen.DriveRuntime.INSTANCE.on();     // 0.39.z24: I drive pauses reflexes and window care
-            if (!ownerDrives) try (var ds = io.github.mojolowjo.entropybot.aa.door.Door.scope(io.github.mojolowjo.entropybot.aa.door.Driver.REFLEX)) { reflexes.tick(tick); }     // AA_CLEANUP 2
+            boolean navDrives = io.github.mojolowjo.entropybot.nav.drive.DriveLive.INSTANCE.driving();   // steering plan (m0j 2026-11-27): reflexes off while aa nav go drives
+            if (navDrives != navDroveLast) {
+                LOG.info("[entropybot] reflexes {} (aa nav go {})", navDrives ? "OFF" : "back on", navDrives ? "drives" : "ended");
+                navDroveLast = navDrives;
+            }
+            if (!ownerDrives && !navDrives) try (var ds = io.github.mojolowjo.entropybot.aa.door.Door.scope(io.github.mojolowjo.entropybot.aa.door.Driver.REFLEX)) { reflexes.tick(tick); }     // AA_CLEANUP 2
             if (lp) io.github.mojolowjo.entropybot.commands.LoadProbe.mark(1);
             io.github.mojolowjo.entropybot.commands.TrailRuntime.tick(tick);   // D4: the trail home is recorded from the feet; never throws
             io.github.mojolowjo.entropybot.commands.WalkProbe.tick(tick);      // 0.39.z54 B: one probe line a tick while a walk step runs (debug.walkProbe 1); never throws
@@ -311,6 +316,7 @@ public final class Core {
     }
 
     private boolean advisorInstalled;
+    private boolean navDroveLast;                                                // steering plan: the reflexes-off line once per change
 
     public JsonArray features() {
         JsonArray a = new JsonArray();
