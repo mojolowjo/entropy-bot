@@ -46,11 +46,12 @@ final class LiveRoute {
 
     /**
      * The planner's config: the fork's defaults (9b: break and place on, parkour off), parkour on when asked, and 9c's
-     * "walk" (break and place off: the lane course and the route checker's plain trips).
+     * "walk" (break and place off: the lane course and the route checker's plain trips), and S3's under-water pathing
+     * (on while {@code steer.on} is 1, read per trip so {@code aa tune} reaches it).
      */
-    static NavConfig config(boolean parkour, boolean walk) {
+    static NavConfig config(boolean parkour, boolean walk, boolean underWater) {
         NavConfig d = NavConfig.defaults();
-        if (Tuning.i("steer.on") != 0) {                                     // steering S3: the steerer drives water, so the fork's under-water pathing is on (SwimRouteTest)
+        if (underWater) {                                     // steering S3: the steerer drives water, so the fork's under-water pathing is on (SwimRouteTest)
             NavConfig.Moves m = d.moves();
             d = d.withMoves(new NavConfig.Moves(m.allowSprint(), m.allowParkour(), m.allowParkourPlace(), m.allowParkourAscend(),
                     m.allowDiagonalDescend(), m.allowDiagonalAscend(), m.allowDownward(), m.allowJumpAtBuildLimit(), m.allowVines(),
@@ -79,11 +80,11 @@ final class LiveRoute {
     }
 
     /** The four configs and the rules built for each (the search context wants rules built for its own config). */
-    private static final NavConfig[] CONFIGS = new NavConfig[4];                // structural: parkour x walk
-    private static final BlockRules[] RULESETS = new BlockRules[4];
+    private static final NavConfig[] CONFIGS = new NavConfig[8];                // structural: parkour x walk x under water
+    private static final BlockRules[] RULESETS = new BlockRules[8];
     static {
-        for (int i = 0; i < 4; i++) {                                         // structural: parkour x walk
-            CONFIGS[i] = config((i & 1) != 0, (i & 2) != 0);
+        for (int i = 0; i < 8; i++) {                                         // structural: parkour x walk x under water
+            CONFIGS[i] = config((i & 1) != 0, (i & 2) != 0, (i & 4) != 0);
             RULESETS[i] = new BlockRules(CONFIGS[i]);
         }
     }
@@ -104,7 +105,8 @@ final class LiveRoute {
         BodySnapshot body = new BodySnapshot(bar, p.getInventory().selected, haste == null ? -1 : haste.getAmplifier(),
                 fatigue == null ? -1 : fatigue.getAmplifier(), 0, 1f, p.getFoodData().getFoodLevel(), false, throwaway,
                 p.level().dimension() == Level.NETHER);
-        return new LiveRoute(view, new SearchContext(CONFIGS[(parkour ? 1 : 0) | (walk ? 2 : 0)], RULESETS[(parkour ? 1 : 0) | (walk ? 2 : 0)], view, body, null));
+        int k = (parkour ? 1 : 0) | (walk ? 2 : 0) | (Tuning.i("steer.on") != 0 ? 4 : 0);   // structural: the CONFIGS index bits
+        return new LiveRoute(view, new SearchContext(CONFIGS[k], RULESETS[k], view, body, null));
     }
 
     /** Plans from the feet to the goal. */
