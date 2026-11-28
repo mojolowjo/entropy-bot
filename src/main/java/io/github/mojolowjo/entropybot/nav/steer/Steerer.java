@@ -11,7 +11,9 @@ import java.util.Locale;
  * are left out, and when none was, it holds the last choice (counted as a cut).
  *
  * <p>It gives up, with a reason, when the real body has not got {@code progress} blocks closer to the aim for
- * {@code giveUpTicks} ticks. It says "arrived" once the feet are in a target cell.
+ * {@code giveUpTicks} ticks. It says "arrived" once the feet are in a target cell. Progress is the straight distance to
+ * the aim, so a detour that leads away from it for longer than that gives up: the steerer is for the next move's cells
+ * (the route's A* does the long way round), and S2 hands it a near aim.
  *
  * <p>Pure (JUnit: SteererTest). Loader notes: none; S2 feeds it the ghost player and the real feet.
  */
@@ -104,16 +106,17 @@ public final class Steerer {
             last = "budget cut before any try; holding " + (held == null ? "still" : held.name());
             return;
         }
-        boolean mayChange = held == null || heldTicks >= cfg.hold() || (heldTried && heldHurts) || !heldTried;
+        // a held choice left out by a cut keeps its hold (it was tried in full before); review of S1
+        boolean mayChange = held == null || heldTicks >= cfg.hold() || (heldTried && heldHurts);
         if (!pick.equals(held) && mayChange) {
             held = pick;
             heldHurts = pickHurts;
             heldTicks = 0;
             switches++;
         }
-        last = String.format(Locale.ROOT, "%s (score %.2f, %d of %d tried)", held.name(),
-                held.equals(pick) ? pickRaw : heldScore,
-                full, Choice.OPTIONS.size());
+        String score = held.equals(pick) ? String.format(Locale.ROOT, "%.2f", pickRaw)
+                : heldTried ? String.format(Locale.ROOT, "%.2f, held over %s", heldScore, pick.name()) : "untried this time, held";
+        last = String.format(Locale.ROOT, "%s (score %s, %d of %d tried)", held.name(), score, full, Choice.OPTIONS.size());
     }
 
     /** The facing from (x, z) toward the target's aim point (the game's yaw: 0 = south, +z; LookMath.toward's form). */
