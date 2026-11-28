@@ -136,6 +136,7 @@ public final class DriveLive {
         }
         String name = "route to " + goal.x + " " + goal.y + " " + goal.z;
         var reflexes = io.github.mojolowjo.entropybot.Core.INSTANCE.reflexes;
+        baritoneGrace = 0;                                                       // S4 review: no grace left over from an earlier trip
         if (baritoneDriving() && reflexes.hold()) {                             // steering S4: the trip takes over from a reflex
             say(name + ": takes over from the " + reflexes.yieldToNav("aa nav go takes over") + " reflex");
             baritoneGrace = BARITONE_GRACE_TICKS;
